@@ -21,6 +21,7 @@ from tkinter import ttk, messagebox, scrolledtext, filedialog
 import json
 import threading
 import logging
+import importlib.util
 import sys
 import os
 from pathlib import Path
@@ -552,20 +553,23 @@ class ToastQBApp:
         self.log_text.configure(state="disabled")
 
     # ─── ENGINE HELPERS ─────────────────────────────────────────────────────
+    def _load_sync_module(self):
+        """Load đúng module toast_to_quickbooks.py trong cùng thư mục app."""
+        module_path = APP_DIR / "toast_to_quickbooks.py"
+        spec = importlib.util.spec_from_file_location("toast_to_quickbooks_local", module_path)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"Không thể load module: {module_path}")
+
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
 
     def _get_engine(self):
         """Tạo sync engine từ config hiện tại."""
-        # Import nội bộ để tránh circular / import lỗi nếu thiếu pywin32
-        try:
-            from toast_to_quickbooks import ToastQBSyncEngine, ToastAPIClient, QuickBooksDesktopClient
-        except ImportError:
-            # Fallback: tìm trong cùng thư mục
-            sys.path.insert(0, str(APP_DIR))
-            from toast_to_quickbooks import ToastQBSyncEngine, ToastAPIClient, QuickBooksDesktopClient
-
+        module = self._load_sync_module()
         if not self.config:
             self.config = self._build_config_dict()
-        return ToastQBSyncEngine(self.config)
+         return module.ToastQBSyncEngine(self.config)
 
     def _run_in_thread(self, func, *args):
         """Chạy hàm trong background thread."""
@@ -596,10 +600,9 @@ class ToastQBApp:
 
         def do():
             try:
-                sys.path.insert(0, str(APP_DIR))
-                from toast_to_quickbooks import ToastAPIClient
+                module = self._load_sync_module()
                 self.logger.info("🧪 Test kết nối Toast API...")
-                client = ToastAPIClient(self.config)
+                client = module.ToastAPIClient(self.config)
                 client.authenticate()
                 self.logger.info("✅ Kết nối Toast API thành công!")
             except Exception as e:
@@ -613,10 +616,9 @@ class ToastQBApp:
 
         def do():
             try:
-                sys.path.insert(0, str(APP_DIR))
-                from toast_to_quickbooks import QuickBooksDesktopClient
+                module = self._load_sync_module()
                 self.logger.info("🧪 Test kết nối QuickBooks Desktop...")
-                client = QuickBooksDesktopClient(self.config)
+                client = module.QuickBooksDesktopClient(self.config)
                 client.connect()
                 self.logger.info("✅ Kết nối QuickBooks Desktop thành công!")
                 client.disconnect()
