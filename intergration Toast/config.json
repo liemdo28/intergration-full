@@ -1,0 +1,87 @@
+{
+    "toast": {
+        "client_id": "ljBK0f4hXJtd4OI0uFUCmwzGK58QDu9N",
+        "client_secret": "CSM8g0DV6FlIlBT3bEGk0DZ-onl6uaMnA7ecuhSHqM7gEOuQQW0eOun9MtBnXnPl",
+        "restaurant_guid": "8399afd6-fdb5-4a12-a0fb-d8ea317338d6",
+        "api_hostname": "https://ws-api.toasttab.com"
+    },
+    "quickbooks": {
+        "app_name": "Toast POS Sync",
+        "company_file": "",
+        "qbxml_version": "13.0",
+        "customer_name": "Toast",
+        "sale_no_prefix": ""
+    },
+    "category_rules": {
+        "menu_group_to_category": {
+            "appet": "food",
+            "entree": "food",
+            "entre": "food",
+            "soup": "food",
+            "salad": "food",
+            "sandwich": "food",
+            "burger": "food",
+            "pizza": "food",
+            "pasta": "food",
+            "dessert": "food",
+            "side": "food",
+            "breakfast": "food",
+            "lunch": "food",
+            "dinner": "food",
+            "kids": "food",
+            "seafood": "food",
+            "steak": "food",
+            "chicken": "food",
+            "pho": "food",
+            "rice": "food",
+            "noodle": "food",
+            "beer": "bar",
+            "wine": "bar",
+            "cocktail": "bar",
+            "spirit": "bar",
+            "liquor": "bar",
+            "drink": "bar",
+            "bar": "bar",
+            "sake": "bar",
+            "soju": "bar"
+        },
+        "source_to_channel": {
+            "in store": "in_store",
+            "pos": "in_store",
+            "online": "online",
+            "toast online": "online",
+            "doordash": "doordash",
+            "door dash": "doordash",
+            "uber": "uber_eats",
+            "grubhub": "grubhub",
+            "grub hub": "grubhub"
+        },
+        "default_category": "food",
+        "default_channel": "in_store"
+    },
+    "item_mapping": {
+        "sales_revenue": "Food Sales",
+        "discounts": "Discount/comp/error Adjustment",
+        "refunds": "Discount/comp/error Adjustment:Refunds",
+        "sales_tax": "boe",
+        "tips": "Tips Paid Out",
+        "service_charges": "Customer Contribution",
+        "credit_card": "CC25",
+        "cash": "Cash",
+        "gift_card": "Gift Certificates",
+        "over_short": "Over/Short",
+        "category_item_map": {
+            "food": "Food Sales",
+            "bar": "Bar Sales",
+            "other": "Food Sales"
+        },
+        "source_item_map": {
+            "doordash": "DOORD",
+            "grubhub": "GrubH",
+            "uber_eats": "Ube"
+        }
+    },
+    "schedule": {
+        "sync_time": "06:00"
+    }
+}
