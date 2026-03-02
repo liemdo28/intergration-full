@@ -30,6 +30,8 @@ from decimal import Decimal
 
 # ── Đường dẫn ───────────────────────────────────────────────────────────────
 APP_DIR = Path(__file__).parent
+if str(APP_DIR) not in sys.path:
+    sys.path.insert(0, str(APP_DIR))
 CONFIG_FILE = APP_DIR / "config.json"
 LOG_DIR = APP_DIR / "logs"
 LOG_DIR.mkdir(exist_ok=True)
@@ -566,7 +568,7 @@ class ToastQBApp:
 
     def _get_engine(self):
         """Tạo sync engine từ config hiện tại."""
-        module = self._load_sync_module()
+        from toast_to_quickbooks import ToastQBSyncEngine
         if not self.config:
             self.config = self._build_config_dict()
          return module.ToastQBSyncEngine(self.config)
@@ -616,7 +618,7 @@ class ToastQBApp:
 
         def do():
             try:
-                module = self._load_sync_module()
+                from toast_to_quickbooks import QuickBooksDesktopClient
                 self.logger.info("🧪 Test kết nối QuickBooks Desktop...")
                 client = module.QuickBooksDesktopClient(self.config)
                 client.connect()
