@@ -460,15 +460,13 @@ class QuickBooksDesktopClient:
     def connect(self):
         """Kết nối đến QuickBooks Desktop qua COM"""
         logger.info("Đang kết nối QuickBooks Desktop...")
-                if win32_client is None:
+        if win32_client is None:
             raise ImportError(
                 "Không tìm thấy module 'win32com'. Cài pywin32 để dùng QuickBooks Desktop "
                 "(ví dụ: pip install pywin32)."
             )
         try:
             self.request_processor = win32_client.Dispatch("QBXMLRP2.RequestProcessor")
-
-            self.request_processor = win32com.client.Dispatch("QBXMLRP2.RequestProcessor")
             self.request_processor.OpenConnection2(
                 "",  # Connection ID (tự động)
                 self.app_name,
