@@ -571,7 +571,7 @@ class ToastQBApp:
         module = self._load_sync_module()
         if not self.config:
             self.config = self._build_config_dict()
-          return module.ToastQBSyncEngine(self.config)
+        return module.ToastQBSyncEngine(self.config)
 
     def _run_in_thread(self, func, *args):
         """Chạy hàm trong background thread."""
@@ -618,7 +618,7 @@ class ToastQBApp:
 
         def do():
             try:
-                 module = self._load_sync_module()
+                module = self._load_sync_module()
                 self.logger.info("🧪 Test kết nối QuickBooks Desktop...")
                 client = module.QuickBooksDesktopClient(self.config)
                 client.connect()
