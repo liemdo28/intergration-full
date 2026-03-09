@@ -1,0 +1,663 @@
+2026-03-06 14:53:00,005 [INFO] Lấy danh sách MenuGroup từ Toast...
+2026-03-06 14:53:00,029 [INFO] Đang xác thực với Toast API...
+2026-03-06 14:53:00,651 [INFO] Xác thực Toast API thành công!
+2026-03-06 14:53:01,370 [INFO] Lấy danh sách DiningOption từ Toast...
+2026-03-06 14:53:02,027 [INFO] Lấy danh sách RevenueCenter từ Toast...
+2026-03-06 14:53:02,685 [INFO] Lấy đơn hàng ngày 20260228, trang 1...
+2026-03-06 14:53:04,051 [INFO] Lấy đơn hàng ngày 20260228, trang 2...
+2026-03-06 14:53:05,404 [INFO] Lấy đơn hàng ngày 20260228, trang 3...
+2026-03-06 14:53:06,262 [INFO] Tổng cộng 207 đơn hàng ngày 20260228
+2026-03-06 14:53:52,619 [INFO] Lấy danh sách MenuGroup từ Toast...
+2026-03-06 14:53:52,621 [INFO] Đang xác thực với Toast API...
+2026-03-06 14:53:53,274 [INFO] Xác thực Toast API thành công!
+2026-03-06 14:53:53,978 [INFO] Lấy danh sách DiningOption từ Toast...
+2026-03-06 14:53:54,619 [INFO] Lấy danh sách RevenueCenter từ Toast...
+2026-03-06 14:53:55,277 [INFO] Lấy đơn hàng ngày 20260228, trang 1...
+2026-03-06 14:54:02,658 [INFO] Lấy đơn hàng ngày 20260228, trang 2...
+2026-03-06 14:54:03,982 [INFO] Lấy đơn hàng ngày 20260228, trang 3...
+2026-03-06 14:54:04,756 [INFO] Tổng cộng 207 đơn hàng ngày 20260228
+2026-03-06 15:07:48,591 [INFO] Lấy danh sách MenuGroup từ Toast...
+2026-03-06 15:07:48,593 [INFO] Đang xác thực với Toast API...
+2026-03-06 15:07:50,712 [INFO] Xác thực Toast API thành công!
+2026-03-06 15:07:51,444 [INFO] Lấy danh sách DiningOption từ Toast...
+2026-03-06 15:07:52,051 [INFO] Lấy danh sách RevenueCenter từ Toast...
+2026-03-06 15:07:52,714 [INFO] Lấy đơn hàng ngày 20260228, trang 1...
+2026-03-06 15:07:53,858 [INFO] Lấy đơn hàng ngày 20260228, trang 2...
+2026-03-06 15:07:55,074 [INFO] Lấy đơn hàng ngày 20260228, trang 3...
+2026-03-06 15:07:55,817 [INFO] Tổng cộng 207 đơn hàng ngày 20260228
+2026-03-06 15:17:46,132 [INFO] 🧪 Test kết nối Toast API...
+2026-03-06 15:17:46,132 [INFO] Đang xác thực với Toast API...
+2026-03-06 15:17:48,285 [INFO] Xác thực Toast API thành công!
+2026-03-06 15:17:48,286 [INFO] ✅ Kết nối Toast API thành công!
+2026-03-06 15:17:48,558 [INFO] 🧪 Test kết nối QuickBooks Desktop...
+2026-03-06 15:17:48,558 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-06 15:17:48,882 [INFO] Kết nối QuickBooks Desktop thành công!
+2026-03-06 15:17:48,882 [INFO] ✅ Kết nối QuickBooks Desktop thành công!
+2026-03-06 15:17:48,883 [INFO] Đã ngắt kết nối QuickBooks Desktop
+2026-03-06 15:18:05,287 [INFO] ============================================================
+2026-03-06 15:18:05,287 [INFO] BẮT ĐẦU ĐỒNG BỘ NGÀY: 2026-02-28
+2026-03-06 15:18:05,288 [INFO] ============================================================
+2026-03-06 15:18:05,288 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-06 15:18:05,424 [INFO] Kết nối QuickBooks Desktop thành công!
+2026-03-06 15:18:05,543 [ERROR] Lỗi kết nối QuickBooks: (-2147352567, 'Exception occurred.', (0, 'QBXMLRP2.RequestProcessor.2', 'Could not start QuickBooks.', None, 0, -2147220472), None)
+2026-03-06 15:18:05,544 [INFO] Đã ngắt kết nối QuickBooks Desktop
+2026-03-06 15:19:51,610 [INFO] 📂 Đã load cấu hình từ config.json
+2026-03-06 15:19:57,058 [INFO] 🧪 Test kết nối QuickBooks Desktop...
+2026-03-06 15:19:57,058 [INFO] 🧪 Test kết nối QuickBooks Desktop...
+2026-03-06 15:19:57,059 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-06 15:19:57,059 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-06 15:19:57,226 [INFO] Kết nối QuickBooks Desktop thành công!
+2026-03-06 15:19:57,226 [INFO] Kết nối QuickBooks Desktop thành công!
+2026-03-06 15:19:57,226 [INFO] ✅ Kết nối QuickBooks Desktop thành công!
+2026-03-06 15:19:57,226 [INFO] ✅ Kết nối QuickBooks Desktop thành công!
+2026-03-06 15:19:57,228 [INFO] Đã ngắt kết nối QuickBooks Desktop
+2026-03-06 15:19:57,228 [INFO] Đã ngắt kết nối QuickBooks Desktop
+2026-03-06 15:19:59,171 [INFO] 🧪 Test kết nối Toast API...
+2026-03-06 15:19:59,171 [INFO] 🧪 Test kết nối Toast API...
+2026-03-06 15:19:59,175 [INFO] Đang xác thực với Toast API...
+2026-03-06 15:19:59,175 [INFO] Đang xác thực với Toast API...
+2026-03-06 15:20:02,191 [INFO] Xác thực Toast API thành công!
+2026-03-06 15:20:02,191 [INFO] Xác thực Toast API thành công!
+2026-03-06 15:20:02,192 [INFO] ✅ Kết nối Toast API thành công!
+2026-03-06 15:20:02,192 [INFO] ✅ Kết nối Toast API thành công!
+2026-03-06 15:20:46,898 [INFO] ============================================================
+2026-03-06 15:20:46,898 [INFO] ============================================================
+2026-03-06 15:20:46,900 [INFO] BẮT ĐẦU ĐỒNG BỘ NGÀY: 2026-02-28
+2026-03-06 15:20:46,900 [INFO] BẮT ĐẦU ĐỒNG BỘ NGÀY: 2026-02-28
+2026-03-06 15:20:46,900 [INFO] ============================================================
+2026-03-06 15:20:46,900 [INFO] ============================================================
+2026-03-06 15:20:46,901 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-06 15:20:46,901 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-06 15:20:46,984 [INFO] Kết nối QuickBooks Desktop thành công!
+2026-03-06 15:20:46,984 [INFO] Kết nối QuickBooks Desktop thành công!
+2026-03-06 15:20:47,687 [INFO] Đã ngắt kết nối QuickBooks Desktop
+2026-03-06 15:20:47,687 [INFO] Đã ngắt kết nối QuickBooks Desktop
+2026-03-06 15:20:47,687 [INFO] Lấy đơn hàng ngày 20260228, trang 1...
+2026-03-06 15:20:47,687 [INFO] Lấy đơn hàng ngày 20260228, trang 1...
+2026-03-06 15:20:47,690 [INFO] Đang xác thực với Toast API...
+2026-03-06 15:20:47,690 [INFO] Đang xác thực với Toast API...
+2026-03-06 15:20:48,353 [INFO] Xác thực Toast API thành công!
+2026-03-06 15:20:48,353 [INFO] Xác thực Toast API thành công!
+2026-03-06 15:20:49,612 [INFO] Lấy đơn hàng ngày 20260228, trang 2...
+2026-03-06 15:20:49,612 [INFO] Lấy đơn hàng ngày 20260228, trang 2...
+2026-03-06 15:20:50,984 [INFO] Lấy đơn hàng ngày 20260228, trang 3...
+2026-03-06 15:20:50,984 [INFO] Lấy đơn hàng ngày 20260228, trang 3...
+2026-03-06 15:20:51,758 [INFO] Tổng cộng 207 đơn hàng ngày 20260228
+2026-03-06 15:20:51,758 [INFO] Tổng cộng 207 đơn hàng ngày 20260228
+2026-03-06 15:20:51,759 [INFO] Lấy danh sách MenuGroup từ Toast...
+2026-03-06 15:20:51,759 [INFO] Lấy danh sách MenuGroup từ Toast...
+2026-03-06 15:20:52,514 [INFO] Lấy danh sách DiningOption từ Toast...
+2026-03-06 15:20:52,514 [INFO] Lấy danh sách DiningOption từ Toast...
+2026-03-06 15:20:53,158 [INFO] Lấy danh sách RevenueCenter từ Toast...
+2026-03-06 15:20:53,158 [INFO] Lấy danh sách RevenueCenter từ Toast...
+2026-03-06 15:20:53,822 [INFO] 
+──────────────────────────────────────────────────
+2026-03-06 15:20:53,822 [INFO] 
+──────────────────────────────────────────────────
+2026-03-06 15:20:53,975 [INFO] 📊 BÁO CÁO DOANH THU NGÀY 2026-02-28
+2026-03-06 15:20:53,975 [INFO] 📊 BÁO CÁO DOANH THU NGÀY 2026-02-28
+2026-03-06 15:20:53,975 [INFO] ──────────────────────────────────────────────────
+2026-03-06 15:20:53,975 [INFO] ──────────────────────────────────────────────────
+2026-03-06 15:20:53,987 [INFO]   Số đơn hàng:          205
+2026-03-06 15:20:53,987 [INFO]   Số đơn hàng:          205
+2026-03-06 15:20:53,992 [INFO]   Doanh thu gộp:        $    10101.51
+2026-03-06 15:20:53,992 [INFO]   Doanh thu gộp:        $    10101.51
+2026-03-06 15:20:53,997 [INFO]   Giảm giá:             $      373.94
+2026-03-06 15:20:53,997 [INFO]   Giảm giá:             $      373.94
+2026-03-06 15:20:54,001 [INFO]   Doanh thu thuần:      $     9727.57
+2026-03-06 15:20:54,001 [INFO]   Doanh thu thuần:      $     9727.57
+2026-03-06 15:20:54,002 [INFO]   Thuế:                 $      893.64
+2026-03-06 15:20:54,002 [INFO]   Thuế:                 $      893.64
+2026-03-06 15:20:54,003 [INFO]   Tips:                 $     1698.29
+2026-03-06 15:20:54,003 [INFO]   Tips:                 $     1698.29
+2026-03-06 15:20:54,009 [INFO]   Phí dịch vụ:          $        3.99
+2026-03-06 15:20:54,009 [INFO]   Phí dịch vụ:          $        3.99
+2026-03-06 15:20:54,010 [INFO]   ───── Doanh thu theo loại ─────
+2026-03-06 15:20:54,010 [INFO]   ───── Doanh thu theo loại ─────
+2026-03-06 15:20:54,011 [INFO]     bar                    $     1100.49
+2026-03-06 15:20:54,011 [INFO]     bar                    $     1100.49
+2026-03-06 15:20:54,013 [INFO]     food                   $     9001.02
+2026-03-06 15:20:54,013 [INFO]     food                   $     9001.02
+2026-03-06 15:20:54,014 [INFO]   ───── Doanh thu theo kênh ─────
+2026-03-06 15:20:54,014 [INFO]   ───── Doanh thu theo kênh ─────
+2026-03-06 15:20:54,019 [INFO]     doordash               $      466.66
+2026-03-06 15:20:54,019 [INFO]     doordash               $      466.66
+2026-03-06 15:20:54,021 [INFO]     grubhub                $       37.32
+2026-03-06 15:20:54,021 [INFO]     grubhub                $       37.32
+2026-03-06 15:20:54,023 [INFO]     in_store               $     9171.22
+2026-03-06 15:20:54,023 [INFO]     in_store               $     9171.22
+2026-03-06 15:20:54,030 [INFO]     online                 $      252.86
+2026-03-06 15:20:54,030 [INFO]     online                 $      252.86
+2026-03-06 15:20:54,032 [INFO]     uber_eats              $      173.45
+2026-03-06 15:20:54,032 [INFO]     uber_eats              $      173.45
+2026-03-06 15:20:54,037 [INFO]   ───── Theo Revenue Center ─────
+2026-03-06 15:20:54,037 [INFO]   ───── Theo Revenue Center ─────
+2026-03-06 15:20:54,039 [INFO]     Bar                    $       20.99
+2026-03-06 15:20:54,039 [INFO]     Bar                    $       20.99
+2026-03-06 15:20:54,040 [INFO]     Dining Room            $     5422.50
+2026-03-06 15:20:54,040 [INFO]     Dining Room            $     5422.50
+2026-03-06 15:20:54,041 [INFO]     Online Ordering        $      252.86
+2026-03-06 15:20:54,041 [INFO]     Online Ordering        $      252.86
+2026-03-06 15:20:54,047 [INFO]     Patio                  $     3488.07
+2026-03-06 15:20:54,047 [INFO]     Patio                  $     3488.07
+2026-03-06 15:20:54,049 [INFO]   ───── Thanh toán ─────
+2026-03-06 15:20:54,049 [INFO]   ───── Thanh toán ─────
+2026-03-06 15:20:54,053 [INFO]   Tiền mặt:             $      960.96
+2026-03-06 15:20:54,053 [INFO]   Tiền mặt:             $      960.96
+2026-03-06 15:20:54,058 [INFO]   Thẻ tín dụng:         $     8921.91
+2026-03-06 15:20:54,058 [INFO]   Thẻ tín dụng:         $     8921.91
+2026-03-06 15:20:54,061 [INFO]   Gift card:            $        0.00
+2026-03-06 15:20:54,061 [INFO]   Gift card:            $        0.00
+2026-03-06 15:20:54,066 [INFO]   Khác:                 $      742.33
+2026-03-06 15:20:54,066 [INFO]   Khác:                 $      742.33
+2026-03-06 15:20:54,068 [INFO]   Hoàn tiền:            $        0.00
+2026-03-06 15:20:54,068 [INFO]   Hoàn tiền:            $        0.00
+2026-03-06 15:20:54,069 [INFO] ──────────────────────────────────────────────────
+
+2026-03-06 15:20:54,069 [INFO] ──────────────────────────────────────────────────
+
+2026-03-06 15:20:54,071 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-06 15:20:54,071 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-06 15:20:54,160 [INFO] Kết nối QuickBooks Desktop thành công!
+2026-03-06 15:20:54,160 [INFO] Kết nối QuickBooks Desktop thành công!
+2026-03-06 15:20:54,160 [INFO] Tạo Sales Receipt: #20260228 ngày 2026-02-28
+2026-03-06 15:20:54,160 [INFO] Tạo Sales Receipt: #20260228 ngày 2026-02-28
+2026-03-06 15:20:54,583 [INFO] ✅ Sales Receipt tạo thành công! TxnID: 6A518-1772785254
+2026-03-06 15:20:54,583 [INFO] ✅ Sales Receipt tạo thành công! TxnID: 6A518-1772785254
+2026-03-06 15:20:54,585 [INFO] Đã ngắt kết nối QuickBooks Desktop
+2026-03-06 15:20:54,585 [INFO] Đã ngắt kết nối QuickBooks Desktop
+2026-03-06 15:20:54,589 [INFO] 🎉 Đồng bộ hoàn tất!
+2026-03-06 15:20:54,589 [INFO] 🎉 Đồng bộ hoàn tất!
+2026-03-06 15:25:03,877 [INFO] ============================================================
+2026-03-06 15:25:03,877 [INFO] ============================================================
+2026-03-06 15:25:03,881 [INFO] BẮT ĐẦU ĐỒNG BỘ NGÀY: 2026-02-28
+2026-03-06 15:25:03,881 [INFO] BẮT ĐẦU ĐỒNG BỘ NGÀY: 2026-02-28
+2026-03-06 15:25:03,882 [INFO] ============================================================
+2026-03-06 15:25:03,882 [INFO] ============================================================
+2026-03-06 15:25:03,884 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-06 15:25:03,884 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-06 15:25:04,021 [INFO] Kết nối QuickBooks Desktop thành công!
+2026-03-06 15:25:04,021 [INFO] Kết nối QuickBooks Desktop thành công!
+2026-03-06 15:25:04,223 [INFO] Đã ngắt kết nối QuickBooks Desktop
+2026-03-06 15:25:04,223 [INFO] Đã ngắt kết nối QuickBooks Desktop
+2026-03-06 15:25:04,224 [INFO] Lấy đơn hàng ngày 20260228, trang 1...
+2026-03-06 15:25:04,224 [INFO] Lấy đơn hàng ngày 20260228, trang 1...
+2026-03-06 15:25:04,225 [INFO] Đang xác thực với Toast API...
+2026-03-06 15:25:04,225 [INFO] Đang xác thực với Toast API...
+2026-03-06 15:25:04,943 [INFO] Xác thực Toast API thành công!
+2026-03-06 15:25:04,943 [INFO] Xác thực Toast API thành công!
+2026-03-06 15:25:06,478 [INFO] Lấy đơn hàng ngày 20260228, trang 2...
+2026-03-06 15:25:06,478 [INFO] Lấy đơn hàng ngày 20260228, trang 2...
+2026-03-06 15:25:07,925 [INFO] Lấy đơn hàng ngày 20260228, trang 3...
+2026-03-06 15:25:07,925 [INFO] Lấy đơn hàng ngày 20260228, trang 3...
+2026-03-06 15:25:08,689 [INFO] Tổng cộng 207 đơn hàng ngày 20260228
+2026-03-06 15:25:08,689 [INFO] Tổng cộng 207 đơn hàng ngày 20260228
+2026-03-06 15:25:08,690 [INFO] Lấy danh sách MenuGroup từ Toast...
+2026-03-06 15:25:08,690 [INFO] Lấy danh sách MenuGroup từ Toast...
+2026-03-06 15:25:09,419 [INFO] Lấy danh sách DiningOption từ Toast...
+2026-03-06 15:25:09,419 [INFO] Lấy danh sách DiningOption từ Toast...
+2026-03-06 15:25:10,084 [INFO] Lấy danh sách RevenueCenter từ Toast...
+2026-03-06 15:25:10,084 [INFO] Lấy danh sách RevenueCenter từ Toast...
+2026-03-06 15:25:10,741 [INFO] 
+──────────────────────────────────────────────────
+2026-03-06 15:25:10,741 [INFO] 
+──────────────────────────────────────────────────
+2026-03-06 15:25:10,741 [INFO] 📊 BÁO CÁO DOANH THU NGÀY 2026-02-28
+2026-03-06 15:25:10,741 [INFO] 📊 BÁO CÁO DOANH THU NGÀY 2026-02-28
+2026-03-06 15:25:10,743 [INFO] ──────────────────────────────────────────────────
+2026-03-06 15:25:10,743 [INFO] ──────────────────────────────────────────────────
+2026-03-06 15:25:10,744 [INFO]   Số đơn hàng:          205
+2026-03-06 15:25:10,744 [INFO]   Số đơn hàng:          205
+2026-03-06 15:25:10,749 [INFO]   Doanh thu gộp:        $    10101.51
+2026-03-06 15:25:10,749 [INFO]   Doanh thu gộp:        $    10101.51
+2026-03-06 15:25:10,751 [INFO]   Giảm giá:             $      373.94
+2026-03-06 15:25:10,751 [INFO]   Giảm giá:             $      373.94
+2026-03-06 15:25:10,756 [INFO]   Doanh thu thuần:      $     9727.57
+2026-03-06 15:25:10,756 [INFO]   Doanh thu thuần:      $     9727.57
+2026-03-06 15:25:10,761 [INFO]   Thuế:                 $      893.64
+2026-03-06 15:25:10,761 [INFO]   Thuế:                 $      893.64
+2026-03-06 15:25:10,766 [INFO]   Tips:                 $     1698.29
+2026-03-06 15:25:10,766 [INFO]   Tips:                 $     1698.29
+2026-03-06 15:25:10,772 [INFO]   Phí dịch vụ:          $        3.99
+2026-03-06 15:25:10,772 [INFO]   Phí dịch vụ:          $        3.99
+2026-03-06 15:25:10,774 [INFO]   ───── Doanh thu theo loại ─────
+2026-03-06 15:25:10,774 [INFO]   ───── Doanh thu theo loại ─────
+2026-03-06 15:25:10,775 [INFO]     bar                    $     1100.49
+2026-03-06 15:25:10,775 [INFO]     bar                    $     1100.49
+2026-03-06 15:25:10,777 [INFO]     food                   $     9001.02
+2026-03-06 15:25:10,777 [INFO]     food                   $     9001.02
+2026-03-06 15:25:10,782 [INFO]   ───── Doanh thu theo kênh ─────
+2026-03-06 15:25:10,782 [INFO]   ───── Doanh thu theo kênh ─────
+2026-03-06 15:25:10,783 [INFO]     doordash               $      466.66
+2026-03-06 15:25:10,783 [INFO]     doordash               $      466.66
+2026-03-06 15:25:10,785 [INFO]     grubhub                $       37.32
+2026-03-06 15:25:10,785 [INFO]     grubhub                $       37.32
+2026-03-06 15:25:10,786 [INFO]     in_store               $     9171.22
+2026-03-06 15:25:10,786 [INFO]     in_store               $     9171.22
+2026-03-06 15:25:10,788 [INFO]     online                 $      252.86
+2026-03-06 15:25:10,788 [INFO]     online                 $      252.86
+2026-03-06 15:25:10,789 [INFO]     uber_eats              $      173.45
+2026-03-06 15:25:10,789 [INFO]     uber_eats              $      173.45
+2026-03-06 15:25:10,794 [INFO]   ───── Theo Revenue Center ─────
+2026-03-06 15:25:10,794 [INFO]   ───── Theo Revenue Center ─────
+2026-03-06 15:25:10,799 [INFO]     Bar                    $       20.99
+2026-03-06 15:25:10,799 [INFO]     Bar                    $       20.99
+2026-03-06 15:25:10,804 [INFO]     Dining Room            $     5422.50
+2026-03-06 15:25:10,804 [INFO]     Dining Room            $     5422.50
+2026-03-06 15:25:10,809 [INFO]     Online Ordering        $      252.86
+2026-03-06 15:25:10,809 [INFO]     Online Ordering        $      252.86
+2026-03-06 15:25:10,811 [INFO]     Patio                  $     3488.07
+2026-03-06 15:25:10,811 [INFO]     Patio                  $     3488.07
+2026-03-06 15:25:10,816 [INFO]   ───── Thanh toán ─────
+2026-03-06 15:25:10,816 [INFO]   ───── Thanh toán ─────
+2026-03-06 15:25:10,821 [INFO]   Tiền mặt:             $      960.96
+2026-03-06 15:25:10,821 [INFO]   Tiền mặt:             $      960.96
+2026-03-06 15:25:10,822 [INFO]   Thẻ tín dụng:         $     8921.91
+2026-03-06 15:25:10,822 [INFO]   Thẻ tín dụng:         $     8921.91
+2026-03-06 15:25:10,823 [INFO]   Gift card:            $        0.00
+2026-03-06 15:25:10,823 [INFO]   Gift card:            $        0.00
+2026-03-06 15:25:10,825 [INFO]   Khác:                 $      742.33
+2026-03-06 15:25:10,825 [INFO]   Khác:                 $      742.33
+2026-03-06 15:25:10,829 [INFO]   Hoàn tiền:            $        0.00
+2026-03-06 15:25:10,829 [INFO]   Hoàn tiền:            $        0.00
+2026-03-06 15:25:10,834 [INFO] ──────────────────────────────────────────────────
+
+2026-03-06 15:25:10,834 [INFO] ──────────────────────────────────────────────────
+
+2026-03-06 15:25:10,836 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-06 15:25:10,836 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-06 15:25:10,914 [INFO] Kết nối QuickBooks Desktop thành công!
+2026-03-06 15:25:10,914 [INFO] Kết nối QuickBooks Desktop thành công!
+2026-03-06 15:25:10,914 [INFO] Tạo Sales Receipt: #20260228 ngày 2026-02-28
+2026-03-06 15:25:10,914 [INFO] Tạo Sales Receipt: #20260228 ngày 2026-02-28
+2026-03-06 15:25:11,236 [INFO] ✅ Sales Receipt tạo thành công! TxnID: 6A526-1772785511
+2026-03-06 15:25:11,236 [INFO] ✅ Sales Receipt tạo thành công! TxnID: 6A526-1772785511
+2026-03-06 15:25:11,237 [INFO] Đã ngắt kết nối QuickBooks Desktop
+2026-03-06 15:25:11,237 [INFO] Đã ngắt kết nối QuickBooks Desktop
+2026-03-06 15:25:11,249 [INFO] 🎉 Đồng bộ hoàn tất!
+2026-03-06 15:25:11,249 [INFO] 🎉 Đồng bộ hoàn tất!
+2026-03-06 15:37:08,571 [INFO] Lấy danh sách MenuGroup từ Toast...
+2026-03-06 15:37:08,573 [INFO] Đang xác thực với Toast API...
+2026-03-06 15:37:09,235 [INFO] Xác thực Toast API thành công!
+2026-03-06 15:37:10,200 [INFO] Lấy danh sách DiningOption từ Toast...
+2026-03-06 15:37:10,856 [INFO] Lấy danh sách RevenueCenter từ Toast...
+2026-03-06 15:37:11,545 [INFO] Lấy đơn hàng ngày 20260228, trang 1...
+2026-03-06 15:37:12,753 [INFO] Lấy đơn hàng ngày 20260228, trang 2...
+2026-03-06 15:37:13,972 [INFO] Lấy đơn hàng ngày 20260228, trang 3...
+2026-03-06 15:37:14,742 [INFO] Tổng cộng 207 đơn hàng ngày 20260228
+2026-03-06 15:38:15,032 [INFO] Lấy danh sách MenuGroup từ Toast...
+2026-03-06 15:38:15,034 [INFO] Đang xác thực với Toast API...
+2026-03-06 15:38:15,729 [INFO] Xác thực Toast API thành công!
+2026-03-06 15:38:16,706 [INFO] Lấy danh sách DiningOption từ Toast...
+2026-03-06 15:38:17,412 [INFO] Lấy danh sách RevenueCenter từ Toast...
+2026-03-06 15:38:18,113 [INFO] Lấy đơn hàng ngày 20260228, trang 1...
+2026-03-06 15:38:19,388 [INFO] Lấy đơn hàng ngày 20260228, trang 2...
+2026-03-06 15:38:20,700 [INFO] Lấy đơn hàng ngày 20260228, trang 3...
+2026-03-06 15:38:21,539 [INFO] Tổng cộng 207 đơn hàng ngày 20260228
+2026-03-06 15:40:48,236 [INFO] Lấy danh sách MenuGroup từ Toast...
+2026-03-06 15:40:48,239 [INFO] Đang xác thực với Toast API...
+2026-03-06 15:40:48,926 [INFO] Xác thực Toast API thành công!
+2026-03-06 15:40:50,964 [INFO] Lấy danh sách DiningOption từ Toast...
+2026-03-06 15:40:51,638 [INFO] Lấy danh sách RevenueCenter từ Toast...
+2026-03-06 15:40:52,280 [INFO] Lấy đơn hàng ngày 20260228, trang 1...
+2026-03-06 15:40:53,517 [INFO] Lấy đơn hàng ngày 20260228, trang 2...
+2026-03-06 15:40:54,683 [INFO] Lấy đơn hàng ngày 20260228, trang 3...
+2026-03-06 15:40:55,473 [INFO] Tổng cộng 207 đơn hàng ngày 20260228
+2026-03-06 15:41:27,635 [INFO] Lấy danh sách MenuGroup từ Toast...
+2026-03-06 15:41:27,637 [INFO] Đang xác thực với Toast API...
+2026-03-06 15:41:28,323 [INFO] Xác thực Toast API thành công!
+2026-03-06 15:41:29,035 [INFO] Lấy danh sách DiningOption từ Toast...
+2026-03-06 15:41:29,717 [INFO] Lấy danh sách RevenueCenter từ Toast...
+2026-03-06 15:41:31,085 [INFO] Lấy đơn hàng ngày 20260228, trang 1...
+2026-03-06 15:41:34,172 [INFO] Lấy đơn hàng ngày 20260228, trang 2...
+2026-03-06 15:41:35,524 [INFO] Lấy đơn hàng ngày 20260228, trang 3...
+2026-03-06 15:41:36,302 [INFO] Tổng cộng 207 đơn hàng ngày 20260228
+2026-03-06 15:56:19,541 [INFO] 📂 Đã load cấu hình từ config.json
+2026-03-06 15:56:27,913 [INFO] ============================================================
+2026-03-06 15:56:27,913 [INFO] ============================================================
+2026-03-06 15:56:27,913 [INFO] BẮT ĐẦU ĐỒNG BỘ NGÀY: 2026-02-28
+2026-03-06 15:56:27,913 [INFO] BẮT ĐẦU ĐỒNG BỘ NGÀY: 2026-02-28
+2026-03-06 15:56:27,914 [INFO] ============================================================
+2026-03-06 15:56:27,914 [INFO] ============================================================
+2026-03-06 15:56:27,915 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-06 15:56:27,915 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-06 15:56:28,064 [INFO] Kết nối QuickBooks Desktop thành công!
+2026-03-06 15:56:28,064 [INFO] Kết nối QuickBooks Desktop thành công!
+2026-03-06 15:56:28,314 [WARNING] ⚠️  Sales Receipt #20260228 đã tồn tại. Bỏ qua.
+2026-03-06 15:56:28,314 [WARNING] ⚠️  Sales Receipt #20260228 đã tồn tại. Bỏ qua.
+2026-03-06 15:56:28,314 [INFO] Đã ngắt kết nối QuickBooks Desktop
+2026-03-06 15:56:28,314 [INFO] Đã ngắt kết nối QuickBooks Desktop
+2026-03-06 15:56:28,319 [INFO] 🎉 Đồng bộ hoàn tất!
+2026-03-06 15:56:28,319 [INFO] 🎉 Đồng bộ hoàn tất!
+2026-03-06 15:56:37,500 [INFO] ============================================================
+2026-03-06 15:56:37,500 [INFO] ============================================================
+2026-03-06 15:56:37,504 [INFO] BẮT ĐẦU ĐỒNG BỘ NGÀY: 2026-02-28
+2026-03-06 15:56:37,504 [INFO] BẮT ĐẦU ĐỒNG BỘ NGÀY: 2026-02-28
+2026-03-06 15:56:37,505 [INFO] ============================================================
+2026-03-06 15:56:37,505 [INFO] ============================================================
+2026-03-06 15:56:37,510 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-06 15:56:37,510 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-06 15:56:37,592 [INFO] Kết nối QuickBooks Desktop thành công!
+2026-03-06 15:56:37,592 [INFO] Kết nối QuickBooks Desktop thành công!
+2026-03-06 15:56:37,719 [INFO] Đã ngắt kết nối QuickBooks Desktop
+2026-03-06 15:56:37,719 [INFO] Đã ngắt kết nối QuickBooks Desktop
+2026-03-06 15:56:37,719 [INFO] Lấy đơn hàng ngày 20260228, trang 1...
+2026-03-06 15:56:37,719 [INFO] Lấy đơn hàng ngày 20260228, trang 1...
+2026-03-06 15:56:37,720 [INFO] Đang xác thực với Toast API...
+2026-03-06 15:56:37,720 [INFO] Đang xác thực với Toast API...
+2026-03-06 15:56:38,534 [INFO] Xác thực Toast API thành công!
+2026-03-06 15:56:38,534 [INFO] Xác thực Toast API thành công!
+2026-03-06 15:56:39,744 [INFO] Lấy đơn hàng ngày 20260228, trang 2...
+2026-03-06 15:56:39,744 [INFO] Lấy đơn hàng ngày 20260228, trang 2...
+2026-03-06 15:56:41,128 [INFO] Lấy đơn hàng ngày 20260228, trang 3...
+2026-03-06 15:56:41,128 [INFO] Lấy đơn hàng ngày 20260228, trang 3...
+2026-03-06 15:56:42,157 [INFO] Tổng cộng 207 đơn hàng ngày 20260228
+2026-03-06 15:56:42,157 [INFO] Tổng cộng 207 đơn hàng ngày 20260228
+2026-03-06 15:56:42,158 [INFO] Lấy danh sách MenuGroup từ Toast...
+2026-03-06 15:56:42,158 [INFO] Lấy danh sách MenuGroup từ Toast...
+2026-03-06 15:56:42,953 [INFO] Lấy danh sách DiningOption từ Toast...
+2026-03-06 15:56:42,953 [INFO] Lấy danh sách DiningOption từ Toast...
+2026-03-06 15:56:43,602 [INFO] Lấy danh sách RevenueCenter từ Toast...
+2026-03-06 15:56:43,602 [INFO] Lấy danh sách RevenueCenter từ Toast...
+2026-03-06 15:56:44,278 [INFO] 
+──────────────────────────────────────────────────
+2026-03-06 15:56:44,278 [INFO] 
+──────────────────────────────────────────────────
+2026-03-06 15:56:44,279 [INFO] 📊 BÁO CÁO DOANH THU NGÀY 2026-02-28
+2026-03-06 15:56:44,279 [INFO] 📊 BÁO CÁO DOANH THU NGÀY 2026-02-28
+2026-03-06 15:56:44,283 [INFO] ──────────────────────────────────────────────────
+2026-03-06 15:56:44,283 [INFO] ──────────────────────────────────────────────────
+2026-03-06 15:56:44,295 [INFO]   Số đơn hàng:          205
+2026-03-06 15:56:44,295 [INFO]   Số đơn hàng:          205
+2026-03-06 15:56:44,298 [INFO]   Doanh thu gộp:        $    10101.50
+2026-03-06 15:56:44,298 [INFO]   Doanh thu gộp:        $    10101.50
+2026-03-06 15:56:44,302 [INFO]   Giảm giá:             $      373.94
+2026-03-06 15:56:44,302 [INFO]   Giảm giá:             $      373.94
+2026-03-06 15:56:44,307 [INFO]   Doanh thu thuần:      $     9727.56
+2026-03-06 15:56:44,307 [INFO]   Doanh thu thuần:      $     9727.56
+2026-03-06 15:56:44,310 [INFO]   Thuế:                 $      893.64
+2026-03-06 15:56:44,310 [INFO]   Thuế:                 $      893.64
+2026-03-06 15:56:44,314 [INFO]   Tips:                 $     1698.29
+2026-03-06 15:56:44,314 [INFO]   Tips:                 $     1698.29
+2026-03-06 15:56:44,318 [INFO]   Phí dịch vụ:          $        3.99
+2026-03-06 15:56:44,318 [INFO]   Phí dịch vụ:          $        3.99
+2026-03-06 15:56:44,323 [INFO]   ───── Doanh thu theo loại ─────
+2026-03-06 15:56:44,323 [INFO]   ───── Doanh thu theo loại ─────
+2026-03-06 15:56:44,328 [INFO]     bar                    $     1100.49
+2026-03-06 15:56:44,328 [INFO]     bar                    $     1100.49
+2026-03-06 15:56:44,329 [INFO]     food                   $     9001.01
+2026-03-06 15:56:44,329 [INFO]     food                   $     9001.01
+2026-03-06 15:56:44,330 [INFO]   ───── Doanh thu theo kênh ─────
+2026-03-06 15:56:44,330 [INFO]   ───── Doanh thu theo kênh ─────
+2026-03-06 15:56:44,335 [INFO]     doordash               $      466.66
+2026-03-06 15:56:44,335 [INFO]     doordash               $      466.66
+2026-03-06 15:56:44,337 [INFO]     grubhub                $       37.32
+2026-03-06 15:56:44,337 [INFO]     grubhub                $       37.32
+2026-03-06 15:56:44,344 [INFO]     in_store               $     9171.21
+2026-03-06 15:56:44,344 [INFO]     in_store               $     9171.21
+2026-03-06 15:56:44,346 [INFO]     online                 $      252.86
+2026-03-06 15:56:44,346 [INFO]     online                 $      252.86
+2026-03-06 15:56:44,347 [INFO]     uber_eats              $      173.45
+2026-03-06 15:56:44,347 [INFO]     uber_eats              $      173.45
+2026-03-06 15:56:44,349 [INFO]   ───── Theo Revenue Center ─────
+2026-03-06 15:56:44,349 [INFO]   ───── Theo Revenue Center ─────
+2026-03-06 15:56:44,354 [INFO]     Bar                    $       20.99
+2026-03-06 15:56:44,354 [INFO]     Bar                    $       20.99
+2026-03-06 15:56:44,358 [INFO]     Dining Room            $     5422.49
+2026-03-06 15:56:44,358 [INFO]     Dining Room            $     5422.49
+2026-03-06 15:56:44,363 [INFO]     Online Ordering        $      252.86
+2026-03-06 15:56:44,363 [INFO]     Online Ordering        $      252.86
+2026-03-06 15:56:44,368 [INFO]     Patio                  $     3488.07
+2026-03-06 15:56:44,368 [INFO]     Patio                  $     3488.07
+2026-03-06 15:56:44,369 [INFO]   ───── Thanh toán ─────
+2026-03-06 15:56:44,369 [INFO]   ───── Thanh toán ─────
+2026-03-06 15:56:44,375 [INFO]   Tiền mặt:             $      960.96
+2026-03-06 15:56:44,375 [INFO]   Tiền mặt:             $      960.96
+2026-03-06 15:56:44,380 [INFO]   Thẻ tín dụng:         $     8921.91
+2026-03-06 15:56:44,380 [INFO]   Thẻ tín dụng:         $     8921.91
+2026-03-06 15:56:44,381 [INFO]   Gift card:            $        0.00
+2026-03-06 15:56:44,381 [INFO]   Gift card:            $        0.00
+2026-03-06 15:56:44,383 [INFO]   Khác:                 $      742.33
+2026-03-06 15:56:44,383 [INFO]   Khác:                 $      742.33
+2026-03-06 15:56:44,387 [INFO]   Hoàn tiền:            $        0.00
+2026-03-06 15:56:44,387 [INFO]   Hoàn tiền:            $        0.00
+2026-03-06 15:56:44,389 [INFO] ──────────────────────────────────────────────────
+
+2026-03-06 15:56:44,389 [INFO] ──────────────────────────────────────────────────
+
+2026-03-06 15:56:44,394 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-06 15:56:44,394 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-06 15:56:44,497 [INFO] Kết nối QuickBooks Desktop thành công!
+2026-03-06 15:56:44,497 [INFO] Kết nối QuickBooks Desktop thành công!
+2026-03-06 15:56:44,497 [INFO] Tạo Sales Receipt: #20260228 ngày 2026-02-28
+2026-03-06 15:56:44,497 [INFO] Tạo Sales Receipt: #20260228 ngày 2026-02-28
+2026-03-06 15:56:44,946 [INFO] ✅ Sales Receipt tạo thành công! TxnID: 6A534-1772787404
+2026-03-06 15:56:44,946 [INFO] ✅ Sales Receipt tạo thành công! TxnID: 6A534-1772787404
+2026-03-06 15:56:44,947 [INFO] Đã ngắt kết nối QuickBooks Desktop
+2026-03-06 15:56:44,947 [INFO] Đã ngắt kết nối QuickBooks Desktop
+2026-03-06 15:56:44,958 [INFO] 🎉 Đồng bộ hoàn tất!
+2026-03-06 15:56:44,958 [INFO] 🎉 Đồng bộ hoàn tất!
+2026-03-06 16:09:28,595 [INFO] Lấy danh sách MenuGroup từ Toast...
+2026-03-06 16:09:28,597 [INFO] Đang xác thực với Toast API...
+2026-03-06 16:09:29,464 [INFO] Xác thực Toast API thành công!
+2026-03-06 16:09:30,192 [INFO] Lấy danh sách DiningOption từ Toast...
+2026-03-06 16:09:30,810 [INFO] Lấy danh sách RevenueCenter từ Toast...
+2026-03-06 16:09:32,221 [INFO] Lấy đơn hàng ngày 20260228, trang 1...
+2026-03-06 16:09:33,593 [INFO] Lấy đơn hàng ngày 20260228, trang 2...
+2026-03-06 16:09:34,681 [INFO] Lấy đơn hàng ngày 20260228, trang 3...
+2026-03-06 16:09:35,386 [INFO] Tổng cộng 207 đơn hàng ngày 20260228
+2026-03-06 16:38:26,377 [INFO] 📂 Đã load cấu hình từ config.json
+2026-03-06 16:38:28,994 [INFO] ============================================================
+2026-03-06 16:38:28,994 [INFO] ============================================================
+2026-03-06 16:38:28,995 [INFO] BẮT ĐẦU ĐỒNG BỘ NGÀY: 2026-03-05
+2026-03-06 16:38:28,995 [INFO] BẮT ĐẦU ĐỒNG BỘ NGÀY: 2026-03-05
+2026-03-06 16:38:28,995 [INFO] ============================================================
+2026-03-06 16:38:28,995 [INFO] ============================================================
+2026-03-06 16:38:28,996 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-06 16:38:28,996 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-06 16:38:29,144 [INFO] Kết nối QuickBooks Desktop thành công!
+2026-03-06 16:38:29,144 [INFO] Kết nối QuickBooks Desktop thành công!
+2026-03-06 16:38:29,364 [INFO] Đã ngắt kết nối QuickBooks Desktop
+2026-03-06 16:38:29,364 [INFO] Đã ngắt kết nối QuickBooks Desktop
+2026-03-06 16:38:29,364 [INFO] Lấy đơn hàng ngày 20260305, trang 1...
+2026-03-06 16:38:29,364 [INFO] Lấy đơn hàng ngày 20260305, trang 1...
+2026-03-06 16:38:29,365 [INFO] Đang xác thực với Toast API...
+2026-03-06 16:38:29,365 [INFO] Đang xác thực với Toast API...
+2026-03-06 16:38:30,487 [INFO] Xác thực Toast API thành công!
+2026-03-06 16:38:30,487 [INFO] Xác thực Toast API thành công!
+2026-03-06 16:38:32,115 [INFO] Lấy đơn hàng ngày 20260305, trang 2...
+2026-03-06 16:38:32,115 [INFO] Lấy đơn hàng ngày 20260305, trang 2...
+2026-03-06 16:38:33,038 [INFO] Tổng cộng 129 đơn hàng ngày 20260305
+2026-03-06 16:38:33,038 [INFO] Tổng cộng 129 đơn hàng ngày 20260305
+2026-03-06 16:38:33,039 [INFO] Lấy danh sách MenuGroup từ Toast...
+2026-03-06 16:38:33,039 [INFO] Lấy danh sách MenuGroup từ Toast...
+2026-03-06 16:38:33,757 [INFO] Lấy danh sách DiningOption từ Toast...
+2026-03-06 16:38:33,757 [INFO] Lấy danh sách DiningOption từ Toast...
+2026-03-06 16:38:34,420 [INFO] Lấy danh sách RevenueCenter từ Toast...
+2026-03-06 16:38:34,420 [INFO] Lấy danh sách RevenueCenter từ Toast...
+2026-03-06 16:38:35,044 [INFO] 
+──────────────────────────────────────────────────
+2026-03-06 16:38:35,044 [INFO] 
+──────────────────────────────────────────────────
+2026-03-06 16:38:35,044 [INFO] 📊 BÁO CÁO DOANH THU NGÀY 2026-03-05
+2026-03-06 16:38:35,044 [INFO] 📊 BÁO CÁO DOANH THU NGÀY 2026-03-05
+2026-03-06 16:38:35,047 [INFO] ──────────────────────────────────────────────────
+2026-03-06 16:38:35,047 [INFO] ──────────────────────────────────────────────────
+2026-03-06 16:38:35,054 [INFO]   Số đơn hàng:          125
+2026-03-06 16:38:35,054 [INFO]   Số đơn hàng:          125
+2026-03-06 16:38:35,054 [INFO]   Doanh thu gộp:        $     5305.03
+2026-03-06 16:38:35,054 [INFO]   Doanh thu gộp:        $     5305.03
+2026-03-06 16:38:35,055 [INFO]   Giảm giá:             $      252.69
+2026-03-06 16:38:35,055 [INFO]   Giảm giá:             $      252.69
+2026-03-06 16:38:35,056 [INFO]   Doanh thu thuần:      $     5052.34
+2026-03-06 16:38:35,056 [INFO]   Doanh thu thuần:      $     5052.34
+2026-03-06 16:38:35,056 [INFO]   Thuế:                 $      470.98
+2026-03-06 16:38:35,056 [INFO]   Thuế:                 $      470.98
+2026-03-06 16:38:35,057 [INFO]   Tips:                 $     1039.86
+2026-03-06 16:38:35,057 [INFO]   Tips:                 $     1039.86
+2026-03-06 16:38:35,057 [INFO]   Phí dịch vụ:          $        0.00
+2026-03-06 16:38:35,057 [INFO]   Phí dịch vụ:          $        0.00
+2026-03-06 16:38:35,058 [INFO]   ───── Doanh thu theo loại ─────
+2026-03-06 16:38:35,058 [INFO]   ───── Doanh thu theo loại ─────
+2026-03-06 16:38:35,059 [INFO]     bar                    $      484.00
+2026-03-06 16:38:35,059 [INFO]     bar                    $      484.00
+2026-03-06 16:38:35,059 [INFO]     food                   $     4821.03
+2026-03-06 16:38:35,059 [INFO]     food                   $     4821.03
+2026-03-06 16:38:35,060 [INFO]   ───── Doanh thu theo kênh ─────
+2026-03-06 16:38:35,060 [INFO]   ───── Doanh thu theo kênh ─────
+2026-03-06 16:38:35,061 [INFO]     doordash               $      282.39
+2026-03-06 16:38:35,061 [INFO]     doordash               $      282.39
+2026-03-06 16:38:35,062 [INFO]     grubhub                $       25.19
+2026-03-06 16:38:35,062 [INFO]     grubhub                $       25.19
+2026-03-06 16:38:35,063 [INFO]     in_store               $     4590.35
+2026-03-06 16:38:35,063 [INFO]     in_store               $     4590.35
+2026-03-06 16:38:35,063 [INFO]     online                 $      190.41
+2026-03-06 16:38:35,063 [INFO]     online                 $      190.41
+2026-03-06 16:38:35,065 [INFO]     uber_eats              $      216.69
+2026-03-06 16:38:35,065 [INFO]     uber_eats              $      216.69
+2026-03-06 16:38:35,066 [INFO]   ───── Theo Revenue Center ─────
+2026-03-06 16:38:35,066 [INFO]   ───── Theo Revenue Center ─────
+2026-03-06 16:38:35,067 [INFO]     Bar                    $        6.50
+2026-03-06 16:38:35,067 [INFO]     Bar                    $        6.50
+2026-03-06 16:38:35,068 [INFO]     Dining Room            $     2490.22
+2026-03-06 16:38:35,068 [INFO]     Dining Room            $     2490.22
+2026-03-06 16:38:35,069 [INFO]     Online Ordering        $      190.41
+2026-03-06 16:38:35,069 [INFO]     Online Ordering        $      190.41
+2026-03-06 16:38:35,071 [INFO]     Patio                  $     1852.52
+2026-03-06 16:38:35,071 [INFO]     Patio                  $     1852.52
+2026-03-06 16:38:35,072 [INFO]   ───── Thanh toán ─────
+2026-03-06 16:38:35,072 [INFO]   ───── Thanh toán ─────
+2026-03-06 16:38:35,073 [INFO]   Tiền mặt:             $      359.96
+2026-03-06 16:38:35,073 [INFO]   Tiền mặt:             $      359.96
+2026-03-06 16:38:35,075 [INFO]   Thẻ tín dụng:         $     4642.77
+2026-03-06 16:38:35,075 [INFO]   Thẻ tín dụng:         $     4642.77
+2026-03-06 16:38:35,076 [INFO]   Gift card:            $        0.00
+2026-03-06 16:38:35,076 [INFO]   Gift card:            $        0.00
+2026-03-06 16:38:35,077 [INFO]   Khác:                 $      544.89
+2026-03-06 16:38:35,077 [INFO]   Khác:                 $      544.89
+2026-03-06 16:38:35,079 [INFO]   Hoàn tiền:            $        0.00
+2026-03-06 16:38:35,079 [INFO]   Hoàn tiền:            $        0.00
+2026-03-06 16:38:35,081 [INFO] ──────────────────────────────────────────────────
+
+2026-03-06 16:38:35,081 [INFO] ──────────────────────────────────────────────────
+
+2026-03-06 16:38:35,083 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-06 16:38:35,083 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-06 16:38:35,151 [INFO] Kết nối QuickBooks Desktop thành công!
+2026-03-06 16:38:35,151 [INFO] Kết nối QuickBooks Desktop thành công!
+2026-03-06 16:38:35,151 [INFO] Tạo Sales Receipt: #20260305 ngày 2026-03-05
+2026-03-06 16:38:35,151 [INFO] Tạo Sales Receipt: #20260305 ngày 2026-03-05
+2026-03-06 16:38:35,527 [INFO] ✅ Sales Receipt tạo thành công! TxnID: 6A542-1772789915
+2026-03-06 16:38:35,527 [INFO] ✅ Sales Receipt tạo thành công! TxnID: 6A542-1772789915
+2026-03-06 16:38:35,529 [INFO] Đã ngắt kết nối QuickBooks Desktop
+2026-03-06 16:38:35,529 [INFO] Đã ngắt kết nối QuickBooks Desktop
+2026-03-06 16:38:35,536 [INFO] 🎉 Đồng bộ hoàn tất!
+2026-03-06 16:38:35,536 [INFO] 🎉 Đồng bộ hoàn tất!
+2026-03-06 16:38:43,122 [INFO] ============================================================
+2026-03-06 16:38:43,122 [INFO] ============================================================
+2026-03-06 16:38:43,126 [INFO] BẮT ĐẦU ĐỒNG BỘ NGÀY: 2026-02-28
+2026-03-06 16:38:43,126 [INFO] BẮT ĐẦU ĐỒNG BỘ NGÀY: 2026-02-28
+2026-03-06 16:38:43,129 [INFO] ============================================================
+2026-03-06 16:38:43,129 [INFO] ============================================================
+2026-03-06 16:38:43,130 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-06 16:38:43,130 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-06 16:38:43,255 [INFO] Kết nối QuickBooks Desktop thành công!
+2026-03-06 16:38:43,255 [INFO] Kết nối QuickBooks Desktop thành công!
+2026-03-06 16:38:43,439 [INFO] Đã ngắt kết nối QuickBooks Desktop
+2026-03-06 16:38:43,439 [INFO] Đã ngắt kết nối QuickBooks Desktop
+2026-03-06 16:38:43,439 [INFO] Lấy đơn hàng ngày 20260228, trang 1...
+2026-03-06 16:38:43,439 [INFO] Lấy đơn hàng ngày 20260228, trang 1...
+2026-03-06 16:38:43,445 [INFO] Đang xác thực với Toast API...
+2026-03-06 16:38:43,445 [INFO] Đang xác thực với Toast API...
+2026-03-06 16:38:44,112 [INFO] Xác thực Toast API thành công!
+2026-03-06 16:38:44,112 [INFO] Xác thực Toast API thành công!
+2026-03-06 16:38:45,383 [INFO] Lấy đơn hàng ngày 20260228, trang 2...
+2026-03-06 16:38:45,383 [INFO] Lấy đơn hàng ngày 20260228, trang 2...
+2026-03-06 16:38:54,859 [INFO] Lấy đơn hàng ngày 20260228, trang 3...
+2026-03-06 16:38:54,859 [INFO] Lấy đơn hàng ngày 20260228, trang 3...
+2026-03-06 16:38:55,674 [INFO] Tổng cộng 207 đơn hàng ngày 20260228
+2026-03-06 16:38:55,674 [INFO] Tổng cộng 207 đơn hàng ngày 20260228
+2026-03-06 16:38:55,674 [INFO] Lấy danh sách MenuGroup từ Toast...
+2026-03-06 16:38:55,674 [INFO] Lấy danh sách MenuGroup từ Toast...
+2026-03-06 16:38:56,425 [INFO] Lấy danh sách DiningOption từ Toast...
+2026-03-06 16:38:56,425 [INFO] Lấy danh sách DiningOption từ Toast...
+2026-03-06 16:38:57,090 [INFO] Lấy danh sách RevenueCenter từ Toast...
+2026-03-06 16:38:57,090 [INFO] Lấy danh sách RevenueCenter từ Toast...
+2026-03-06 16:38:57,763 [INFO] 
+──────────────────────────────────────────────────
+2026-03-06 16:38:57,763 [INFO] 
+──────────────────────────────────────────────────
+2026-03-06 16:38:57,763 [INFO] 📊 BÁO CÁO DOANH THU NGÀY 2026-02-28
+2026-03-06 16:38:57,763 [INFO] 📊 BÁO CÁO DOANH THU NGÀY 2026-02-28
+2026-03-06 16:38:57,765 [INFO] ──────────────────────────────────────────────────
+2026-03-06 16:38:57,765 [INFO] ──────────────────────────────────────────────────
+2026-03-06 16:38:57,769 [INFO]   Số đơn hàng:          205
+2026-03-06 16:38:57,769 [INFO]   Số đơn hàng:          205
+2026-03-06 16:38:57,771 [INFO]   Doanh thu gộp:        $    10101.50
+2026-03-06 16:38:57,771 [INFO]   Doanh thu gộp:        $    10101.50
+2026-03-06 16:38:57,772 [INFO]   Giảm giá:             $      373.94
+2026-03-06 16:38:57,772 [INFO]   Giảm giá:             $      373.94
+2026-03-06 16:38:57,774 [INFO]   Doanh thu thuần:      $     9727.56
+2026-03-06 16:38:57,774 [INFO]   Doanh thu thuần:      $     9727.56
+2026-03-06 16:38:57,775 [INFO]   Thuế:                 $      893.64
+2026-03-06 16:38:57,775 [INFO]   Thuế:                 $      893.64
+2026-03-06 16:38:57,780 [INFO]   Tips:                 $     1698.29
+2026-03-06 16:38:57,780 [INFO]   Tips:                 $     1698.29
+2026-03-06 16:38:57,782 [INFO]   Phí dịch vụ:          $        3.99
+2026-03-06 16:38:57,782 [INFO]   Phí dịch vụ:          $        3.99
+2026-03-06 16:38:57,783 [INFO]   ───── Doanh thu theo loại ─────
+2026-03-06 16:38:57,783 [INFO]   ───── Doanh thu theo loại ─────
+2026-03-06 16:38:57,784 [INFO]     bar                    $     1100.49
+2026-03-06 16:38:57,784 [INFO]     bar                    $     1100.49
+2026-03-06 16:38:57,786 [INFO]     food                   $     9001.01
+2026-03-06 16:38:57,786 [INFO]     food                   $     9001.01
+2026-03-06 16:38:57,787 [INFO]   ───── Doanh thu theo kênh ─────
+2026-03-06 16:38:57,787 [INFO]   ───── Doanh thu theo kênh ─────
+2026-03-06 16:38:57,792 [INFO]     doordash               $      466.66
+2026-03-06 16:38:57,792 [INFO]     doordash               $      466.66
+2026-03-06 16:38:57,798 [INFO]     grubhub                $       37.32
+2026-03-06 16:38:57,798 [INFO]     grubhub                $       37.32
+2026-03-06 16:38:57,803 [INFO]     in_store               $     9171.21
+2026-03-06 16:38:57,803 [INFO]     in_store               $     9171.21
+2026-03-06 16:38:57,804 [INFO]     online                 $      252.86
+2026-03-06 16:38:57,804 [INFO]     online                 $      252.86
+2026-03-06 16:38:57,806 [INFO]     uber_eats              $      173.45
+2026-03-06 16:38:57,806 [INFO]     uber_eats              $      173.45
+2026-03-06 16:38:57,807 [INFO]   ───── Theo Revenue Center ─────
+2026-03-06 16:38:57,807 [INFO]   ───── Theo Revenue Center ─────
+2026-03-06 16:38:57,810 [INFO]     Bar                    $       20.99
+2026-03-06 16:38:57,810 [INFO]     Bar                    $       20.99
+2026-03-06 16:38:57,811 [INFO]     Dining Room            $     5422.49
+2026-03-06 16:38:57,811 [INFO]     Dining Room            $     5422.49
+2026-03-06 16:38:57,813 [INFO]     Online Ordering        $      252.86
+2026-03-06 16:38:57,813 [INFO]     Online Ordering        $      252.86
+2026-03-06 16:38:57,820 [INFO]     Patio                  $     3488.07
+2026-03-06 16:38:57,820 [INFO]     Patio                  $     3488.07
+2026-03-06 16:38:57,821 [INFO]   ───── Thanh toán ─────
+2026-03-06 16:38:57,821 [INFO]   ───── Thanh toán ─────
+2026-03-06 16:38:57,827 [INFO]   Tiền mặt:             $      960.96
+2026-03-06 16:38:57,827 [INFO]   Tiền mặt:             $      960.96
+2026-03-06 16:38:57,829 [INFO]   Thẻ tín dụng:         $     8921.91
+2026-03-06 16:38:57,829 [INFO]   Thẻ tín dụng:         $     8921.91
+2026-03-06 16:38:57,831 [INFO]   Gift card:            $        0.00
+2026-03-06 16:38:57,831 [INFO]   Gift card:            $        0.00
+2026-03-06 16:38:57,836 [INFO]   Khác:                 $      742.33
+2026-03-06 16:38:57,836 [INFO]   Khác:                 $      742.33
+2026-03-06 16:38:57,837 [INFO]   Hoàn tiền:            $        0.00
+2026-03-06 16:38:57,837 [INFO]   Hoàn tiền:            $        0.00
+2026-03-06 16:38:57,839 [INFO] ──────────────────────────────────────────────────
+
+2026-03-06 16:38:57,839 [INFO] ──────────────────────────────────────────────────
+
+2026-03-06 16:38:57,841 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-06 16:38:57,841 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-06 16:38:57,922 [INFO] Kết nối QuickBooks Desktop thành công!
+2026-03-06 16:38:57,922 [INFO] Kết nối QuickBooks Desktop thành công!
+2026-03-06 16:38:57,923 [INFO] Tạo Sales Receipt: #20260228 ngày 2026-02-28
+2026-03-06 16:38:57,923 [INFO] Tạo Sales Receipt: #20260228 ngày 2026-02-28
+2026-03-06 16:38:58,365 [INFO] ✅ Sales Receipt tạo thành công! TxnID: 6A550-1772789938
+2026-03-06 16:38:58,365 [INFO] ✅ Sales Receipt tạo thành công! TxnID: 6A550-1772789938
+2026-03-06 16:38:58,366 [INFO] Đã ngắt kết nối QuickBooks Desktop
+2026-03-06 16:38:58,366 [INFO] Đã ngắt kết nối QuickBooks Desktop
+2026-03-06 16:38:58,371 [INFO] 🎉 Đồng bộ hoàn tất!
+2026-03-06 16:38:58,371 [INFO] 🎉 Đồng bộ hoàn tất!

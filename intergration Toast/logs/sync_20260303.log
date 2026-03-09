@@ -1,0 +1,480 @@
+2026-03-03 12:31:06,354 [INFO] 📂 Đã load cấu hình từ config.json
+2026-03-03 12:31:12,990 [INFO] 🧪 Test kết nối Toast API...
+2026-03-03 12:31:12,990 [INFO] 🧪 Test kết nối Toast API...
+2026-03-03 12:31:12,990 [INFO] Đang xác thực với Toast API...
+2026-03-03 12:31:12,990 [INFO] Đang xác thực với Toast API...
+2026-03-03 12:31:15,347 [ERROR] ❌ Toast API lỗi: 401 Client Error: Unauthorized for url: https://ws-api.toasttab.com/authentication/v1/authentication/login
+2026-03-03 12:31:15,347 [ERROR] ❌ Toast API lỗi: 401 Client Error: Unauthorized for url: https://ws-api.toasttab.com/authentication/v1/authentication/login
+2026-03-03 12:32:08,216 [INFO] 🧪 Test kết nối Toast API...
+2026-03-03 12:32:08,216 [INFO] 🧪 Test kết nối Toast API...
+2026-03-03 12:32:08,224 [INFO] Đang xác thực với Toast API...
+2026-03-03 12:32:08,224 [INFO] Đang xác thực với Toast API...
+2026-03-03 12:32:08,824 [ERROR] ❌ Toast API lỗi: 401 Client Error: Unauthorized for url: https://ws-api.toasttab.com/authentication/v1/authentication/login
+2026-03-03 12:32:08,824 [ERROR] ❌ Toast API lỗi: 401 Client Error: Unauthorized for url: https://ws-api.toasttab.com/authentication/v1/authentication/login
+2026-03-03 12:32:13,001 [INFO] 🧪 Test kết nối Toast API...
+2026-03-03 12:32:13,001 [INFO] 🧪 Test kết nối Toast API...
+2026-03-03 12:32:13,006 [INFO] Đang xác thực với Toast API...
+2026-03-03 12:32:13,006 [INFO] Đang xác thực với Toast API...
+2026-03-03 12:32:14,377 [ERROR] ❌ Toast API lỗi: 401 Client Error: Unauthorized for url: https://ws-api.toasttab.com/authentication/v1/authentication/login
+2026-03-03 12:32:14,377 [ERROR] ❌ Toast API lỗi: 401 Client Error: Unauthorized for url: https://ws-api.toasttab.com/authentication/v1/authentication/login
+2026-03-03 12:34:15,875 [INFO] 💾 Đã lưu cấu hình vào config.json
+2026-03-03 12:34:15,875 [INFO] 💾 Đã lưu cấu hình vào config.json
+2026-03-03 12:34:16,798 [INFO] 🧪 Test kết nối Toast API...
+2026-03-03 12:34:16,798 [INFO] 🧪 Test kết nối Toast API...
+2026-03-03 12:34:16,805 [INFO] Đang xác thực với Toast API...
+2026-03-03 12:34:16,805 [INFO] Đang xác thực với Toast API...
+2026-03-03 12:34:18,112 [INFO] Xác thực Toast API thành công!
+2026-03-03 12:34:18,112 [INFO] Xác thực Toast API thành công!
+2026-03-03 12:34:18,115 [INFO] ✅ Kết nối Toast API thành công!
+2026-03-03 12:34:18,115 [INFO] ✅ Kết nối Toast API thành công!
+2026-03-03 12:34:21,452 [INFO] 🧪 Test kết nối QuickBooks Desktop...
+2026-03-03 12:34:21,452 [INFO] 🧪 Test kết nối QuickBooks Desktop...
+2026-03-03 12:34:21,457 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-03 12:34:21,457 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-03 12:34:21,460 [ERROR] Không thể kết nối QuickBooks Desktop: (-2147221008, 'CoInitialize has not been called.', None, None)
+2026-03-03 12:34:21,460 [ERROR] Không thể kết nối QuickBooks Desktop: (-2147221008, 'CoInitialize has not been called.', None, None)
+2026-03-03 12:34:21,461 [ERROR] Đảm bảo:
+  1. QuickBooks Desktop đang mở
+  2. Python cùng kiến trúc (32/64-bit) với QuickBooks
+  3. Chạy script với quyền admin nếu lần đầu
+2026-03-03 12:34:21,461 [ERROR] Đảm bảo:
+  1. QuickBooks Desktop đang mở
+  2. Python cùng kiến trúc (32/64-bit) với QuickBooks
+  3. Chạy script với quyền admin nếu lần đầu
+2026-03-03 12:34:21,462 [ERROR] ❌ QuickBooks lỗi: (-2147221008, 'CoInitialize has not been called.', None, None)
+2026-03-03 12:34:21,462 [ERROR] ❌ QuickBooks lỗi: (-2147221008, 'CoInitialize has not been called.', None, None)
+2026-03-03 12:45:38,083 [INFO] 🧪 Test kết nối Toast API...
+2026-03-03 12:45:38,083 [INFO] 🧪 Test kết nối Toast API...
+2026-03-03 12:45:38,088 [INFO] Đang xác thực với Toast API...
+2026-03-03 12:45:38,088 [INFO] Đang xác thực với Toast API...
+2026-03-03 12:45:39,232 [INFO] Xác thực Toast API thành công!
+2026-03-03 12:45:39,232 [INFO] Xác thực Toast API thành công!
+2026-03-03 12:45:39,234 [INFO] ✅ Kết nối Toast API thành công!
+2026-03-03 12:45:39,234 [INFO] ✅ Kết nối Toast API thành công!
+2026-03-03 12:45:42,238 [INFO] 🧪 Test kết nối QuickBooks Desktop...
+2026-03-03 12:45:42,238 [INFO] 🧪 Test kết nối QuickBooks Desktop...
+2026-03-03 12:45:42,245 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-03 12:45:42,245 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-03 12:45:42,246 [ERROR] Không thể kết nối QuickBooks Desktop: (-2147221008, 'CoInitialize has not been called.', None, None)
+2026-03-03 12:45:42,246 [ERROR] Không thể kết nối QuickBooks Desktop: (-2147221008, 'CoInitialize has not been called.', None, None)
+2026-03-03 12:45:42,249 [ERROR] Đảm bảo:
+  1. QuickBooks Desktop đang mở
+  2. Python cùng kiến trúc (32/64-bit) với QuickBooks
+  3. Chạy script với quyền admin nếu lần đầu
+2026-03-03 12:45:42,249 [ERROR] Đảm bảo:
+  1. QuickBooks Desktop đang mở
+  2. Python cùng kiến trúc (32/64-bit) với QuickBooks
+  3. Chạy script với quyền admin nếu lần đầu
+2026-03-03 12:45:42,250 [ERROR] ❌ QuickBooks lỗi: (-2147221008, 'CoInitialize has not been called.', None, None)
+2026-03-03 12:45:42,250 [ERROR] ❌ QuickBooks lỗi: (-2147221008, 'CoInitialize has not been called.', None, None)
+2026-03-03 12:52:38,024 [INFO] 🧪 Test kết nối Toast API...
+2026-03-03 12:52:38,024 [INFO] 🧪 Test kết nối Toast API...
+2026-03-03 12:52:38,029 [INFO] Đang xác thực với Toast API...
+2026-03-03 12:52:38,029 [INFO] Đang xác thực với Toast API...
+2026-03-03 12:52:39,229 [INFO] Xác thực Toast API thành công!
+2026-03-03 12:52:39,229 [INFO] Xác thực Toast API thành công!
+2026-03-03 12:52:39,231 [INFO] ✅ Kết nối Toast API thành công!
+2026-03-03 12:52:39,231 [INFO] ✅ Kết nối Toast API thành công!
+2026-03-03 12:52:45,833 [INFO] 🧪 Test kết nối QuickBooks Desktop...
+2026-03-03 12:52:45,833 [INFO] 🧪 Test kết nối QuickBooks Desktop...
+2026-03-03 12:52:45,838 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-03 12:52:45,838 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-03 12:52:45,839 [ERROR] Không thể kết nối QuickBooks Desktop: (-2147221008, 'CoInitialize has not been called.', None, None)
+2026-03-03 12:52:45,839 [ERROR] Không thể kết nối QuickBooks Desktop: (-2147221008, 'CoInitialize has not been called.', None, None)
+2026-03-03 12:52:45,844 [ERROR] Đảm bảo:
+  1. QuickBooks Desktop đang mở
+  2. Python cùng kiến trúc (32/64-bit) với QuickBooks
+  3. Chạy script với quyền admin nếu lần đầu
+2026-03-03 12:52:45,844 [ERROR] Đảm bảo:
+  1. QuickBooks Desktop đang mở
+  2. Python cùng kiến trúc (32/64-bit) với QuickBooks
+  3. Chạy script với quyền admin nếu lần đầu
+2026-03-03 12:52:45,844 [ERROR] ❌ QuickBooks lỗi: (-2147221008, 'CoInitialize has not been called.', None, None)
+2026-03-03 12:52:45,844 [ERROR] ❌ QuickBooks lỗi: (-2147221008, 'CoInitialize has not been called.', None, None)
+2026-03-03 12:53:11,473 [INFO] 🧪 Test kết nối QuickBooks Desktop...
+2026-03-03 12:53:11,473 [INFO] 🧪 Test kết nối QuickBooks Desktop...
+2026-03-03 12:53:11,478 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-03 12:53:11,478 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-03 12:53:11,479 [ERROR] Không thể kết nối QuickBooks Desktop: (-2147221008, 'CoInitialize has not been called.', None, None)
+2026-03-03 12:53:11,479 [ERROR] Không thể kết nối QuickBooks Desktop: (-2147221008, 'CoInitialize has not been called.', None, None)
+2026-03-03 12:53:11,480 [ERROR] Đảm bảo:
+  1. QuickBooks Desktop đang mở
+  2. Python cùng kiến trúc (32/64-bit) với QuickBooks
+  3. Chạy script với quyền admin nếu lần đầu
+2026-03-03 12:53:11,480 [ERROR] Đảm bảo:
+  1. QuickBooks Desktop đang mở
+  2. Python cùng kiến trúc (32/64-bit) với QuickBooks
+  3. Chạy script với quyền admin nếu lần đầu
+2026-03-03 12:53:11,486 [ERROR] ❌ QuickBooks lỗi: (-2147221008, 'CoInitialize has not been called.', None, None)
+2026-03-03 12:53:11,486 [ERROR] ❌ QuickBooks lỗi: (-2147221008, 'CoInitialize has not been called.', None, None)
+2026-03-03 12:54:52,549 [INFO] 📂 Đã load cấu hình từ config.json
+2026-03-03 12:54:59,407 [INFO] 📂 Đã load cấu hình từ config.json
+2026-03-03 12:56:00,377 [INFO] ============================================================
+2026-03-03 12:56:00,377 [INFO] ============================================================
+2026-03-03 12:58:41,545 [INFO] 📂 Đã load cấu hình từ config.json
+2026-03-03 12:58:48,375 [INFO] ============================================================
+2026-03-03 12:58:48,375 [INFO] ============================================================
+2026-03-03 12:58:48,376 [INFO] BẮT ĐẦU ĐỒNG BỘ NGÀY: 2026-03-02
+2026-03-03 12:58:48,376 [INFO] BẮT ĐẦU ĐỒNG BỘ NGÀY: 2026-03-02
+2026-03-03 12:58:48,377 [INFO] ============================================================
+2026-03-03 12:58:48,377 [INFO] ============================================================
+2026-03-03 12:58:48,377 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-03 12:58:48,377 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-03 12:58:48,379 [ERROR] Không thể kết nối QuickBooks Desktop: (-2147221008, 'CoInitialize has not been called.', None, None)
+2026-03-03 12:58:48,379 [ERROR] Không thể kết nối QuickBooks Desktop: (-2147221008, 'CoInitialize has not been called.', None, None)
+2026-03-03 12:58:48,379 [ERROR] Đảm bảo:
+  1. QuickBooks Desktop đang mở
+  2. Python cùng kiến trúc (32/64-bit) với QuickBooks
+  3. Chạy script với quyền admin nếu lần đầu
+2026-03-03 12:58:48,379 [ERROR] Đảm bảo:
+  1. QuickBooks Desktop đang mở
+  2. Python cùng kiến trúc (32/64-bit) với QuickBooks
+  3. Chạy script với quyền admin nếu lần đầu
+2026-03-03 12:58:48,380 [ERROR] Lỗi kết nối QuickBooks: (-2147221008, 'CoInitialize has not been called.', None, None)
+2026-03-03 12:58:48,380 [ERROR] Lỗi kết nối QuickBooks: (-2147221008, 'CoInitialize has not been called.', None, None)
+2026-03-03 12:58:48,381 [ERROR] Đồng bộ thất bại: (-2147221008, 'CoInitialize has not been called.', None, None)
+2026-03-03 12:58:48,381 [ERROR] Đồng bộ thất bại: (-2147221008, 'CoInitialize has not been called.', None, None)
+2026-03-03 13:01:24,064 [INFO] 📂 Đã load cấu hình từ config.json
+2026-03-03 13:01:27,579 [INFO] 🧪 Test kết nối Toast API...
+2026-03-03 13:01:27,579 [INFO] 🧪 Test kết nối Toast API...
+2026-03-03 13:01:27,579 [INFO] Đang xác thực với Toast API...
+2026-03-03 13:01:27,579 [INFO] Đang xác thực với Toast API...
+2026-03-03 13:01:29,044 [INFO] Xác thực Toast API thành công!
+2026-03-03 13:01:29,044 [INFO] Xác thực Toast API thành công!
+2026-03-03 13:01:29,046 [INFO] ✅ Kết nối Toast API thành công!
+2026-03-03 13:01:29,046 [INFO] ✅ Kết nối Toast API thành công!
+2026-03-03 13:01:31,071 [INFO] 🧪 Test kết nối QuickBooks Desktop...
+2026-03-03 13:01:31,071 [INFO] 🧪 Test kết nối QuickBooks Desktop...
+2026-03-03 13:01:31,078 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-03 13:01:31,078 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-03 13:01:31,079 [ERROR] Không thể kết nối QuickBooks Desktop: (-2147221008, 'CoInitialize has not been called.', None, None)
+2026-03-03 13:01:31,079 [ERROR] Không thể kết nối QuickBooks Desktop: (-2147221008, 'CoInitialize has not been called.', None, None)
+2026-03-03 13:01:31,084 [ERROR] Đảm bảo:
+  1. QuickBooks Desktop đang mở
+  2. Python cùng kiến trúc (32/64-bit) với QuickBooks
+  3. Chạy script với quyền admin nếu lần đầu
+2026-03-03 13:01:31,084 [ERROR] Đảm bảo:
+  1. QuickBooks Desktop đang mở
+  2. Python cùng kiến trúc (32/64-bit) với QuickBooks
+  3. Chạy script với quyền admin nếu lần đầu
+2026-03-03 13:01:31,085 [ERROR] ❌ QuickBooks lỗi: (-2147221008, 'CoInitialize has not been called.', None, None)
+2026-03-03 13:01:31,085 [ERROR] ❌ QuickBooks lỗi: (-2147221008, 'CoInitialize has not been called.', None, None)
+2026-03-03 13:02:43,761 [INFO] 🧪 Test kết nối QuickBooks Desktop...
+2026-03-03 13:02:43,761 [INFO] 🧪 Test kết nối QuickBooks Desktop...
+2026-03-03 13:02:43,770 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-03 13:02:43,770 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-03 13:02:43,771 [ERROR] Không thể kết nối QuickBooks Desktop: (-2147221008, 'CoInitialize has not been called.', None, None)
+2026-03-03 13:02:43,771 [ERROR] Không thể kết nối QuickBooks Desktop: (-2147221008, 'CoInitialize has not been called.', None, None)
+2026-03-03 13:02:43,773 [ERROR] Đảm bảo:
+  1. QuickBooks Desktop đang mở
+  2. Python cùng kiến trúc (32/64-bit) với QuickBooks
+  3. Chạy script với quyền admin nếu lần đầu
+2026-03-03 13:02:43,773 [ERROR] Đảm bảo:
+  1. QuickBooks Desktop đang mở
+  2. Python cùng kiến trúc (32/64-bit) với QuickBooks
+  3. Chạy script với quyền admin nếu lần đầu
+2026-03-03 13:02:43,774 [ERROR] ❌ QuickBooks lỗi: (-2147221008, 'CoInitialize has not been called.', None, None)
+2026-03-03 13:02:43,774 [ERROR] ❌ QuickBooks lỗi: (-2147221008, 'CoInitialize has not been called.', None, None)
+2026-03-03 13:03:36,950 [INFO] 📂 Đã load cấu hình từ config.json
+2026-03-03 13:03:39,800 [INFO] 🧪 Test kết nối QuickBooks Desktop...
+2026-03-03 13:03:39,800 [INFO] 🧪 Test kết nối QuickBooks Desktop...
+2026-03-03 13:03:39,800 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-03 13:03:39,800 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-03 13:03:39,829 [ERROR] Không thể kết nối QuickBooks Desktop: (-2147221008, 'CoInitialize has not been called.', None, None)
+2026-03-03 13:03:39,829 [ERROR] Không thể kết nối QuickBooks Desktop: (-2147221008, 'CoInitialize has not been called.', None, None)
+2026-03-03 13:03:39,829 [ERROR] Đảm bảo:
+  1. QuickBooks Desktop đang mở
+  2. Python cùng kiến trúc (32/64-bit) với QuickBooks
+  3. Chạy script với quyền admin nếu lần đầu
+2026-03-03 13:03:39,829 [ERROR] Đảm bảo:
+  1. QuickBooks Desktop đang mở
+  2. Python cùng kiến trúc (32/64-bit) với QuickBooks
+  3. Chạy script với quyền admin nếu lần đầu
+2026-03-03 13:03:39,830 [ERROR] ❌ QuickBooks lỗi: (-2147221008, 'CoInitialize has not been called.', None, None)
+2026-03-03 13:03:39,830 [ERROR] ❌ QuickBooks lỗi: (-2147221008, 'CoInitialize has not been called.', None, None)
+2026-03-03 13:03:48,250 [INFO] 🧪 Test kết nối QuickBooks Desktop...
+2026-03-03 13:03:48,250 [INFO] 🧪 Test kết nối QuickBooks Desktop...
+2026-03-03 13:03:48,254 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-03 13:03:48,254 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-03 13:03:48,254 [ERROR] Không thể kết nối QuickBooks Desktop: (-2147221008, 'CoInitialize has not been called.', None, None)
+2026-03-03 13:03:48,254 [ERROR] Không thể kết nối QuickBooks Desktop: (-2147221008, 'CoInitialize has not been called.', None, None)
+2026-03-03 13:03:48,255 [ERROR] Đảm bảo:
+  1. QuickBooks Desktop đang mở
+  2. Python cùng kiến trúc (32/64-bit) với QuickBooks
+  3. Chạy script với quyền admin nếu lần đầu
+2026-03-03 13:03:48,255 [ERROR] Đảm bảo:
+  1. QuickBooks Desktop đang mở
+  2. Python cùng kiến trúc (32/64-bit) với QuickBooks
+  3. Chạy script với quyền admin nếu lần đầu
+2026-03-03 13:03:48,259 [ERROR] ❌ QuickBooks lỗi: (-2147221008, 'CoInitialize has not been called.', None, None)
+2026-03-03 13:03:48,259 [ERROR] ❌ QuickBooks lỗi: (-2147221008, 'CoInitialize has not been called.', None, None)
+2026-03-03 13:07:01,814 [INFO] 🧪 Test kết nối QuickBooks Desktop...
+2026-03-03 13:07:01,814 [INFO] 🧪 Test kết nối QuickBooks Desktop...
+2026-03-03 13:07:01,817 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-03 13:07:01,817 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-03 13:07:01,817 [ERROR] Không thể kết nối QuickBooks Desktop: (-2147221008, 'CoInitialize has not been called.', None, None)
+2026-03-03 13:07:01,817 [ERROR] Không thể kết nối QuickBooks Desktop: (-2147221008, 'CoInitialize has not been called.', None, None)
+2026-03-03 13:07:01,820 [ERROR] Đảm bảo:
+  1. QuickBooks Desktop đang mở
+  2. Python cùng kiến trúc (32/64-bit) với QuickBooks
+  3. Chạy script với quyền admin nếu lần đầu
+2026-03-03 13:07:01,820 [ERROR] Đảm bảo:
+  1. QuickBooks Desktop đang mở
+  2. Python cùng kiến trúc (32/64-bit) với QuickBooks
+  3. Chạy script với quyền admin nếu lần đầu
+2026-03-03 13:07:01,821 [ERROR] ❌ QuickBooks lỗi: (-2147221008, 'CoInitialize has not been called.', None, None)
+2026-03-03 13:07:01,821 [ERROR] ❌ QuickBooks lỗi: (-2147221008, 'CoInitialize has not been called.', None, None)
+2026-03-03 13:17:22,670 [INFO] 📂 Đã load cấu hình từ config.json
+2026-03-03 13:17:28,819 [INFO] 🧪 Test kết nối QuickBooks Desktop...
+2026-03-03 13:17:28,819 [INFO] 🧪 Test kết nối QuickBooks Desktop...
+2026-03-03 13:17:28,819 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-03 13:17:28,819 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-03 13:17:28,971 [INFO] Kết nối QuickBooks Desktop thành công!
+2026-03-03 13:17:28,971 [INFO] Kết nối QuickBooks Desktop thành công!
+2026-03-03 13:17:28,972 [INFO] ✅ Kết nối QuickBooks Desktop thành công!
+2026-03-03 13:17:28,972 [INFO] ✅ Kết nối QuickBooks Desktop thành công!
+2026-03-03 13:17:28,974 [INFO] Đã ngắt kết nối QuickBooks Desktop
+2026-03-03 13:17:28,974 [INFO] Đã ngắt kết nối QuickBooks Desktop
+2026-03-03 13:17:47,994 [INFO] 🧪 Test kết nối Toast API...
+2026-03-03 13:17:47,994 [INFO] 🧪 Test kết nối Toast API...
+2026-03-03 13:17:47,998 [INFO] Đang xác thực với Toast API...
+2026-03-03 13:17:47,998 [INFO] Đang xác thực với Toast API...
+2026-03-03 13:17:48,707 [ERROR] ❌ Toast API lỗi: 401 Client Error: Unauthorized for url: https://ws-api.toasttab.com/authentication/v1/authentication/login
+2026-03-03 13:17:48,707 [ERROR] ❌ Toast API lỗi: 401 Client Error: Unauthorized for url: https://ws-api.toasttab.com/authentication/v1/authentication/login
+2026-03-03 13:18:34,070 [INFO] 🧪 Test kết nối Toast API...
+2026-03-03 13:18:34,070 [INFO] 🧪 Test kết nối Toast API...
+2026-03-03 13:18:34,073 [INFO] Đang xác thực với Toast API...
+2026-03-03 13:18:34,073 [INFO] Đang xác thực với Toast API...
+2026-03-03 13:18:34,731 [INFO] Xác thực Toast API thành công!
+2026-03-03 13:18:34,731 [INFO] Xác thực Toast API thành công!
+2026-03-03 13:18:34,732 [INFO] ✅ Kết nối Toast API thành công!
+2026-03-03 13:18:34,732 [INFO] ✅ Kết nối Toast API thành công!
+2026-03-03 13:19:01,695 [INFO] ============================================================
+2026-03-03 13:19:01,695 [INFO] ============================================================
+2026-03-03 13:19:01,697 [INFO] BẮT ĐẦU ĐỒNG BỘ NGÀY: 2026-03-01
+2026-03-03 13:19:01,697 [INFO] BẮT ĐẦU ĐỒNG BỘ NGÀY: 2026-03-01
+2026-03-03 13:19:01,697 [INFO] ============================================================
+2026-03-03 13:19:01,697 [INFO] ============================================================
+2026-03-03 13:19:01,698 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-03 13:19:01,698 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-03 13:19:01,776 [INFO] Kết nối QuickBooks Desktop thành công!
+2026-03-03 13:19:01,776 [INFO] Kết nối QuickBooks Desktop thành công!
+2026-03-03 13:19:09,456 [ERROR] Lỗi kết nối QuickBooks: (-2147352567, 'Exception occurred.', (0, 'QBXMLRP2.RequestProcessor.2', 'If the QuickBooks company data file is not open, a call to the "BeginSession" method must include the name of the data file.', None, 0, -2147220457), None)
+2026-03-03 13:19:09,456 [ERROR] Lỗi kết nối QuickBooks: (-2147352567, 'Exception occurred.', (0, 'QBXMLRP2.RequestProcessor.2', 'If the QuickBooks company data file is not open, a call to the "BeginSession" method must include the name of the data file.', None, 0, -2147220457), None)
+2026-03-03 13:19:09,501 [INFO] Đã ngắt kết nối QuickBooks Desktop
+2026-03-03 13:19:09,501 [INFO] Đã ngắt kết nối QuickBooks Desktop
+2026-03-03 13:19:09,502 [ERROR] Đồng bộ thất bại: (-2147352567, 'Exception occurred.', (0, 'QBXMLRP2.RequestProcessor.2', 'If the QuickBooks company data file is not open, a call to the "BeginSession" method must include the name of the data file.', None, 0, -2147220457), None)
+2026-03-03 13:19:09,502 [ERROR] Đồng bộ thất bại: (-2147352567, 'Exception occurred.', (0, 'QBXMLRP2.RequestProcessor.2', 'If the QuickBooks company data file is not open, a call to the "BeginSession" method must include the name of the data file.', None, 0, -2147220457), None)
+2026-03-03 13:19:19,071 [INFO] ============================================================
+2026-03-03 13:19:19,071 [INFO] ============================================================
+2026-03-03 13:19:19,072 [INFO] BẮT ĐẦU ĐỒNG BỘ NGÀY: 2026-03-01
+2026-03-03 13:19:19,072 [INFO] BẮT ĐẦU ĐỒNG BỘ NGÀY: 2026-03-01
+2026-03-03 13:19:19,073 [INFO] ============================================================
+2026-03-03 13:19:19,073 [INFO] ============================================================
+2026-03-03 13:19:19,075 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-03 13:19:19,075 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-03 13:19:19,187 [INFO] Kết nối QuickBooks Desktop thành công!
+2026-03-03 13:19:19,187 [INFO] Kết nối QuickBooks Desktop thành công!
+2026-03-03 13:19:19,259 [ERROR] Lỗi kết nối QuickBooks: (-2147352567, 'Exception occurred.', (0, 'QBXMLRP2.RequestProcessor.2', 'If the QuickBooks company data file is not open, a call to the "BeginSession" method must include the name of the data file.', None, 0, -2147220457), None)
+2026-03-03 13:19:19,259 [ERROR] Lỗi kết nối QuickBooks: (-2147352567, 'Exception occurred.', (0, 'QBXMLRP2.RequestProcessor.2', 'If the QuickBooks company data file is not open, a call to the "BeginSession" method must include the name of the data file.', None, 0, -2147220457), None)
+2026-03-03 13:19:19,260 [INFO] Đã ngắt kết nối QuickBooks Desktop
+2026-03-03 13:19:19,260 [INFO] Đã ngắt kết nối QuickBooks Desktop
+2026-03-03 13:19:19,262 [ERROR] Đồng bộ thất bại: (-2147352567, 'Exception occurred.', (0, 'QBXMLRP2.RequestProcessor.2', 'If the QuickBooks company data file is not open, a call to the "BeginSession" method must include the name of the data file.', None, 0, -2147220457), None)
+2026-03-03 13:19:19,262 [ERROR] Đồng bộ thất bại: (-2147352567, 'Exception occurred.', (0, 'QBXMLRP2.RequestProcessor.2', 'If the QuickBooks company data file is not open, a call to the "BeginSession" method must include the name of the data file.', None, 0, -2147220457), None)
+2026-03-03 13:20:06,836 [INFO] ============================================================
+2026-03-03 13:20:06,836 [INFO] ============================================================
+2026-03-03 13:20:06,840 [INFO] BẮT ĐẦU ĐỒNG BỘ NGÀY: 2026-03-01
+2026-03-03 13:20:06,840 [INFO] BẮT ĐẦU ĐỒNG BỘ NGÀY: 2026-03-01
+2026-03-03 13:20:06,842 [INFO] ============================================================
+2026-03-03 13:20:06,842 [INFO] ============================================================
+2026-03-03 13:20:06,851 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-03 13:20:06,851 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-03 13:20:06,931 [INFO] Kết nối QuickBooks Desktop thành công!
+2026-03-03 13:20:06,931 [INFO] Kết nối QuickBooks Desktop thành công!
+2026-03-03 13:20:06,935 [ERROR] Lỗi kết nối QuickBooks: (-2147352567, 'Exception occurred.', (0, 'QBXMLRP2.RequestProcessor.2', 'Could not start QuickBooks.', None, 0, -2147220472), None)
+2026-03-03 13:20:06,935 [ERROR] Lỗi kết nối QuickBooks: (-2147352567, 'Exception occurred.', (0, 'QBXMLRP2.RequestProcessor.2', 'Could not start QuickBooks.', None, 0, -2147220472), None)
+2026-03-03 13:20:06,939 [INFO] Đã ngắt kết nối QuickBooks Desktop
+2026-03-03 13:20:06,939 [INFO] Đã ngắt kết nối QuickBooks Desktop
+2026-03-03 13:20:06,941 [ERROR] Đồng bộ thất bại: (-2147352567, 'Exception occurred.', (0, 'QBXMLRP2.RequestProcessor.2', 'Could not start QuickBooks.', None, 0, -2147220472), None)
+2026-03-03 13:20:06,941 [ERROR] Đồng bộ thất bại: (-2147352567, 'Exception occurred.', (0, 'QBXMLRP2.RequestProcessor.2', 'Could not start QuickBooks.', None, 0, -2147220472), None)
+2026-03-03 13:20:48,875 [INFO] ============================================================
+2026-03-03 13:20:48,875 [INFO] ============================================================
+2026-03-03 13:20:48,878 [INFO] BẮT ĐẦU ĐỒNG BỘ NGÀY: 2026-03-01
+2026-03-03 13:20:48,878 [INFO] BẮT ĐẦU ĐỒNG BỘ NGÀY: 2026-03-01
+2026-03-03 13:20:48,881 [INFO] ============================================================
+2026-03-03 13:20:48,881 [INFO] ============================================================
+2026-03-03 13:20:48,888 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-03 13:20:48,888 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-03 13:20:48,975 [INFO] Kết nối QuickBooks Desktop thành công!
+2026-03-03 13:20:48,975 [INFO] Kết nối QuickBooks Desktop thành công!
+2026-03-03 13:20:56,635 [ERROR] Lỗi kết nối QuickBooks: (-2147352567, 'Exception occurred.', (0, 'QBXMLRP2.RequestProcessor.2', 'If the QuickBooks company data file is not open, a call to the "BeginSession" method must include the name of the data file.', None, 0, -2147220457), None)
+2026-03-03 13:20:56,635 [ERROR] Lỗi kết nối QuickBooks: (-2147352567, 'Exception occurred.', (0, 'QBXMLRP2.RequestProcessor.2', 'If the QuickBooks company data file is not open, a call to the "BeginSession" method must include the name of the data file.', None, 0, -2147220457), None)
+2026-03-03 13:20:56,722 [INFO] Đã ngắt kết nối QuickBooks Desktop
+2026-03-03 13:20:56,722 [INFO] Đã ngắt kết nối QuickBooks Desktop
+2026-03-03 13:20:56,725 [ERROR] Đồng bộ thất bại: (-2147352567, 'Exception occurred.', (0, 'QBXMLRP2.RequestProcessor.2', 'If the QuickBooks company data file is not open, a call to the "BeginSession" method must include the name of the data file.', None, 0, -2147220457), None)
+2026-03-03 13:20:56,725 [ERROR] Đồng bộ thất bại: (-2147352567, 'Exception occurred.', (0, 'QBXMLRP2.RequestProcessor.2', 'If the QuickBooks company data file is not open, a call to the "BeginSession" method must include the name of the data file.', None, 0, -2147220457), None)
+2026-03-03 13:21:11,732 [INFO] ============================================================
+2026-03-03 13:21:11,732 [INFO] ============================================================
+2026-03-03 13:21:11,737 [INFO] BẮT ĐẦU ĐỒNG BỘ NGÀY: 2026-03-01
+2026-03-03 13:21:11,737 [INFO] BẮT ĐẦU ĐỒNG BỘ NGÀY: 2026-03-01
+2026-03-03 13:21:11,746 [INFO] ============================================================
+2026-03-03 13:21:11,746 [INFO] ============================================================
+2026-03-03 13:21:11,763 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-03 13:21:11,763 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-03 13:21:11,880 [INFO] Kết nối QuickBooks Desktop thành công!
+2026-03-03 13:21:11,880 [INFO] Kết nối QuickBooks Desktop thành công!
+2026-03-03 13:21:11,961 [ERROR] Lỗi kết nối QuickBooks: (-2147352567, 'Exception occurred.', (0, 'QBXMLRP2.RequestProcessor.2', 'If the QuickBooks company data file is not open, a call to the "BeginSession" method must include the name of the data file.', None, 0, -2147220457), None)
+2026-03-03 13:21:11,961 [ERROR] Lỗi kết nối QuickBooks: (-2147352567, 'Exception occurred.', (0, 'QBXMLRP2.RequestProcessor.2', 'If the QuickBooks company data file is not open, a call to the "BeginSession" method must include the name of the data file.', None, 0, -2147220457), None)
+2026-03-03 13:21:11,962 [INFO] Đã ngắt kết nối QuickBooks Desktop
+2026-03-03 13:21:11,962 [INFO] Đã ngắt kết nối QuickBooks Desktop
+2026-03-03 13:21:11,970 [ERROR] Đồng bộ thất bại: (-2147352567, 'Exception occurred.', (0, 'QBXMLRP2.RequestProcessor.2', 'If the QuickBooks company data file is not open, a call to the "BeginSession" method must include the name of the data file.', None, 0, -2147220457), None)
+2026-03-03 13:21:11,970 [ERROR] Đồng bộ thất bại: (-2147352567, 'Exception occurred.', (0, 'QBXMLRP2.RequestProcessor.2', 'If the QuickBooks company data file is not open, a call to the "BeginSession" method must include the name of the data file.', None, 0, -2147220457), None)
+2026-03-03 13:28:12,637 [INFO] 📂 Đã load cấu hình từ config.json
+2026-03-03 13:28:16,736 [INFO] 🧪 Test kết nối Toast API...
+2026-03-03 13:28:16,736 [INFO] 🧪 Test kết nối Toast API...
+2026-03-03 13:28:16,737 [INFO] Đang xác thực với Toast API...
+2026-03-03 13:28:16,737 [INFO] Đang xác thực với Toast API...
+2026-03-03 13:28:18,292 [ERROR] ❌ Toast API lỗi: 401 Client Error: Unauthorized for url: https://ws-api.toasttab.com/authentication/v1/authentication/login
+2026-03-03 13:28:18,292 [ERROR] ❌ Toast API lỗi: 401 Client Error: Unauthorized for url: https://ws-api.toasttab.com/authentication/v1/authentication/login
+2026-03-03 13:28:40,566 [INFO] 💾 Đã lưu cấu hình vào config.json
+2026-03-03 13:28:40,566 [INFO] 💾 Đã lưu cấu hình vào config.json
+2026-03-03 13:28:41,323 [INFO] 🧪 Test kết nối Toast API...
+2026-03-03 13:28:41,323 [INFO] 🧪 Test kết nối Toast API...
+2026-03-03 13:28:41,327 [INFO] Đang xác thực với Toast API...
+2026-03-03 13:28:41,327 [INFO] Đang xác thực với Toast API...
+2026-03-03 13:28:41,867 [INFO] Xác thực Toast API thành công!
+2026-03-03 13:28:41,867 [INFO] Xác thực Toast API thành công!
+2026-03-03 13:28:41,868 [INFO] ✅ Kết nối Toast API thành công!
+2026-03-03 13:28:41,868 [INFO] ✅ Kết nối Toast API thành công!
+2026-03-03 13:28:43,959 [INFO] 🧪 Test kết nối QuickBooks Desktop...
+2026-03-03 13:28:43,959 [INFO] 🧪 Test kết nối QuickBooks Desktop...
+2026-03-03 13:28:43,960 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-03 13:28:43,960 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-03 13:28:44,140 [INFO] Kết nối QuickBooks Desktop thành công!
+2026-03-03 13:28:44,140 [INFO] Kết nối QuickBooks Desktop thành công!
+2026-03-03 13:28:44,141 [INFO] ✅ Kết nối QuickBooks Desktop thành công!
+2026-03-03 13:28:44,141 [INFO] ✅ Kết nối QuickBooks Desktop thành công!
+2026-03-03 13:28:44,145 [INFO] Đã ngắt kết nối QuickBooks Desktop
+2026-03-03 13:28:44,145 [INFO] Đã ngắt kết nối QuickBooks Desktop
+2026-03-03 13:28:51,340 [INFO] ============================================================
+2026-03-03 13:28:51,340 [INFO] ============================================================
+2026-03-03 13:28:51,344 [INFO] BẮT ĐẦU ĐỒNG BỘ NGÀY: 2026-03-01
+2026-03-03 13:28:51,344 [INFO] BẮT ĐẦU ĐỒNG BỘ NGÀY: 2026-03-01
+2026-03-03 13:28:51,345 [INFO] ============================================================
+2026-03-03 13:28:51,345 [INFO] ============================================================
+2026-03-03 13:28:51,346 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-03 13:28:51,346 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-03 13:28:51,443 [INFO] Kết nối QuickBooks Desktop thành công!
+2026-03-03 13:28:51,443 [INFO] Kết nối QuickBooks Desktop thành công!
+2026-03-03 13:28:51,508 [ERROR] Lỗi kết nối QuickBooks: (-2147352567, 'Exception occurred.', (0, 'QBXMLRP2.RequestProcessor.2', 'Could not start QuickBooks.', None, 0, -2147220472), None)
+2026-03-03 13:28:51,508 [ERROR] Lỗi kết nối QuickBooks: (-2147352567, 'Exception occurred.', (0, 'QBXMLRP2.RequestProcessor.2', 'Could not start QuickBooks.', None, 0, -2147220472), None)
+2026-03-03 13:28:51,509 [INFO] Đã ngắt kết nối QuickBooks Desktop
+2026-03-03 13:28:51,509 [INFO] Đã ngắt kết nối QuickBooks Desktop
+2026-03-03 13:28:51,510 [ERROR] Đồng bộ thất bại: (-2147352567, 'Exception occurred.', (0, 'QBXMLRP2.RequestProcessor.2', 'Could not start QuickBooks.', None, 0, -2147220472), None)
+2026-03-03 13:28:51,510 [ERROR] Đồng bộ thất bại: (-2147352567, 'Exception occurred.', (0, 'QBXMLRP2.RequestProcessor.2', 'Could not start QuickBooks.', None, 0, -2147220472), None)
+2026-03-03 13:29:35,256 [INFO] ============================================================
+2026-03-03 13:29:35,256 [INFO] ============================================================
+2026-03-03 13:29:35,260 [INFO] BẮT ĐẦU ĐỒNG BỘ NGÀY: 2026-03-01
+2026-03-03 13:29:35,260 [INFO] BẮT ĐẦU ĐỒNG BỘ NGÀY: 2026-03-01
+2026-03-03 13:29:35,262 [INFO] ============================================================
+2026-03-03 13:29:35,262 [INFO] ============================================================
+2026-03-03 13:29:35,264 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-03 13:29:35,264 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-03 13:29:35,409 [INFO] Kết nối QuickBooks Desktop thành công!
+2026-03-03 13:29:35,409 [INFO] Kết nối QuickBooks Desktop thành công!
+2026-03-03 13:29:35,674 [INFO] Đã ngắt kết nối QuickBooks Desktop
+2026-03-03 13:29:35,674 [INFO] Đã ngắt kết nối QuickBooks Desktop
+2026-03-03 13:29:35,674 [INFO] Lấy đơn hàng ngày 20260301, trang 1...
+2026-03-03 13:29:35,674 [INFO] Lấy đơn hàng ngày 20260301, trang 1...
+2026-03-03 13:29:35,677 [INFO] Đang xác thực với Toast API...
+2026-03-03 13:29:35,677 [INFO] Đang xác thực với Toast API...
+2026-03-03 13:29:36,284 [INFO] Xác thực Toast API thành công!
+2026-03-03 13:29:36,284 [INFO] Xác thực Toast API thành công!
+2026-03-03 13:29:38,595 [INFO] Lấy đơn hàng ngày 20260301, trang 2...
+2026-03-03 13:29:38,595 [INFO] Lấy đơn hàng ngày 20260301, trang 2...
+2026-03-03 13:29:39,885 [INFO] Tổng cộng 182 đơn hàng ngày 20260301
+2026-03-03 13:29:39,885 [INFO] Tổng cộng 182 đơn hàng ngày 20260301
+2026-03-03 13:29:39,886 [INFO] Lấy danh sách MenuGroup từ Toast...
+2026-03-03 13:29:39,886 [INFO] Lấy danh sách MenuGroup từ Toast...
+2026-03-03 13:29:40,552 [INFO] Lấy danh sách DiningOption từ Toast...
+2026-03-03 13:29:40,552 [INFO] Lấy danh sách DiningOption từ Toast...
+2026-03-03 13:29:41,123 [INFO] Lấy danh sách RevenueCenter từ Toast...
+2026-03-03 13:29:41,123 [INFO] Lấy danh sách RevenueCenter từ Toast...
+2026-03-03 13:29:41,737 [INFO] 
+──────────────────────────────────────────────────
+2026-03-03 13:29:41,737 [INFO] 
+──────────────────────────────────────────────────
+2026-03-03 13:29:41,737 [INFO] 📊 BÁO CÁO DOANH THU NGÀY 2026-03-01
+2026-03-03 13:29:41,737 [INFO] 📊 BÁO CÁO DOANH THU NGÀY 2026-03-01
+2026-03-03 13:29:41,751 [INFO] ──────────────────────────────────────────────────
+2026-03-03 13:29:41,751 [INFO] ──────────────────────────────────────────────────
+2026-03-03 13:29:41,766 [INFO]   Số đơn hàng:          180
+2026-03-03 13:29:41,766 [INFO]   Số đơn hàng:          180
+2026-03-03 13:29:41,773 [INFO]   Doanh thu gộp:        $     8810.45
+2026-03-03 13:29:41,773 [INFO]   Doanh thu gộp:        $     8810.45
+2026-03-03 13:29:41,780 [INFO]   Giảm giá:             $        3.25
+2026-03-03 13:29:41,780 [INFO]   Giảm giá:             $        3.25
+2026-03-03 13:29:41,784 [INFO]   Doanh thu thuần:      $     8807.20
+2026-03-03 13:29:41,784 [INFO]   Doanh thu thuần:      $     8807.20
+2026-03-03 13:29:41,787 [INFO]   Thuế:                 $      794.35
+2026-03-03 13:29:41,787 [INFO]   Thuế:                 $      794.35
+2026-03-03 13:29:41,790 [INFO]   Tips:                 $     1473.29
+2026-03-03 13:29:41,790 [INFO]   Tips:                 $     1473.29
+2026-03-03 13:29:41,793 [INFO]   Phí dịch vụ:          $        0.00
+2026-03-03 13:29:41,793 [INFO]   Phí dịch vụ:          $        0.00
+2026-03-03 13:29:41,796 [INFO]   ───── Doanh thu theo loại ─────
+2026-03-03 13:29:41,796 [INFO]   ───── Doanh thu theo loại ─────
+2026-03-03 13:29:41,805 [INFO]     bar                    $      947.50
+2026-03-03 13:29:41,805 [INFO]     bar                    $      947.50
+2026-03-03 13:29:41,808 [INFO]     food                   $     7862.95
+2026-03-03 13:29:41,808 [INFO]     food                   $     7862.95
+2026-03-03 13:29:41,811 [INFO]   ───── Doanh thu theo kênh ─────
+2026-03-03 13:29:41,811 [INFO]   ───── Doanh thu theo kênh ─────
+2026-03-03 13:29:41,814 [INFO]     doordash               $      259.05
+2026-03-03 13:29:41,814 [INFO]     doordash               $      259.05
+2026-03-03 13:29:41,816 [INFO]     grubhub                $      189.94
+2026-03-03 13:29:41,816 [INFO]     grubhub                $      189.94
+2026-03-03 13:29:41,819 [INFO]     in_store               $     7690.79
+2026-03-03 13:29:41,819 [INFO]     in_store               $     7690.79
+2026-03-03 13:29:41,822 [INFO]     online                 $      189.39
+2026-03-03 13:29:41,822 [INFO]     online                 $      189.39
+2026-03-03 13:29:41,830 [INFO]     uber_eats              $      481.28
+2026-03-03 13:29:41,830 [INFO]     uber_eats              $      481.28
+2026-03-03 13:29:41,836 [INFO]   ───── Theo Revenue Center ─────
+2026-03-03 13:29:41,836 [INFO]   ───── Theo Revenue Center ─────
+2026-03-03 13:29:41,839 [INFO]     Bar                    $        3.25
+2026-03-03 13:29:41,839 [INFO]     Bar                    $        3.25
+2026-03-03 13:29:41,842 [INFO]     Dining Room            $     4143.97
+2026-03-03 13:29:41,842 [INFO]     Dining Room            $     4143.97
+2026-03-03 13:29:41,845 [INFO]     Online Ordering        $      189.39
+2026-03-03 13:29:41,845 [INFO]     Online Ordering        $      189.39
+2026-03-03 13:29:41,849 [INFO]     Patio                  $     3227.75
+2026-03-03 13:29:41,849 [INFO]     Patio                  $     3227.75
+2026-03-03 13:29:41,851 [INFO]   ───── Thanh toán ─────
+2026-03-03 13:29:41,851 [INFO]   ───── Thanh toán ─────
+2026-03-03 13:29:41,852 [INFO]   Tiền mặt:             $      732.12
+2026-03-03 13:29:41,852 [INFO]   Tiền mặt:             $      732.12
+2026-03-03 13:29:41,857 [INFO]   Thẻ tín dụng:         $     7675.88
+2026-03-03 13:29:41,857 [INFO]   Thẻ tín dụng:         $     7675.88
+2026-03-03 13:29:41,859 [INFO]   Gift card:            $        0.00
+2026-03-03 13:29:41,859 [INFO]   Gift card:            $        0.00
+2026-03-03 13:29:41,865 [INFO]   Khác:                 $      967.04
+2026-03-03 13:29:41,865 [INFO]   Khác:                 $      967.04
+2026-03-03 13:29:41,871 [INFO]   Hoàn tiền:            $        0.00
+2026-03-03 13:29:41,871 [INFO]   Hoàn tiền:            $        0.00
+2026-03-03 13:29:41,873 [INFO] ──────────────────────────────────────────────────
+
+2026-03-03 13:29:41,873 [INFO] ──────────────────────────────────────────────────
+
+2026-03-03 13:29:41,880 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-03 13:29:41,880 [INFO] Đang kết nối QuickBooks Desktop...
+2026-03-03 13:29:41,958 [INFO] Kết nối QuickBooks Desktop thành công!
+2026-03-03 13:29:41,958 [INFO] Kết nối QuickBooks Desktop thành công!
+2026-03-03 13:29:41,959 [INFO] Tạo Sales Receipt: #20260301 ngày 2026-03-01
+2026-03-03 13:29:41,959 [INFO] Tạo Sales Receipt: #20260301 ngày 2026-03-01
+2026-03-03 13:29:42,367 [INFO] ✅ Sales Receipt tạo thành công! TxnID: 6A50A-1772519382
+2026-03-03 13:29:42,367 [INFO] ✅ Sales Receipt tạo thành công! TxnID: 6A50A-1772519382
+2026-03-03 13:29:42,369 [INFO] Đã ngắt kết nối QuickBooks Desktop
+2026-03-03 13:29:42,369 [INFO] Đã ngắt kết nối QuickBooks Desktop
+2026-03-03 13:29:42,373 [INFO] 🎉 Đồng bộ hoàn tất!
+2026-03-03 13:29:42,373 [INFO] 🎉 Đồng bộ hoàn tất!

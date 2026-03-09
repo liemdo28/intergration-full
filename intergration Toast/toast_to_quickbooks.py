@@ -302,9 +302,13 @@ class ToastAPIClient:
             "tax": Decimal("0"),
             "tips": Decimal("0"),
             "cash_payments": Decimal("0"),
+            "cash_tips": Decimal("0"),
             "credit_card_payments": Decimal("0"),
+            "credit_card_tips": Decimal("0"),
             "gift_card_payments": Decimal("0"),
+            "gift_card_tips": Decimal("0"),
             "other_payments": Decimal("0"),
+            "other_tips": Decimal("0"),
             "service_charges": Decimal("0"),
             "refunds": Decimal("0"),
             "net_sales": Decimal("0"),
@@ -312,6 +316,7 @@ class ToastAPIClient:
             # ---- MỚI ----
             "sales_by_category": {},   # {"food": Decimal, "bar": Decimal, ...}
             "sales_by_source": {},     # {"in_store": Decimal, "doordash": Decimal, ...}
+            "other_payments_by_channel": {},  # {"doordash": Decimal, "in_store": Decimal, ...}
             "by_revenue_center": {},
         }
 
@@ -363,13 +368,20 @@ class ToastAPIClient:
                 summary["tax"] += tax_amount
 
                 # --- Selection-level breakdown ---
+                selection_discount_total = Decimal("0")
                 for sel in check.get("selections", []):
                     if sel.get("voided"):
                         continue
+                    sel_name = (sel.get("displayName") or sel.get("name") or "").strip().lower()
+                    # Tip/gratuity không phải sales item, loại khỏi doanh thu hàng hóa
+                    if sel_name in ("tip", "tips", "gratuity"):
+                        continue
                     price = Decimal(str(sel.get("price", 0)))
-                    qty = int(sel.get("quantity", 1))
                     pre_discount = Decimal(str(sel.get("preDiscountPrice", price)))
                     line_total = pre_discount  # preDiscountPrice đã nhân qty
+                    discount_delta = pre_discount - price
+                    if discount_delta > 0:
+                        selection_discount_total += discount_delta
 
                     ig_guid = (sel.get("itemGroup") or {}).get("guid", "")
                     cat = _resolve_category(ig_guid)
@@ -390,8 +402,15 @@ class ToastAPIClient:
                     summary["gross_sales"] += line_total
 
                 # --- Check-level: discounts ---
+                check_discount_total = Decimal("0")
                 for ad in check.get("appliedDiscounts", []):
-                    summary["discounts"] += Decimal(str(ad.get("discountAmount", 0)))
+                    check_discount_total += Decimal(str(ad.get("discountAmount", 0)))
+
+                # Ưu tiên selection-level để tránh double count giữa check-level và item-level
+                if selection_discount_total > 0:
+                    summary["discounts"] += selection_discount_total
+                elif check_discount_total > 0:
+                    summary["discounts"] += check_discount_total
 
                 # --- Check-level: payments ---
                 for payment in check.get("payments", []):
@@ -399,20 +418,27 @@ class ToastAPIClient:
                         continue
                     pay_amount = Decimal(str(payment.get("amount", 0)))
                     tip_amount = Decimal(str(payment.get("tipAmount", 0)))
+                    pay_total = pay_amount + tip_amount
                     pay_type = (payment.get("type") or "").upper()
 
                     summary["tips"] += tip_amount
 
                     if pay_type == "CASH":
                         summary["cash_payments"] += pay_amount
+                        summary["cash_tips"] += tip_amount
                     elif pay_type in ("CREDIT", "CREDIT_CARD"):
                         summary["credit_card_payments"] += pay_amount
+                        summary["credit_card_tips"] += tip_amount
                     elif pay_type in ("GIFTCARD", "GIFT_CARD"):
                         summary["gift_card_payments"] += pay_amount
+                        summary["gift_card_tips"] += tip_amount
                     elif pay_type == "REFUND":
                         summary["refunds"] += pay_amount
                     else:
                         summary["other_payments"] += pay_amount
+                        summary["other_tips"] += tip_amount
+                        summary["other_payments_by_channel"].setdefault(channel, Decimal("0"))
+                        summary["other_payments_by_channel"][channel] += pay_total
 
                 # --- Check-level: service charges ---
                 for sc in check.get("appliedServiceCharges", []):
@@ -856,29 +882,62 @@ class ToastQBSyncEngine:
 
         # ── PHẦN DOANH THU (dương) ──────────────────────────────
 
-        # Doanh thu tách theo category (food, bar, ...)
+        # Doanh thu theo rule mới:
+        #   - Food Sales: chỉ phần category "food"
+        #   - Bar Sales: toàn bộ phần còn lại
         cat_items = im.get("category_item_map", {})
-        revenue_lined = Decimal("0")
+        sales_lined = Decimal("0")
+        service_charge_to_merge = summary.get("service_charges", Decimal("0"))
+        service_charge_merged = False
 
         if cat_items and summary.get("sales_by_category"):
-            for cat_key, amount in summary["sales_by_category"].items():
-                if amount <= 0:
-                    continue
-                item_name = cat_items.get(cat_key, im.get("sales_revenue", "Food Sales"))
+            food_amount = Decimal(str(summary["sales_by_category"].get("food", 0)))
+            if food_amount < 0:
+                food_amount = Decimal("0")
+            if food_amount > summary["gross_sales"]:
+                food_amount = summary["gross_sales"]
+
+            bar_amount = summary["gross_sales"] - food_amount
+
+            if food_amount > 0:
+                food_item = cat_items.get("food", im.get("sales_revenue", "Food Sales"))
                 lines.append({
-                    "item_name": item_name,
-                    "amount": amount,
-                    "desc": f"{item_name}",
+                    "item_name": food_item,
+                    "amount": food_amount,
+                    "desc": f"{food_item}",
                 })
-                revenue_lined += amount
+                sales_lined += food_amount
+
+            if service_charge_to_merge > 0:
+                bar_amount += service_charge_to_merge
+                service_charge_merged = True
+
+            if bar_amount > 0:
+                bar_item = cat_items.get("bar", im.get("sales_revenue", "Bar Sales"))
+                lines.append({
+                    "item_name": bar_item,
+                    "amount": bar_amount,
+                    "desc": f"{bar_item}",
+                })
+            sales_lined += (summary["gross_sales"] - food_amount)
+
+        # Nếu có service charge nhưng không có dòng bar, thêm vào bar item nếu mapping có sẵn
+        if service_charge_to_merge > 0 and not service_charge_merged and cat_items.get("bar"):
+            bar_item = cat_items["bar"]
+            lines.append({
+                "item_name": bar_item,
+                "amount": service_charge_to_merge,
+                "desc": f"{bar_item}",
+            })
+            service_charge_merged = True
 
         # Fallback: nếu chưa tách, gộp vào 1 item
-        remainder = summary["gross_sales"] - revenue_lined
+        remainder = summary["gross_sales"] - sales_lined
         if remainder > 0:
             lines.append({
-                "item_name": im.get("sales_revenue", "Food Sales"),
+                "item_name": cat_items.get("bar", im.get("sales_revenue", "Food Sales")),
                 "amount": remainder,
-                "desc": "Food Sales",
+                "desc": "Bar Sales",
             })
 
         # Discount (âm trên receipt)
@@ -913,8 +972,8 @@ class ToastQBSyncEngine:
                 "desc": "Tips Paid Out to Servers",
             })
 
-        # Service charges (dương)
-        if summary["service_charges"] > 0:
+        # Service charges (dương) - chỉ tách riêng khi không merge vào Bar Sales
+        if summary["service_charges"] > 0 and not service_charge_merged:
             lines.append({
                 "item_name": im.get("service_charges", "Service Charge"),
                 "amount": summary["service_charges"],
@@ -923,86 +982,93 @@ class ToastQBSyncEngine:
 
         # ── PHẦN THANH TOÁN (âm) ────────────────────────────────
 
-        # Credit Card — nhưng có thể tách theo source (doordash/uber/grubhub riêng)
+        cash_total = summary["cash_payments"] + summary.get("cash_tips", Decimal("0"))
+        credit_total = summary["credit_card_payments"] + summary.get("credit_card_tips", Decimal("0"))
+        gift_total = summary["gift_card_payments"] + summary.get("gift_card_tips", Decimal("0"))
+        other_total = summary["other_payments"] + summary.get("other_tips", Decimal("0"))
+
+        # Cash luôn riêng
+        if cash_total > 0:
+            lines.append({
+                "item_name": im.get("cash", "Cash"),
+                "amount": -cash_total,
+                "desc": "Cash/Checks Received",
+            })
+
+        # Gift card payment type luôn riêng
+        if gift_total > 0:
+            lines.append({
+                "item_name": im.get("gift_card_payment", im.get("gift_card", "Gift Certificate")),
+                "amount": -gift_total,
+                "desc": "Gift Certificate",
+            })
+
+        # Other payments: ưu tiên tách theo channel nếu có source_item_map
         src_items = im.get("source_item_map", {})
+        other_by_channel = summary.get("other_payments_by_channel", {})
+        other_lined = Decimal("0")
 
-        if src_items and summary.get("sales_by_source"):
-            # Tính tổng thanh toán cần phân bổ
-            # Từ source breakdown ta biết tỷ lệ mỗi kênh
-            total_source_sales = sum(summary["sales_by_source"].values())
-            total_payments = (
-                summary["credit_card_payments"]
-                + summary["cash_payments"]
-                + summary["gift_card_payments"]
-                + summary["other_payments"]
-            )
+        if src_items and other_by_channel:
+            preferred = ["doordash", "grubhub", "uber_eats", "caviar", "postmates", "in_store", "online"]
+            ordered_channels = [k for k in preferred if k in other_by_channel]
+            ordered_channels += sorted(k for k in other_by_channel.keys() if k not in preferred)
 
-            # Cash luôn riêng
-            if summary["cash_payments"] > 0:
-                lines.append({
-                    "item_name": im.get("cash", "Cash"),
-                    "amount": -summary["cash_payments"],
-                    "desc": "Cash/Checks Received",
-                })
-
-            # Gift certificate luôn riêng
-            if summary["gift_card_payments"] > 0:
-                lines.append({
-                    "item_name": im.get("gift_card", "Gift Certificate"),
-                    "amount": -summary["gift_card_payments"],
-                    "desc": "Gift Certificate",
-                })
-
-            # Delivery channels: phân bổ theo tỷ lệ doanh thu
-            cc_remaining = summary["credit_card_payments"]
-            for src_key in ["doordash", "grubhub", "uber_eats", "caviar", "postmates"]:
-                src_sales = summary["sales_by_source"].get(src_key, Decimal("0"))
-                if src_sales <= 0 or src_key not in src_items:
+            for src_key in ordered_channels:
+                channel_amount = other_by_channel.get(src_key, Decimal("0"))
+                if channel_amount <= 0:
                     continue
-                # Số tiền thanh toán qua kênh này ≈ doanh thu kênh + tax + tips tỷ lệ
-                channel_payment = src_sales
-                channel_payment = min(channel_payment, cc_remaining)
-                if channel_payment > 0:
-                    lines.append({
-                        "item_name": src_items[src_key],
-                        "amount": -channel_payment,
-                        "desc": src_key,
-                    })
-                    cc_remaining -= channel_payment
+                if src_key in src_items:
+                    item_name = src_items[src_key]
+                elif src_key in ("in_store", "online"):
+                    # Thực tế thường là Gift certificate (paper) nên fallback sang Gift Certificate
+                    item_name = im.get("gift_certificate_paper", im.get("gift_card", "Gift Certificate"))
+                else:
+                    item_name = im.get("other_payment", im.get("gift_card", "Gift Certificate"))
+                lines.append({
+                    "item_name": item_name,
+                    "amount": -channel_amount,
+                    "desc": src_key,
+                })
+                other_lined += channel_amount
 
-            # Phần CC còn lại → CC25 (in-store credit card)
-            if cc_remaining > 0:
+            remainder_other = other_total - other_lined
+            if remainder_other > 0:
                 lines.append({
-                    "item_name": im.get("credit_card", "CC25"),
-                    "amount": -cc_remaining,
-                    "desc": "Credit Card Payments",
+                    "item_name": im.get("other_payment", im.get("gift_card", "Gift Certificate")),
+                    "amount": -remainder_other,
+                    "desc": "Other Payments",
                 })
 
-        else:
-            # Không có source breakdown → layout đơn giản
-            if summary["credit_card_payments"] > 0:
-                lines.append({
-                    "item_name": im.get("credit_card", "CC25"),
-                    "amount": -summary["credit_card_payments"],
-                    "desc": "Credit Card Payments",
-                })
-            if summary["cash_payments"] > 0:
-                lines.append({
-                    "item_name": im.get("cash", "Cash"),
-                    "amount": -summary["cash_payments"],
-                    "desc": "Cash/Checks Received",
-                })
-            if summary["gift_card_payments"] > 0:
-                lines.append({
-                    "item_name": im.get("gift_card", "Gift Certificate"),
-                    "amount": -summary["gift_card_payments"],
-                    "desc": "Gift Certificate",
-                })
+        elif other_total > 0:
+            lines.append({
+                "item_name": im.get("other_payment", im.get("gift_card", "Gift Certificate")),
+                "amount": -other_total,
+                "desc": "Other Payments",
+            })
+
+        if credit_total > 0:
+            lines.append({
+                "item_name": im.get("credit_card_sales", im.get("credit_card", "CC25")),
+                "amount": -credit_total,
+                "desc": "Credit Card Payments",
+            })
 
         # Over/Short (chênh lệch)
         total_revenue = sum(l["amount"] for l in lines if l["amount"] > 0)
         total_payment = sum(l["amount"] for l in lines if l["amount"] < 0)
         over_short = total_revenue + total_payment  # should be ~0
+
+        # Nếu chỉ lệch vài cent, hấp thụ vào Bar Sales để khớp layout kế toán
+        if over_short != 0 and cat_items.get("bar"):
+            absorb_limit = Decimal(str(im.get("absorb_over_short_to_bar_threshold", "0.02")))
+            if abs(over_short) <= absorb_limit:
+                bar_item_name = cat_items["bar"]
+                for line in lines:
+                    if line["item_name"] == bar_item_name and line["amount"] > 0:
+                        line["amount"] -= over_short
+                        over_short = Decimal("0")
+                        break
+
         if over_short != 0:
             lines.append({
                 "item_name": im.get("over_short", "Over/Short"),

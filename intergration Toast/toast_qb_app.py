@@ -580,6 +580,12 @@ class ToastQBApp:
             return
 
         def wrapper():
+            try:
+                import pythoncom
+                pythoncom.CoInitialize()
+            except ImportError:
+                pass
+
             self.is_running = True
             self._update_status("● Đang chạy...", self.WARNING)
             self.notebook.select(self.tab_log)  # Chuyển sang tab log
@@ -590,6 +596,11 @@ class ToastQBApp:
             finally:
                 self.is_running = False
                 self._update_status("● Sẵn sàng", self.SUCCESS)
+                try:
+                    import pythoncom
+                    pythoncom.CoUninitialize()
+                except ImportError:
+                    pass
 
         t = threading.Thread(target=wrapper, daemon=True)
         t.start()
@@ -728,6 +739,12 @@ class ToastQBApp:
 
         def auto_loop():
             try:
+                import pythoncom
+                pythoncom.CoInitialize()
+            except ImportError:
+                pass
+
+            try:
                 engine = self._get_engine()
                 sched_lib.every().day.at(sync_time).do(engine.sync_yesterday)
                 while self._auto_running:
@@ -737,6 +754,12 @@ class ToastQBApp:
             except Exception as e:
                 self.logger.error(f"❌ Auto sync lỗi: {e}")
                 self._auto_running = False
+            finally:
+                try:
+                    import pythoncom
+                    pythoncom.CoUninitialize()
+                except ImportError:
+                    pass
 
         t = threading.Thread(target=auto_loop, daemon=True)
         t.start()

@@ -36,14 +36,30 @@
             "rice": "food",
             "noodle": "food",
             "beer": "bar",
+            "draft beer": "bar",
+            "bottled beer": "bar",
             "wine": "bar",
             "cocktail": "bar",
             "spirit": "bar",
             "liquor": "bar",
+            "non-grat": "bar",
+            "draft": "bar",
+            "beverage": "bar",
             "drink": "bar",
+            "blended": "bar",
             "bar": "bar",
             "sake": "bar",
-            "soju": "bar"
+            "soju": "bar",
+            "vodka": "bar",
+            "tequila": "bar",
+            "whiskey": "bar",
+            "bourbon": "bar",
+            "scotch": "bar",
+            "gin": "bar",
+            "rum": "bar",
+            "rye": "bar",
+            "bottle": "bar",
+            "glass": "bar"
         },
         "source_to_channel": {
             "in store": "in_store",
@@ -67,18 +83,22 @@
         "tips": "Tips Paid Out",
         "service_charges": "Customer Contribution",
         "credit_card": "CC25",
+        "credit_card_sales": "Credit card sales",
         "cash": "Cash",
         "gift_card": "Gift Certificates",
+        "gift_card_payment": "Gift Certificates",
+        "gift_certificate_paper": "Gift Certificate",
         "over_short": "Over/Short",
         "category_item_map": {
             "food": "Food Sales",
             "bar": "Bar Sales",
-            "other": "Food Sales"
+            "other": "Bar Sales"
         },
         "source_item_map": {
-            "doordash": "DOORD",
-            "grubhub": "GrubH",
-            "uber_eats": "Ube"
+            "doordash": "Doordash",
+            "grubhub": "Grubhub",
+            "uber_eats": "Uber",
+            "in_store": "Gift Certificate"
         }
     },
     "schedule": {
