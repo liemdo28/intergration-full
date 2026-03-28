@@ -4,6 +4,7 @@ No API required - reads from downloaded Excel files.
 """
 
 import csv
+import difflib
 import json
 import os
 import sys
@@ -31,6 +32,143 @@ REPORTS_DIR = runtime_path("toast-reports")
 def log(msg):
     ts = datetime.now().strftime("%H:%M:%S")
     print(f"[{ts}] {msg}")
+
+
+def normalize_item_name(value: str) -> str:
+    return "".join(ch.lower() for ch in str(value or "") if ch.isalnum())
+
+
+def split_qb_item_full_name(value: str) -> tuple[str, str]:
+    parts = [part.strip() for part in str(value or "").split(":") if part.strip()]
+    if not parts:
+        return "", ""
+    if len(parts) == 1:
+        return "", parts[0]
+    return ":".join(parts[:-1]), parts[-1]
+
+
+def suggest_similar_items(item_name: str, items: list[dict], *, limit: int = 5) -> list[dict]:
+    target = (item_name or "").strip()
+    if not target:
+        return []
+
+    target_norm = normalize_item_name(target)
+    scored: list[tuple[float, dict]] = []
+    seen: set[str] = set()
+
+    for item in items or []:
+        name = (item.get("name") or "").strip()
+        if not name:
+            continue
+        name_norm = normalize_item_name(name)
+        if not name_norm or name_norm in seen:
+            continue
+        seen.add(name_norm)
+
+        score = difflib.SequenceMatcher(None, target_norm, name_norm).ratio()
+        if target_norm and target_norm in name_norm:
+            score += 0.18
+        if name_norm and name_norm in target_norm:
+            score += 0.12
+        if name.lower().startswith(target.lower()):
+            score += 0.08
+        if score >= 0.55:
+            scored.append((score, item))
+
+    scored.sort(key=lambda entry: (-entry[0], entry[1].get("name", "").lower()))
+    return [item for _, item in scored[:limit]]
+
+
+def build_item_add_qbxml(item_name: str, template_item: dict, *, qbxml_version: str = "13.0") -> str:
+    item_type = (template_item.get("type") or "").strip()
+    if item_type not in {"ItemService", "ItemNonInventory"}:
+        raise ValueError(f"Unsupported template item type: {item_type or 'unknown'}")
+
+    parent_name, leaf_name = split_qb_item_full_name(item_name)
+    if not leaf_name:
+        raise ValueError("QuickBooks item name is required")
+
+    desc = (
+        template_item.get("desc")
+        or f"Auto-created from template {template_item.get('name') or 'existing item'}"
+    )
+    parent_xml = ""
+    if parent_name:
+        parent_xml = f"""
+                <ParentRef>
+                    <FullName>{escape_xml(parent_name)}</FullName>
+                </ParentRef>"""
+
+    if item_type == "ItemService":
+        account_name = (
+            template_item.get("account_name")
+            or template_item.get("income_account_name")
+            or ""
+        ).strip()
+        if not account_name:
+            raise ValueError(
+                f"Template item '{template_item.get('name') or 'unknown'}' does not expose an income/account reference"
+            )
+        item_body = f"""
+            <ItemServiceAdd>
+                <Name>{escape_xml(leaf_name)}</Name>{parent_xml}
+                <SalesOrPurchase>
+                    <Desc>{escape_xml(desc)}</Desc>
+                    <AccountRef>
+                        <FullName>{escape_xml(account_name)}</FullName>
+                    </AccountRef>
+                </SalesOrPurchase>
+            </ItemServiceAdd>"""
+        request_tag = "ItemServiceAddRq"
+    else:
+        income_account_name = (
+            template_item.get("income_account_name")
+            or template_item.get("account_name")
+            or ""
+        ).strip()
+        expense_account_name = (template_item.get("expense_account_name") or "").strip()
+        cogs_account_name = (template_item.get("cogs_account_name") or "").strip()
+        if not income_account_name:
+            raise ValueError(
+                f"Template item '{template_item.get('name') or 'unknown'}' does not expose an income/account reference"
+            )
+        if income_account_name and expense_account_name and cogs_account_name:
+            sales_purchase_xml = f"""
+                <SalesAndPurchase>
+                    <SalesDesc>{escape_xml(desc)}</SalesDesc>
+                    <IncomeAccountRef>
+                        <FullName>{escape_xml(income_account_name)}</FullName>
+                    </IncomeAccountRef>
+                    <PurchaseDesc>{escape_xml(desc)}</PurchaseDesc>
+                    <ExpenseAccountRef>
+                        <FullName>{escape_xml(expense_account_name)}</FullName>
+                    </ExpenseAccountRef>
+                    <COGSAccountRef>
+                        <FullName>{escape_xml(cogs_account_name)}</FullName>
+                    </COGSAccountRef>
+                </SalesAndPurchase>"""
+        else:
+            sales_purchase_xml = f"""
+                <SalesOrPurchase>
+                    <Desc>{escape_xml(desc)}</Desc>
+                    <AccountRef>
+                        <FullName>{escape_xml(income_account_name)}</FullName>
+                    </AccountRef>
+                </SalesOrPurchase>"""
+        item_body = f"""
+            <ItemNonInventoryAdd>
+                <Name>{escape_xml(leaf_name)}</Name>{parent_xml}{sales_purchase_xml}
+            </ItemNonInventoryAdd>"""
+        request_tag = "ItemNonInventoryAddRq"
+
+    return f"""<?xml version="1.0" encoding="utf-8"?>
+<?qbxml version="{qbxml_version}"?>
+<QBXML>
+    <QBXMLMsgsRq onError="stopOnError">
+        <{request_tag} requestID="1">{item_body}
+        </{request_tag}>
+    </QBXMLMsgsRq>
+</QBXML>"""
 
 
 def load_mapping():
@@ -551,8 +689,67 @@ class QBSyncClient:
         items = []
         if result["ok"] and result.get("element") is not None:
             for child in result["element"]:
-                items.append({"name": child.findtext("FullName", ""), "type": child.tag.replace("Ret", "")})
+                sales_or_purchase = child.find("SalesOrPurchaseRet")
+                sales_and_purchase = child.find("SalesAndPurchaseRet")
+                item_type = child.tag.replace("Ret", "")
+                account_name = ""
+                income_account_name = ""
+                expense_account_name = ""
+                cogs_account_name = ""
+                desc = ""
+                if sales_or_purchase is not None:
+                    account_name = sales_or_purchase.findtext("AccountRef/FullName", "").strip()
+                    desc = sales_or_purchase.findtext("Desc", "").strip()
+                if sales_and_purchase is not None:
+                    income_account_name = sales_and_purchase.findtext("IncomeAccountRef/FullName", "").strip()
+                    expense_account_name = sales_and_purchase.findtext("ExpenseAccountRef/FullName", "").strip()
+                    cogs_account_name = sales_and_purchase.findtext("COGSAccountRef/FullName", "").strip()
+                    desc = (
+                        sales_and_purchase.findtext("SalesDesc", "").strip()
+                        or sales_and_purchase.findtext("PurchaseDesc", "").strip()
+                        or desc
+                    )
+                can_clone = item_type in {"ItemService", "ItemNonInventory"} and bool(account_name or income_account_name)
+                items.append(
+                    {
+                        "name": child.findtext("FullName", "").strip(),
+                        "type": item_type,
+                        "desc": desc,
+                        "account_name": account_name,
+                        "income_account_name": income_account_name,
+                        "expense_account_name": expense_account_name,
+                        "cogs_account_name": cogs_account_name,
+                        "can_clone": can_clone,
+                    }
+                )
         return items
+
+    def create_item_from_template(self, item_name, template_item):
+        qbxml = build_item_add_qbxml(item_name, template_item, qbxml_version=self.qbxml_version)
+        log(
+            "  Creating QB item "
+            f"'{item_name}' from template '{template_item.get('name') or 'unknown'}'"
+        )
+        resp = self._send(qbxml)
+        result = self._parse(resp)
+        if not result["ok"]:
+            log(f"  Error creating item: [{result['code']}] {result['msg']}")
+            return {"success": False, "error": result["msg"]}
+
+        full_name = ""
+        list_id = ""
+        item_ret = None
+        if result.get("element") is not None:
+            for child in result["element"]:
+                if child.tag.endswith("Ret"):
+                    item_ret = child
+                    break
+        if item_ret is not None:
+            full_name = item_ret.findtext("FullName", "").strip()
+            list_id = item_ret.findtext("ListID", "").strip()
+
+        log(f"  Created QB item successfully: {full_name or item_name}")
+        return {"success": True, "full_name": full_name or item_name, "list_id": list_id}
 
     def find_existing_sales_receipts(self, ref_number):
         qbxml = f"""<?xml version="1.0" encoding="utf-8"?>

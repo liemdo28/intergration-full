@@ -450,6 +450,7 @@ class QBSyncTab(ctk.CTkFrame):
         ctk.CTkLabel(store_frame, text="QB Stores", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=10, pady=(10, 5))
 
         self._local_cfg = load_local_config()
+        self._qb_item_catalog_cache = {}
         qbw_paths = self._local_cfg.get("qbw_paths", {})
 
         stores_grid = ctk.CTkFrame(store_frame, fg_color="transparent")
@@ -691,6 +692,24 @@ class QBSyncTab(ctk.CTkFrame):
             command=self._save_mapping_and_preview,
         )
         self.save_and_preview_btn.pack(side="left", padx=2)
+
+        mapping_qb_row = ctk.CTkFrame(mapping_frame, fg_color="transparent")
+        mapping_qb_row.pack(fill="x", padx=10, pady=(0, 4))
+        self.check_mapping_item_btn = ctk.CTkButton(
+            mapping_qb_row,
+            text="Check / Create QB Item",
+            width=170,
+            state="disabled",
+            command=self._check_selected_mapping_item,
+        )
+        self.check_mapping_item_btn.pack(side="left", padx=2)
+        self.mapping_item_status = ctk.CTkLabel(
+            mapping_qb_row,
+            text="QB item validation not run yet",
+            text_color="gray",
+            anchor="w",
+        )
+        self.mapping_item_status.pack(side="left", padx=10, fill="x", expand=True)
 
         self.mapping_detail_box = ctk.CTkTextbox(mapping_frame, height=135, font=ctk.CTkFont(family="Consolas", size=11))
         self.mapping_detail_box.pack(fill="x", padx=10, pady=(0, 10))
@@ -1793,12 +1812,14 @@ class QBSyncTab(ctk.CTkFrame):
             self.mapping_qb_item_var.set("")
             self.mapping_report_var.set("")
             self.mapping_type_var.set("item")
+            self.mapping_item_status.configure(text="QB item validation not run yet", text_color="gray")
             self.mapping_report_entry.configure(state="disabled")
             self.mapping_type_combo.configure(state="disabled")
             self.mapping_candidate_combo.configure(values=["No mappable validation issues"], state="disabled")
             self.mapping_candidate_combo.set("No mappable validation issues")
             self.save_mapping_btn.configure(state="disabled")
             self.save_and_preview_btn.configure(state="disabled")
+            self.check_mapping_item_btn.configure(state="disabled")
             self.mapping_detail_box.insert("end", message or "Run Preview/Sync first, then use Validation Issues to drive mapping fixes here.")
             self.mapping_detail_box.configure(state="disabled")
             return
@@ -1815,6 +1836,7 @@ class QBSyncTab(ctk.CTkFrame):
         self.mapping_report_var.set(candidate.get("report") or "")
         candidate_type = candidate.get("mapping_type") or "item"
         self.mapping_type_var.set(candidate_type if candidate_type in {"item", "payment", "balance"} else "item")
+        self.mapping_item_status.configure(text="QB item validation not run yet", text_color="gray")
         if self._is_marketplace_mapping_candidate(candidate):
             self.mapping_report_entry.configure(state="normal")
             self.mapping_type_combo.configure(state="readonly")
@@ -1861,6 +1883,7 @@ class QBSyncTab(ctk.CTkFrame):
         self.mapping_detail_box.configure(state="disabled")
         self.save_mapping_btn.configure(state="normal")
         self.save_and_preview_btn.configure(state="normal")
+        self.check_mapping_item_btn.configure(state="normal")
 
     def _refresh_mapping_candidates(self):
         try:
@@ -1891,6 +1914,200 @@ class QBSyncTab(ctk.CTkFrame):
         if candidate:
             self._set_mapping_candidate(candidate)
 
+    def _set_mapping_item_status(self, text, color="gray"):
+        self.mapping_item_status.configure(text=text, text_color=color)
+
+    def _get_mapping_base_store(self, candidate):
+        store_name = self._resolve_store_selection_name(candidate.get("store", ""))
+        if store_name:
+            return store_name
+        store_name = candidate.get("store", "")
+        if store_name.startswith("Copper "):
+            return "Copper"
+        return store_name
+
+    def _get_qb_item_catalog(self, store_name, *, force_refresh=False):
+        qbw_path = (self.qbw_path_vars.get(store_name).get().strip() if self.qbw_path_vars.get(store_name) else "").strip()
+        if not qbw_path:
+            saved_paths = (self._local_cfg or {}).get("qbw_paths", {})
+            qbw_path = (saved_paths.get(store_name) or "").strip()
+        if not qbw_path:
+            raise ValueError(f"Please choose a .qbw file for '{store_name}' before validating or creating QB items.")
+        if not os.path.exists(qbw_path):
+            raise ValueError(f"QB file not found for '{store_name}':\n{qbw_path}")
+
+        cache_key = (store_name, qbw_path.lower())
+        cached = self._qb_item_catalog_cache.get(cache_key)
+        if cached and not force_refresh:
+            return cached
+
+        from qb_automate import close_qb_completely, open_store, validate_company_file_path
+        from qb_sync import QBSyncClient
+
+        store_cfg = self._stores.get(store_name, {})
+        file_ok, file_msg = validate_company_file_path(qbw_path, store_cfg.get("qbw_match"), store_name)
+        if not file_ok:
+            raise ValueError(file_msg)
+
+        self.status_var.set(f"Loading QuickBooks items for {store_name}...")
+        self.log(file_msg)
+        close_qb_completely()
+        time.sleep(1)
+        qb_opened = open_store(
+            store_name,
+            {store_name: qbw_path},
+            qbw_match=store_cfg.get("qbw_match"),
+            password_key=store_cfg.get("password"),
+        )
+        if not qb_opened:
+            raise ValueError(f"Could not open QuickBooks for '{store_name}' to load items.")
+
+        qb = QBSyncClient(
+            app_name="Toast Report Sync",
+            qbxml_version="13.0",
+        )
+        qb.connect()
+        try:
+            items = qb.query_items()
+        finally:
+            qb.disconnect()
+
+        catalog = {"qbw_path": qbw_path, "items": items}
+        self._qb_item_catalog_cache[cache_key] = catalog
+        self.status_var.set(f"Loaded {len(items)} QB items for {store_name}")
+        return catalog
+
+    def _find_exact_qb_item(self, qb_item, items):
+        target = qb_item.strip().lower()
+        for item in items:
+            if (item.get("name") or "").strip().lower() == target:
+                return item
+        return None
+
+    def _choose_qb_item_template(self, candidate, items, suggestions):
+        preferred_names = []
+        current_qb = (candidate.get("current_qb") or "").strip()
+        if current_qb:
+            preferred_names.append(current_qb)
+        for suggestion in suggestions:
+            preferred_names.append(suggestion.get("name") or "")
+
+        seen = set()
+        for name in preferred_names:
+            normalized = name.strip().lower()
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            exact = self._find_exact_qb_item(name, items)
+            if exact and exact.get("can_clone"):
+                return exact
+
+        for item in items:
+            if item.get("can_clone"):
+                return item
+        return None
+
+    def _format_qb_item_suggestions(self, suggestions):
+        if not suggestions:
+            return "No close matches found."
+        lines = []
+        for item in suggestions:
+            account_name = item.get("account_name") or item.get("income_account_name") or "-"
+            lines.append(f"- {item.get('name')} ({item.get('type')}, account: {account_name})")
+        return "\n".join(lines)
+
+    def _ensure_qb_item_available(self, candidate, qb_item, *, allow_create):
+        from qb_sync import QBSyncClient, suggest_similar_items
+
+        store_name = self._get_mapping_base_store(candidate)
+        catalog = self._get_qb_item_catalog(store_name)
+        items = catalog["items"]
+        exact = self._find_exact_qb_item(qb_item, items)
+        if exact:
+            self._set_mapping_item_status(
+                f"QB item found in {store_name}: {exact.get('name')} ({exact.get('type')})",
+                "#16a34a",
+            )
+            return True
+
+        suggestions = suggest_similar_items(qb_item, items)
+        suggestion_text = self._format_qb_item_suggestions(suggestions)
+        self._set_mapping_item_status(
+            f"QB item not found in {store_name}. {len(suggestions)} close match(es) available.",
+            "#d97706",
+        )
+        if not allow_create:
+            messagebox.showwarning(
+                "QB Item Not Found",
+                f"The QB item '{qb_item}' was not found in {store_name}.\n\nClose matches:\n{suggestion_text}",
+            )
+            return False
+
+        template_item = self._choose_qb_item_template(candidate, items, suggestions)
+        if not template_item:
+            raise ValueError(
+                f"The QB item '{qb_item}' was not found in {store_name}, and no supported template item was available to clone.\n\n"
+                f"Close matches:\n{suggestion_text}"
+            )
+
+        answer = messagebox.askyesnocancel(
+            "Create QB Item?",
+            (
+                f"The QB item '{qb_item}' was not found in {store_name}.\n\n"
+                f"Close matches:\n{suggestion_text}\n\n"
+                f"Create a new QB item now using template '{template_item.get('name')}' "
+                f"({template_item.get('type')})?\n\n"
+                "Yes = create item now\n"
+                "No = go back and choose/edit item name\n"
+                "Cancel = stop"
+            ),
+        )
+        if answer is not True:
+            if answer is False:
+                self._set_mapping_item_status("Choose an existing QB item or edit the name before saving.", "#d97706")
+            return False
+
+        qbw_path = catalog["qbw_path"]
+        self.status_var.set(f"Creating QB item '{qb_item}' for {store_name}...")
+        qb = QBSyncClient(app_name="Toast Report Sync", qbxml_version="13.0")
+        qb.connect()
+        try:
+            result = qb.create_item_from_template(qb_item, template_item)
+        finally:
+            qb.disconnect()
+        if not result.get("success"):
+            raise ValueError(result.get("error") or f"Could not create QB item '{qb_item}'.")
+
+        cache_key = (store_name, qbw_path.lower())
+        self._qb_item_catalog_cache.pop(cache_key, None)
+        refreshed = self._get_qb_item_catalog(store_name, force_refresh=True)
+        exact = self._find_exact_qb_item(qb_item, refreshed["items"])
+        if not exact:
+            raise ValueError(
+                f"QB reported item creation success for '{qb_item}', but the item did not appear in the refreshed catalog."
+            )
+        self.log(
+            f"Created QB item -> {store_name} | {qb_item} | template={template_item.get('name')} ({template_item.get('type')})"
+        )
+        self._set_mapping_item_status(
+            f"QB item created in {store_name}: {exact.get('name')} ({exact.get('type')})",
+            "#16a34a",
+        )
+        return True
+
+    def _check_selected_mapping_item(self):
+        if not self.selected_mapping_candidate:
+            return
+        qb_item = self.mapping_qb_item_var.get().strip()
+        if not qb_item:
+            messagebox.showwarning("QB Item Required", "Enter a QuickBooks item name before checking.")
+            return
+        try:
+            self._ensure_qb_item_available(self.selected_mapping_candidate, qb_item, allow_create=True)
+        except Exception as exc:
+            self._set_mapping_item_status("QB item check failed", "#dc2626")
+            messagebox.showerror("QB Item Check Failed", str(exc))
+
     def _apply_mapping_save(self, *, rerun_preview: bool):
         if not self.selected_mapping_candidate:
             return False
@@ -1909,6 +2126,13 @@ class QBSyncTab(ctk.CTkFrame):
             if override_type not in {"item", "payment", "balance"}:
                 messagebox.showwarning("Type Required", "Select a valid marketplace mapping type: item, payment, or balance.")
                 return False
+        try:
+            if not self._ensure_qb_item_available(self.selected_mapping_candidate, qb_item, allow_create=True):
+                return False
+        except Exception as exc:
+            self._set_mapping_item_status("QB item validation failed", "#dc2626")
+            messagebox.showerror("QB Item Validation Failed", str(exc))
+            return False
         try:
             from mapping_maintenance import upsert_candidate_mapping
 

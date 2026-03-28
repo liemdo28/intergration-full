@@ -248,3 +248,57 @@ def test_validation_issue_has_severity_and_blocking_metadata(tmp_path):
     assert isinstance(issues[0], ValidationIssue)
     assert issues[0].severity == "error"
     assert issues[0].blocking is True
+
+
+def test_suggest_similar_items_prefers_close_existing_names():
+    items = [
+        {"name": "Food Sales", "type": "ItemService"},
+        {"name": "Food Sale", "type": "ItemService"},
+        {"name": "Sales Tax Payable", "type": "ItemService"},
+        {"name": "Service Charge Income", "type": "ItemService"},
+    ]
+
+    suggestions = qb_sync.suggest_similar_items("Food Sles", items, limit=3)
+
+    assert suggestions
+    assert suggestions[0]["name"] in {"Food Sales", "Food Sale"}
+    assert all(item["name"] != "Sales Tax Payable" for item in suggestions[:2])
+
+
+def test_build_item_add_qbxml_uses_parent_ref_for_service_template():
+    qbxml = qb_sync.build_item_add_qbxml(
+        "Sales:Uber Eats Fees",
+        {
+            "name": "Sales:DoorDash Fees",
+            "type": "ItemService",
+            "account_name": "Marketplace Income",
+            "desc": "Marketplace fee item",
+        },
+    )
+
+    assert "<ItemServiceAdd>" in qbxml
+    assert "<Name>Uber Eats Fees</Name>" in qbxml
+    assert "<ParentRef>" in qbxml
+    assert "<FullName>Sales</FullName>" in qbxml
+    assert "<FullName>Marketplace Income</FullName>" in qbxml
+
+
+def test_build_item_add_qbxml_uses_noninventory_sales_and_purchase_when_available():
+    qbxml = qb_sync.build_item_add_qbxml(
+        "Raw:DoorDash Clearing",
+        {
+            "name": "Raw:Uber Clearing",
+            "type": "ItemNonInventory",
+            "income_account_name": "Marketplace Clearing",
+            "expense_account_name": "COGS - Marketplace",
+            "cogs_account_name": "COGS - Marketplace",
+            "desc": "Marketplace clearing item",
+        },
+    )
+
+    assert "<ItemNonInventoryAdd>" in qbxml
+    assert "<Name>DoorDash Clearing</Name>" in qbxml
+    assert "<SalesAndPurchase>" in qbxml
+    assert "<IncomeAccountRef>" in qbxml
+    assert "<ExpenseAccountRef>" in qbxml
+    assert "<COGSAccountRef>" in qbxml
