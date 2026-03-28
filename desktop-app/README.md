@@ -96,6 +96,7 @@ Output:
 - Remove Transactions co `Dry run only` mac dinh
 - App tu export snapshot truoc khi xoa
 - Ket qua xoa/giả lập duoc ghi vao `audit-logs\delete-transactions`
+- Live delete bi khoa theo policy mac dinh; chi mo khoa bang `local-config.json` hoac `ALLOW_LIVE_DELETE=1` trong `.env.qb` trong maintenance window da duoc phe duyet
 
 ## Ghi chu van hanh
 

@@ -25,10 +25,11 @@ Chua hoan tat:
 - [ ] Rotate toan bo Toast credentials da tung xuat hien trong git history
 - [ ] Xac nhan automation/may that khong con dung credential cu
 - [ ] Rewrite git history de purge file config cu roi force-push lai cac remote
+- [x] Khoa live delete theo policy mac dinh, chi mo khoa qua config duoc phe duyet
 - [ ] Chot quy trinh delete an toan cho user that
   - [ ] Xac dinh role nao duoc delete that
-  - [ ] Mac dinh dry-run cho user thuong
-  - [ ] Luu audit log va snapshot nhu artifact bat buoc
+  - [x] Mac dinh dry-run cho user thuong
+  - [x] Luu audit log va snapshot nhu artifact bat buoc
 - [ ] Giam hanh vi recovery manh tay trong QuickBooks automation
   - [ ] Han che kill process khong can thiet
   - [ ] Them huong dan loi ro rang khi open/login that bai

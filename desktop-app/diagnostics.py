@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from app_paths import APP_DIR, RUNTIME_DIR, runtime_path
+from delete_policy import load_delete_policy
 
 
 @dataclass
@@ -116,6 +117,13 @@ def run_environment_checks(local_config: dict | None = None) -> DiagnosticReport
     else:
         _add(checks, "QB Config", "warning", f"Missing {env_path.name}; QB features may not work")
 
+    qb_password_slots = [env_values.get(f"QB_PASSWORD{i}", "").strip() for i in range(1, 4)]
+    if env_path.exists():
+        if any(qb_password_slots):
+            _add(checks, "QB Password Slots", "ok", "At least one QB_PASSWORD slot is configured")
+        else:
+            _add(checks, "QB Password Slots", "warning", "No QB_PASSWORD1..3 values configured")
+
     qb_exe = Path(env_values.get("QB_EXE_PATH") or os.environ.get("QB_EXE_PATH", r"C:\Program Files\Intuit\QuickBooks Enterprise Solutions 24.0\QBWEnterprise.exe"))
     _add(checks, "QuickBooks Executable", "ok" if qb_exe.exists() else "warning", str(qb_exe))
 
@@ -149,6 +157,12 @@ def run_environment_checks(local_config: dict | None = None) -> DiagnosticReport
             _add(checks, "QB Company Files", "ok", f"{len(qbw_paths)} configured path(s) look valid")
     else:
         _add(checks, "QB Company Files", "warning", "No .qbw paths saved yet")
+
+    delete_policy = load_delete_policy(local_config, env_values)
+    if delete_policy.allow_live_delete:
+        _add(checks, "Delete Policy", "warning", f"Live delete enabled via {delete_policy.source}")
+    else:
+        _add(checks, "Delete Policy", "ok", "Live delete locked; dry-run mode enforced by default")
 
     _add(checks, "App Runtime Folder", "ok", str(RUNTIME_DIR))
     _add(checks, "Bundled Assets Folder", "ok", str(APP_DIR))

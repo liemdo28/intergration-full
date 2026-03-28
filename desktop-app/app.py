@@ -31,6 +31,7 @@ from tkinter import messagebox
 from tkcalendar import Calendar
 from app_paths import APP_DIR, RUNTIME_DIR, app_path, runtime_path
 from audit_utils import export_transactions_snapshot, write_delete_audit
+from delete_policy import load_delete_policy
 from diagnostics import format_report_lines, run_environment_checks
 
 MAPPING_FILE = app_path("qb-mapping.json")
@@ -791,7 +792,24 @@ class RemoveTab(ctk.CTkFrame):
         self.delete_dry_run_var = ctk.BooleanVar(value=True)
         self._global_cfg, self._stores = load_mapping()
         self._local_cfg = load_local_config()
+        self.delete_policy = load_delete_policy(self._local_cfg, self._load_qb_env())
         self._build_ui()
+
+    def _load_qb_env(self):
+        env_path = runtime_path(".env.qb")
+        env_values = {}
+        if not env_path.exists():
+            return env_values
+        try:
+            for line in env_path.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                env_values[key.strip()] = value.strip().strip('"').strip("'")
+        except Exception:
+            return {}
+        return env_values
 
     def _build_ui(self):
         main = ctk.CTkFrame(self)
@@ -986,13 +1004,23 @@ class RemoveTab(ctk.CTkFrame):
         # Action buttons
         btn_frame = ctk.CTkFrame(parent, fg_color="transparent")
         btn_frame.pack(fill="x", padx=10, pady=10)
+        policy_color = "#f59e0b" if self.delete_policy.is_locked else "#dc2626"
+        self.delete_policy_label = ctk.CTkLabel(
+            btn_frame,
+            text=f"Delete policy: {self.delete_policy.mode_label}. {self.delete_policy.guidance}",
+            text_color=policy_color,
+            justify="left",
+            wraplength=320,
+        )
+        self.delete_policy_label.pack(anchor="w", padx=5, pady=(0, 6))
         self.btn_search = ctk.CTkButton(btn_frame, text="Search Transactions", height=36, command=self._search, state="disabled")
         self.btn_search.pack(fill="x", padx=5, pady=3)
-        ctk.CTkCheckBox(
+        self.dry_run_checkbox = ctk.CTkCheckBox(
             btn_frame,
             text="Dry run only (export + simulate, no delete in QuickBooks)",
             variable=self.delete_dry_run_var,
-        ).pack(anchor="w", padx=5, pady=(4, 2))
+        )
+        self.dry_run_checkbox.pack(anchor="w", padx=5, pady=(4, 2))
         self.btn_export = ctk.CTkButton(
             btn_frame,
             text="Export Selected",
@@ -1007,6 +1035,16 @@ class RemoveTab(ctk.CTkFrame):
                                           fg_color="#c0392b", hover_color="#e74c3c",
                                           command=self._delete_selected, state="disabled")
         self.btn_delete.pack(fill="x", padx=5, pady=3)
+        self._apply_delete_policy_ui()
+
+    def _apply_delete_policy_ui(self):
+        if self.delete_policy.is_locked:
+            self.delete_dry_run_var.set(True)
+            self.dry_run_checkbox.configure(state="disabled")
+            self.btn_delete.configure(text="Run Dry Delete")
+        else:
+            self.dry_run_checkbox.configure(state="normal")
+            self.btn_delete.configure(text="Delete Selected")
 
     # ── Results Panel ────────────────────────────────────────────────
 
@@ -1300,6 +1338,16 @@ class RemoveTab(ctk.CTkFrame):
         self._log(f"Delete snapshot exported -> {snapshot_files['csv_path']}")
 
         dry_run = bool(self.delete_dry_run_var.get())
+        if not dry_run and self.delete_policy.is_locked:
+            self.delete_dry_run_var.set(True)
+            self._log("Live delete blocked by policy; switched back to dry-run mode")
+            messagebox.showerror(
+                "Live Delete Locked",
+                "Live delete is locked by policy.\n\n"
+                "Use dry-run/export mode, or explicitly enable live delete in local-config.json "
+                "or ALLOW_LIVE_DELETE=1 in .env.qb for approved maintenance windows.",
+            )
+            return
         if dry_run:
             if not messagebox.askyesno(
                 "Dry Run Delete",
@@ -1389,13 +1437,13 @@ class RemoveTab(ctk.CTkFrame):
                 f"Deleted: {result['success_count']}\nFailed: {result['fail_count']}\n\nAudit CSV: {result['audit_files']['csv_path']}",
             )
         self._clear_results()
-        self.btn_delete.configure(text="Delete Selected", state="disabled")
+        self.btn_delete.configure(text="Run Dry Delete" if self.delete_policy.is_locked else "Delete Selected", state="disabled")
 
     def _on_delete_error(self, error):
         self._running = False
         self.btn_search.configure(state="normal")
         self.btn_export.configure(state="normal" if self.txn_rows else "disabled")
-        self.btn_delete.configure(text="Delete Selected", state="normal")
+        self.btn_delete.configure(text="Run Dry Delete" if self.delete_policy.is_locked else "Delete Selected", state="normal")
         self._log(f"Delete error: {error}")
 
 
@@ -1428,7 +1476,7 @@ class SettingsTab(ctk.CTkFrame):
         toast_frame = ctk.CTkFrame(content)
         toast_frame.pack(fill="x", padx=15, pady=5)
         ctk.CTkLabel(toast_frame, text="Toast Session", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=10, pady=(10, 5))
-        session_file = SCRIPT_DIR / ".toast-session.json"
+        session_file = runtime_path(".toast-session.json")
         if session_file.exists():
             size_kb = session_file.stat().st_size / 1024
             mtime = datetime.fromtimestamp(session_file.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
@@ -1444,10 +1492,24 @@ class SettingsTab(ctk.CTkFrame):
         qb_frame.pack(fill="x", padx=15, pady=5)
         ctk.CTkLabel(qb_frame, text="QuickBooks Desktop", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=10, pady=(10, 5))
         env_file = runtime_path(".env.qb")
+        delete_policy = load_delete_policy(load_local_config(), self._load_env_values(env_file))
         if env_file.exists():
             ctk.CTkLabel(qb_frame, text=f"Config: {env_file}", text_color="#059669").pack(anchor="w", padx=10, pady=2)
         else:
             ctk.CTkLabel(qb_frame, text="Config: .env.qb not found", text_color="#dc2626").pack(anchor="w", padx=10, pady=2)
+        delete_policy_color = "#d97706" if delete_policy.is_locked else "#dc2626"
+        ctk.CTkLabel(
+            qb_frame,
+            text=f"Delete policy: {delete_policy.mode_label} ({delete_policy.source})",
+            text_color=delete_policy_color,
+        ).pack(anchor="w", padx=10, pady=2)
+        ctk.CTkLabel(
+            qb_frame,
+            text="Set local-config.json -> delete_policy.allow_live_delete=true or ALLOW_LIVE_DELETE=1 in .env.qb only during approved maintenance.",
+            text_color="gray",
+            font=ctk.CTkFont(size=11),
+            wraplength=700,
+        ).pack(anchor="w", padx=10, pady=(0, 6))
         try:
             _, stores = load_mapping()
             store_text = ", ".join(stores.keys())
@@ -1511,6 +1573,21 @@ class SettingsTab(ctk.CTkFrame):
         self.diag_box.delete("1.0", "end")
         self.diag_box.insert("end", "\n".join(format_report_lines(report)))
         self.diag_box.configure(state="disabled")
+
+    def _load_env_values(self, path):
+        env_values = {}
+        if not path.exists():
+            return env_values
+        try:
+            for line in path.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                env_values[key.strip()] = value.strip().strip('"').strip("'")
+        except Exception:
+            return {}
+        return env_values
 
     def _connect_gdrive(self):
         def _worker():

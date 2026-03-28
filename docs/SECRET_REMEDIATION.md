@@ -18,6 +18,7 @@ Verified example:
 - Runtime secrets are kept out of git via [.gitignore](E:/Project/Toasttab Quickbook/New folder/integration-toasttab-qb/.gitignore)
 - Example config files stay in source, writable files stay local
 - `history_secret_audit.ps1` helps re-scan history before cleanup
+- `rewrite_secret_history.ps1` prepares or executes a controlled history rewrite after rotation is complete
 
 ## Recommended history cleanup
 
@@ -30,6 +31,11 @@ Suggested flow:
 3. Rewrite history to remove legacy secret-bearing files.
 4. Force-push rewritten refs to every remote.
 5. Ask all collaborators to re-clone or hard reset to the rewritten history.
+
+Helper scripts:
+
+- Audit only: [tools/history_secret_audit.ps1](E:/Project/Toasttab Quickbook/New folder/integration-toasttab-qb/tools/history_secret_audit.ps1)
+- Rewrite helper: [tools/rewrite_secret_history.ps1](E:/Project/Toasttab Quickbook/New folder/integration-toasttab-qb/tools/rewrite_secret_history.ps1)
 
 ## Candidate paths to purge from history
 
