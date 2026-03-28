@@ -151,3 +151,76 @@ def test_missing_optional_sheets_do_not_crash(tmp_path):
 
     assert amounts["Food Sales"] == Decimal("80.00")
     assert amounts["Cash Drawer"] == Decimal("-80.00")
+
+
+def test_unmapped_category_reports_issue(tmp_path):
+    report_path = tmp_path / "SalesSummary_2026-03-30_2026-03-30.xlsx"
+    _build_report(
+        report_path,
+        revenue={"Tax amount": 0, "Tips": 0, "Gratuity": 0, "Deferred (gift cards)": 0},
+        net_sales={"Sales discounts": 0, "Sales refunds": 0},
+        categories=[{"Sales category": "Beer", "Net sales": 25, "Gross sales": 25}],
+        payments=[{"Payment type": "Cash", "Payment sub type": "", "Total": 25}],
+    )
+
+    issues = []
+    reader = qb_sync.ToastExcelReader(report_path)
+    lines = qb_sync.extract_receipt_lines(
+        reader,
+        {
+            "sales_category_map": {},
+            "payment_map": {"Cash": "Cash Drawer"},
+        },
+        issues=issues,
+    )
+
+    assert lines[0]["item_name"] == "Cash Drawer"
+    assert any(issue["code"] == "unmapped_categories" for issue in issues)
+
+
+def test_unbalanced_receipt_reports_issue_without_over_short(tmp_path):
+    report_path = tmp_path / "SalesSummary_2026-03-30_2026-03-30.xlsx"
+    _build_report(
+        report_path,
+        revenue={"Tax amount": 0, "Tips": 0, "Gratuity": 0, "Deferred (gift cards)": 0},
+        net_sales={"Sales discounts": 0, "Sales refunds": 0},
+        categories=[{"Sales category": "Food", "Net sales": 100, "Gross sales": 100}],
+        payments=[{"Payment type": "Cash", "Payment sub type": "", "Total": 90}],
+    )
+
+    issues = []
+    reader = qb_sync.ToastExcelReader(report_path)
+    qb_sync.extract_receipt_lines(
+        reader,
+        {
+            "sales_category_map": {"Food": "Food Sales"},
+            "payment_map": {"Cash": "Cash Drawer"},
+        },
+        issues=issues,
+    )
+
+    assert any(issue["code"] == "unbalanced_receipt" for issue in issues)
+
+
+def test_unmapped_payment_subtype_reports_issue(tmp_path):
+    report_path = tmp_path / "SalesSummary_2026-03-30_2026-03-30.xlsx"
+    _build_report(
+        report_path,
+        revenue={"Tax amount": 0, "Tips": 0, "Gratuity": 0, "Deferred (gift cards)": 0},
+        net_sales={"Sales discounts": 0, "Sales refunds": 0},
+        categories=[{"Sales category": "Food", "Net sales": 50, "Gross sales": 50}],
+        payments=[{"Payment type": "Other", "Payment sub type": "DoorDash", "Total": 50}],
+    )
+
+    issues = []
+    reader = qb_sync.ToastExcelReader(report_path)
+    qb_sync.extract_receipt_lines(
+        reader,
+        {
+            "sales_category_map": {"Food": "Food Sales"},
+            "payment_map": {},
+        },
+        issues=issues,
+    )
+
+    assert any(issue["code"] == "unmapped_payment_subtype" for issue in issues)

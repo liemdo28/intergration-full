@@ -143,8 +143,15 @@ def run_environment_checks(local_config: dict | None = None) -> DiagnosticReport
         else:
             _add(checks, "QB Password Slots", "warning", "No QB_PASSWORD1..3 values configured")
 
-    qb_exe = Path(env_values.get("QB_EXE_PATH") or os.environ.get("QB_EXE_PATH", r"C:\Program Files\Intuit\QuickBooks Enterprise Solutions 24.0\QBWEnterprise.exe"))
-    _add(checks, "QuickBooks Executable", "ok" if qb_exe.exists() else "warning", str(qb_exe))
+    qb_exe = None
+    try:
+        from qb_automate import resolve_qb_executable
+
+        qb_exe = resolve_qb_executable()
+    except Exception:
+        qb_exe = None
+    qb_exe = qb_exe or Path(env_values.get("QB_EXE_PATH") or os.environ.get("QB_EXE_PATH", r"C:\Program Files\Intuit\QuickBooks Enterprise Solutions 24.0\QBWEnterprise.exe"))
+    _add(checks, "QuickBooks Executable", "ok" if Path(qb_exe).exists() else "warning", str(qb_exe))
 
     credentials_path = runtime_path("credentials.json")
     _check_json_file(

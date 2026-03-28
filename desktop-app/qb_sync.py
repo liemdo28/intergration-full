@@ -251,11 +251,16 @@ class ToastExcelReader:
 
 
 # ── Data Extractor ───────────────────────────────────────────────────
-def extract_receipt_lines(reader, store_config):
+def extract_receipt_lines(reader, store_config, issues=None):
     """
     Extract Sales Receipt lines from Excel data using store mapping.
     Returns list of: {"item_name": str, "amount": Decimal, "desc": str}
     """
+    issues = issues if issues is not None else []
+
+    def add_issue(code, message, **meta):
+        issues.append({"code": code, "message": message, **meta})
+
     lines = []
     cat_map = store_config.get("sales_category_map", {})
     pay_map = store_config.get("payment_map", {})
@@ -284,6 +289,7 @@ def extract_receipt_lines(reader, store_config):
 
     if unmapped_categories:
         log(f"  Unmapped categories: {unmapped_categories}")
+        add_issue("unmapped_categories", f"Unmapped sales categories: {', '.join(unmapped_categories)}", categories=unmapped_categories)
 
     for item_name, amount in sales_by_item.items():
         if amount != 0:
@@ -319,6 +325,7 @@ def extract_receipt_lines(reader, store_config):
                 lines.append({"item_name": qb_item, "amount": tax_amt, "desc": f"Tax - {tax_rate_name}"})
             else:
                 log(f"  Unmapped tax rate: {tax_rate_name} = {tax_amt}")
+                add_issue("unmapped_tax", f"Unmapped tax rate: {tax_rate_name}", tax_rate=tax_rate_name, amount=str(tax_amt))
     elif fixed.get("tax"):
         tax_amount = d(revenue.get("Tax amount", 0))
         if tax_amount != 0:
@@ -367,17 +374,23 @@ def extract_receipt_lines(reader, store_config):
             qb_item = pay_map.get(psub) or pay_map.get("_other")
             if qb_item:
                 payment_totals[qb_item] = payment_totals.get(qb_item, Decimal("0")) + total
+            elif total != 0:
+                add_issue("unmapped_payment_subtype", f"Unmapped payment subtype: {psub}", payment_type=ptype, payment_sub_type=psub, amount=str(total))
         elif ptype == "Other" and not psub:
             has_sub_maps = any(k not in ("Cash", "Credit/debit", "Gift Card", "_other") for k in pay_map)
             if not has_sub_maps and pay_map.get("_other") and total != 0:
                 qb_item = pay_map["_other"]
                 payment_totals[qb_item] = payment_totals.get(qb_item, Decimal("0")) + total
+            elif total != 0:
+                add_issue("unmapped_other_payment", "Other payment has no fallback mapping", payment_type=ptype, amount=str(total))
         elif ptype == "Credit/debit" and psub:
             continue
         else:
             qb_item = pay_map.get(ptype)
             if qb_item:
                 payment_totals[qb_item] = payment_totals.get(qb_item, Decimal("0")) + total
+            elif total != 0:
+                add_issue("unmapped_payment_type", f"Unmapped payment type: {ptype}", payment_type=ptype, amount=str(total))
 
     for item_name, total in payment_totals.items():
         if total != 0:
@@ -390,6 +403,12 @@ def extract_receipt_lines(reader, store_config):
         balance = total_positive + total_negative
         if balance != 0:
             lines.append({"item_name": fixed["over_short"], "amount": -balance, "desc": "Over/Short adjustment"})
+    else:
+        total_positive = sum(l["amount"] for l in lines if l["amount"] > 0)
+        total_negative = sum(l["amount"] for l in lines if l["amount"] < 0)
+        balance = total_positive + total_negative
+        if balance != 0:
+            add_issue("unbalanced_receipt", f"Sales receipt lines are not balanced by {balance}", balance=str(balance))
 
     return lines
 

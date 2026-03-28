@@ -85,6 +85,14 @@ Hoac dung script:
 Output:
 
 - `dist\ToastPOSManager\ToastPOSManager.exe`
+- `release\ToastPOSManager-<timestamp>-<commit>.zip`
+
+Neu may build co Inno Setup (`ISCC.exe`), script se build them installer `.exe` trong thu muc `release\`.
+
+## QB Sync safety
+
+- `Strict accounting mode` duoc bat mac dinh de chan sync khi report co unmapped category/tax/payment hoac receipt khong can bang
+- Co the tat strict mode khi can debug, nhung khong nen dung cho run production binh thuong
 
 ## Release planning
 

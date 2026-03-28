@@ -48,6 +48,37 @@ PASSWORDS = {
 }
 
 
+def _candidate_qb_paths():
+    env_path = os.environ.get("QB_EXE_PATH")
+    if env_path:
+        yield Path(env_path)
+
+    program_roots = [
+        Path(os.environ.get("ProgramFiles", r"C:\Program Files")),
+        Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")),
+    ]
+    editions = [
+        "QuickBooks Enterprise Solutions",
+        "QuickBooks Desktop Enterprise",
+        "QuickBooks Enterprise Accountant",
+    ]
+    exe_names = ["QBWEnterprise.exe", "QBW32Enterprise.exe", "QBW.exe"]
+
+    for root in program_roots:
+        for version in range(30, 19, -1):
+            for edition in editions:
+                base = root / "Intuit" / f"{edition} {version}.0"
+                for exe_name in exe_names:
+                    yield base / exe_name
+
+
+def resolve_qb_executable():
+    for candidate in _candidate_qb_paths():
+        if candidate.exists():
+            return candidate
+    return None
+
+
 def log(msg):
     timestamp = time.strftime("%H:%M:%S")
     print(f"[{timestamp}] {msg}")
@@ -55,26 +86,32 @@ def log(msg):
 
 # ── Close QB ─────────────────────────────────────────────────────────
 def close_qb_completely(callback=None):
-    """Kill all QB processes."""
+    """Terminate QB processes, then force-kill survivors only if needed."""
     import psutil
     if callback:
         callback("Closing QuickBooks...")
     else:
         log("Closing QuickBooks...")
 
-    killed = False
+    touched = []
     for proc_name in ["QBWEnterprise.exe", "QBW32Enterprise.exe", "QBW.EXE",
                        "qbupdate.exe", "QBCFMonitorService.exe"]:
         for proc in psutil.process_iter(["name"]):
             try:
                 if proc.info["name"] and proc.info["name"].lower() == proc_name.lower():
                     proc.terminate()
-                    killed = True
+                    touched.append(proc)
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
 
-    if killed:
-        time.sleep(5)
+    if touched:
+        gone, alive = psutil.wait_procs(touched, timeout=8)
+        for proc in alive:
+            try:
+                proc.kill()
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+        time.sleep(2)
         msg = "QB closed"
     else:
         msg = "QB was not running"
@@ -107,11 +144,19 @@ def open_qb_with_file(qbw_path, password_key="pass1", callback=None):
             log(msg)
 
     password = PASSWORDS.get(password_key, "")
+    qb_exe = resolve_qb_executable()
+
+    if not Path(qbw_path).exists():
+        _log(f"QB company file not found: {qbw_path}")
+        return False
+    if not qb_exe:
+        _log("QuickBooks executable not found. Check QB_EXE_PATH or install path.")
+        return False
 
     _log(f"Opening QB with: {os.path.basename(qbw_path)}")
 
     # Launch QB with company file
-    subprocess.Popen([QB_EXE, qbw_path])
+    subprocess.Popen([str(qb_exe), qbw_path])
     time.sleep(10)
 
     # Connect to QB window
@@ -160,11 +205,19 @@ def open_store(store_name, store_paths, qbw_match=None, password_key="pass1"):
 
     qbw_path = store_paths[store_name]
     password = PASSWORDS.get(password_key, "")
+    qb_exe = resolve_qb_executable()
+
+    if not Path(qbw_path).exists():
+        log(f"QB file not found: {qbw_path}")
+        return False
+    if not qb_exe:
+        log("QuickBooks executable not found. Check QB_EXE_PATH or install path.")
+        return False
 
     log(f"Opening store: {store_name}")
     log(f"  File: {qbw_path}")
 
-    subprocess.Popen([QB_EXE, qbw_path])
+    subprocess.Popen([str(qb_exe), qbw_path])
     time.sleep(10)
 
     from pywinauto import Application

@@ -31,6 +31,7 @@ cd "E:\Project\Toasttab Quickbook\New folder\integration-toasttab-qb\desktop-app
 Output mac dinh:
 
 - `desktop-app\dist\ToastPOSManager\ToastPOSManager.exe`
+- `desktop-app\release\ToastPOSManager-<timestamp>-<commit>.zip`
 
 ## Planning docs
 

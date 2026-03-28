@@ -13,3 +13,4 @@ toast-reports/
 audit-logs/
 desktop-app/build/
 desktop-app/dist/
+desktop-app/release/

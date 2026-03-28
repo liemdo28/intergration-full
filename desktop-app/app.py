@@ -469,6 +469,12 @@ class QBSyncTab(ctk.CTkFrame):
         self.preview_var = ctk.BooleanVar(value=False)
         ctk.CTkCheckBox(opt_inner, text="Preview only (don't create Sales Receipts)",
                          variable=self.preview_var).grid(row=1, column=0, columnspan=3, pady=(10, 0), sticky="w")
+        self.strict_sync_var = ctk.BooleanVar(value=True)
+        ctk.CTkCheckBox(
+            opt_inner,
+            text="Strict accounting mode (block sync on unmapped or unbalanced report data)",
+            variable=self.strict_sync_var,
+        ).grid(row=2, column=0, columnspan=3, pady=(8, 0), sticky="w")
 
         # ── Action Button ──
         self.sync_btn = ctk.CTkButton(self, text="Sync to QuickBooks",
@@ -566,13 +572,13 @@ class QBSyncTab(ctk.CTkFrame):
         self._running = True
         self.sync_btn.configure(state="disabled", text="Syncing...")
         threading.Thread(target=self._sync_worker,
-                          args=(stores, dates, self.source_var.get(), self.preview_var.get()),
+                          args=(stores, dates, self.source_var.get(), self.preview_var.get(), self.strict_sync_var.get()),
                           daemon=True).start()
 
-    def _sync_worker(self, stores, dates, source, preview):
+    def _sync_worker(self, stores, dates, source, preview, strict_mode):
         try:
             global_cfg, all_stores = load_mapping()
-            sys.path.insert(0, str(SCRIPT_DIR))
+            sys.path.insert(0, str(APP_DIR))
             from qb_sync import (QBSyncClient, ToastExcelReader, extract_receipt_lines,
                                  load_csv_mapping, find_report_file)
 
@@ -686,7 +692,8 @@ class QBSyncTab(ctk.CTkFrame):
                                 continue
 
                             reader = ToastExcelReader(filepath)
-                            lines = extract_receipt_lines(reader, store_cfg)
+                            issues = []
+                            lines = extract_receipt_lines(reader, store_cfg, issues=issues)
 
                             if not lines:
                                 self.log(f"  No data found in report")
@@ -697,10 +704,27 @@ class QBSyncTab(ctk.CTkFrame):
                             self.log(f"  Lines: {len(lines)}, Balance: {float(total_bal):.2f}")
                             if total_bal != 0:
                                 self.log("  Warning: Sales receipt lines are not balanced; verify mapping or over/short setup")
+                            if issues:
+                                self.log("  Validation issues found:")
+                                for issue in issues:
+                                    self.log(f"    [{issue['code']}] {issue['message']}")
+                            if strict_mode and issues:
+                                self.log("  Strict mode blocked this sync because report validation issues were found")
+                                fail_count += 1
+                                try:
+                                    reader.close()
+                                except Exception:
+                                    pass
+                                continue
                             for l in lines:
                                 amt = float(l["amount"])
                                 if amt != 0:
                                     self.log(f"    {l['item_name']:<30} {amt:>10.2f}")
+
+                            try:
+                                reader.close()
+                            except Exception:
+                                pass
 
                             if preview:
                                 self.log(f"  [PREVIEW MODE - not creating Sales Receipt]")
