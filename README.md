@@ -41,6 +41,7 @@ Output mac dinh:
 - [Current state review](E:/Project/Toasttab Quickbook/New folder/integration-toasttab-qb/docs/CURRENT_STATE_REVIEW.md)
 - [Operator guide](E:/Project/Toasttab Quickbook/New folder/integration-toasttab-qb/docs/OPERATOR_GUIDE.md)
 - [Final app requirements](E:/Project/Toasttab Quickbook/New folder/integration-toasttab-qb/docs/FINAL_APP_REQUIREMENTS.md)
+- [Five-year self-recovery runbook](E:/Project/Toasttab Quickbook/New folder/integration-toasttab-qb/docs/FIVE_YEAR_SELF_RECOVERY_RUNBOOK.md)
 - [Engineering policy](E:/Project/Toasttab Quickbook/New folder/integration-toasttab-qb/POLICY.md)
 
 ## Security note

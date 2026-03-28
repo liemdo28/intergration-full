@@ -20,6 +20,7 @@ import glob as glob_mod
 from pathlib import Path
 from datetime import datetime, timedelta
 from tkinter import filedialog, simpledialog
+from functools import partial
 
 # Fix encoding for Windows console
 if sys.platform == "win32":
@@ -34,6 +35,14 @@ from app_paths import APP_DIR, RUNTIME_DIR, app_path, runtime_path
 from audit_utils import export_transactions_snapshot, write_delete_audit
 from delete_policy import load_delete_policy
 from diagnostics import format_report_lines, run_environment_checks
+from recovery_center import (
+    backup_and_remove,
+    ensure_runtime_file_from_example,
+    export_support_bundle,
+    format_playbook,
+    get_playbook_by_title,
+    get_recovery_playbooks,
+)
 
 MAPPING_FILE = app_path("qb-mapping.json")
 LOCAL_CONFIG_FILE = runtime_path("local-config.json")
@@ -1588,6 +1597,7 @@ class SettingsTab(ctk.CTkFrame):
     def __init__(self, master, run_diagnostics=None, **kwargs):
         super().__init__(master, **kwargs)
         self.run_diagnostics = run_diagnostics
+        self.recovery_playbooks = get_recovery_playbooks()
         self._build_ui()
 
     def _build_ui(self):
@@ -1610,13 +1620,7 @@ class SettingsTab(ctk.CTkFrame):
         toast_frame = ctk.CTkFrame(content)
         toast_frame.pack(fill="x", padx=15, pady=5)
         ctk.CTkLabel(toast_frame, text="Toast Session", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=10, pady=(10, 5))
-        session_file = runtime_path(".toast-session.json")
-        if session_file.exists():
-            size_kb = session_file.stat().st_size / 1024
-            mtime = datetime.fromtimestamp(session_file.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
-            self.toast_status = ctk.CTkLabel(toast_frame, text=f"Session saved ({size_kb:.0f} KB, updated {mtime})", text_color="#059669")
-        else:
-            self.toast_status = ctk.CTkLabel(toast_frame, text="No saved session", text_color="gray")
+        self.toast_status = ctk.CTkLabel(toast_frame, text="No saved session", text_color="gray")
         self.toast_status.pack(anchor="w", padx=10, pady=2)
         ctk.CTkButton(toast_frame, text="Clear Session", width=120, fg_color="#dc2626",
                        hover_color="#b91c1c", command=self._clear_session).pack(anchor="w", padx=10, pady=(5, 10))
@@ -1670,6 +1674,51 @@ class SettingsTab(ctk.CTkFrame):
         self.diag_box.pack(fill="x", padx=10, pady=(0, 10))
         self.diag_box.configure(state="disabled")
 
+        # ── Recovery Center ──
+        recovery_frame = ctk.CTkFrame(content)
+        recovery_frame.pack(fill="x", padx=15, pady=5)
+        ctk.CTkLabel(recovery_frame, text="Recovery Center", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=10, pady=(10, 5))
+        ctk.CTkLabel(
+            recovery_frame,
+            text="Use these playbooks and actions when there is no developer available. Start with a Health Report before changing runtime files.",
+            text_color="gray",
+            wraplength=760,
+            justify="left",
+        ).pack(anchor="w", padx=10, pady=(0, 6))
+
+        playbook_row = ctk.CTkFrame(recovery_frame, fg_color="transparent")
+        playbook_row.pack(fill="x", padx=10, pady=(0, 6))
+        ctk.CTkLabel(playbook_row, text="Scenario:").pack(side="left", padx=(0, 10))
+        playbook_titles = [item["title"] for item in self.recovery_playbooks]
+        self.playbook_var = ctk.StringVar(value=playbook_titles[0])
+        self.playbook_menu = ctk.CTkOptionMenu(
+            playbook_row,
+            values=playbook_titles,
+            variable=self.playbook_var,
+            width=340,
+            command=self._show_playbook,
+        )
+        self.playbook_menu.pack(side="left")
+
+        recovery_btn_row = ctk.CTkFrame(recovery_frame, fg_color="transparent")
+        recovery_btn_row.pack(fill="x", padx=10, pady=(0, 6))
+        ctk.CTkButton(recovery_btn_row, text="Export Health Report", width=150, command=self._export_health_report).pack(side="left", padx=2)
+        ctk.CTkButton(recovery_btn_row, text="Create .env.qb", width=120, command=partial(self._create_runtime_file, ".env.qb.example", ".env.qb")).pack(side="left", padx=2)
+        ctk.CTkButton(recovery_btn_row, text="Create local-config", width=140, command=partial(self._create_runtime_file, "local-config.example.json", "local-config.json")).pack(side="left", padx=2)
+        ctk.CTkButton(recovery_btn_row, text="Open Recovery Backups", width=170, command=lambda: os.startfile(str(runtime_path("recovery-backups")))).pack(side="left", padx=2)
+
+        reset_btn_row = ctk.CTkFrame(recovery_frame, fg_color="transparent")
+        reset_btn_row.pack(fill="x", padx=10, pady=(0, 6))
+        ctk.CTkButton(reset_btn_row, text="Backup + Reset Toast Session", width=210, fg_color="#d97706", hover_color="#b45309", command=self._backup_clear_session).pack(side="left", padx=2)
+        ctk.CTkButton(reset_btn_row, text="Backup + Reset Google Token", width=210, fg_color="#d97706", hover_color="#b45309", command=self._backup_clear_token).pack(side="left", padx=2)
+        ctk.CTkButton(reset_btn_row, text="Open Runtime Folder", width=150, command=lambda: os.startfile(str(RUNTIME_DIR))).pack(side="left", padx=2)
+
+        self.recovery_box = ctk.CTkTextbox(recovery_frame, height=220, font=ctk.CTkFont(family="Consolas", size=11))
+        self.recovery_box.pack(fill="x", padx=10, pady=(0, 10))
+        self.recovery_box.configure(state="disabled")
+        self._show_playbook(self.playbook_var.get())
+        self._refresh_recovery_status()
+
         # ── Appearance ──
         theme_frame = ctk.CTkFrame(content)
         theme_frame.pack(fill="x", padx=15, pady=5)
@@ -1707,6 +1756,7 @@ class SettingsTab(ctk.CTkFrame):
         self.diag_box.delete("1.0", "end")
         self.diag_box.insert("end", "\n".join(format_report_lines(report)))
         self.diag_box.configure(state="disabled")
+        self._refresh_recovery_status()
 
     def _load_env_values(self, path):
         env_values = {}
@@ -1730,11 +1780,11 @@ class SettingsTab(ctk.CTkFrame):
                 gdrive = GDriveService()
                 if gdrive.authenticate():
                     email = gdrive.get_user_email()
-                    self.after(0, lambda: self.gdrive_status.configure(text=f"Connected: {email}", text_color="#059669"))
+                    self.after(0, lambda: self._set_gdrive_status(f"Connected: {email}", "#059669"))
                 else:
-                    self.after(0, lambda: self.gdrive_status.configure(text="Authentication failed", text_color="#dc2626"))
+                    self.after(0, lambda: self._set_gdrive_status("Authentication failed", "#dc2626"))
             except Exception as e:
-                self.after(0, lambda: self.gdrive_status.configure(text=f"Error: {e}", text_color="#dc2626"))
+                self.after(0, lambda: self._set_gdrive_status(f"Error: {e}", "#dc2626"))
         threading.Thread(target=_worker, daemon=True).start()
 
     def _setup_folders(self):
@@ -1755,13 +1805,84 @@ class SettingsTab(ctk.CTkFrame):
         token_file = runtime_path("token.json")
         if token_file.exists():
             token_file.unlink()
-            self.gdrive_status.configure(text="Token cleared. Reconnect to authenticate.", text_color="gray")
+            self._set_gdrive_status("Token cleared. Reconnect to authenticate.", "gray")
+        self._refresh_recovery_status()
 
     def _clear_session(self):
         session_file = runtime_path(".toast-session.json")
         if session_file.exists():
             session_file.unlink()
-            self.toast_status.configure(text="Session cleared. Next download will require login.", text_color="gray")
+            self._set_toast_status("Session cleared. Next download will require login.", "gray")
+        self._refresh_recovery_status()
+
+    def _show_playbook(self, title):
+        playbook = get_playbook_by_title(title)
+        text = format_playbook(playbook) if playbook else "No playbook available."
+        self.recovery_box.configure(state="normal")
+        self.recovery_box.delete("1.0", "end")
+        self.recovery_box.insert("end", text)
+        self.recovery_box.configure(state="disabled")
+
+    def _export_health_report(self):
+        app = self.winfo_toplevel()
+        report = getattr(app, "diagnostics_report", None)
+        bundle = export_support_bundle(load_local_config(), report)
+        messagebox.showinfo("Health Report Exported", f"TXT: {bundle['txt_path']}\nJSON: {bundle['json_path']}")
+        self._refresh_recovery_status()
+
+    def _create_runtime_file(self, example_name, target_name):
+        try:
+            path, created = ensure_runtime_file_from_example(example_name, target_name)
+        except Exception as exc:
+            messagebox.showerror("Error", str(exc))
+            return
+        if created:
+            messagebox.showinfo("Created", f"Created {path}. Review and fill any required values before production use.")
+        else:
+            messagebox.showinfo("Already Exists", f"{path} already exists.")
+        self._refresh_recovery_status()
+
+    def _backup_clear_session(self):
+        session_file = runtime_path(".toast-session.json")
+        if not session_file.exists():
+            messagebox.showinfo("Toast Session", "No saved Toast session was found.")
+            return
+        backup_path = backup_and_remove(session_file)
+        self._set_toast_status("Session reset. Next download will require login.", "gray")
+        messagebox.showinfo("Toast Session Reset", f"Backup created at:\n{backup_path}\n\nNext Toast download will prompt for login again.")
+        self._refresh_recovery_status()
+
+    def _backup_clear_token(self):
+        token_file = runtime_path("token.json")
+        if not token_file.exists():
+            messagebox.showinfo("Google Token", "No token.json file was found.")
+            return
+        backup_path = backup_and_remove(token_file)
+        self._set_gdrive_status("Token reset. Reconnect Google Drive to authenticate again.", "gray")
+        messagebox.showinfo("Google Token Reset", f"Backup created at:\n{backup_path}\n\nReconnect Google Drive before the next upload.")
+        self._refresh_recovery_status()
+
+    def _set_gdrive_status(self, text, color):
+        self.gdrive_status.configure(text=text, text_color=color)
+
+    def _set_toast_status(self, text, color):
+        self.toast_status.configure(text=text, text_color=color)
+
+    def _refresh_recovery_status(self):
+        recovery_dir = runtime_path("recovery-backups")
+        if not recovery_dir.exists():
+            recovery_dir.mkdir(parents=True, exist_ok=True)
+        token_file = runtime_path("token.json")
+        if not token_file.exists() and self.gdrive_status.cget("text") == "Not connected":
+            self._set_gdrive_status("No saved token. Connect Google Drive when needed.", "gray")
+
+        session_file = runtime_path(".toast-session.json")
+        if session_file.exists():
+            size_kb = session_file.stat().st_size / 1024
+            mtime = datetime.fromtimestamp(session_file.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+            self._set_toast_status(f"Session saved ({size_kb:.0f} KB, updated {mtime})", "#059669")
+        elif self.toast_status.cget("text") in {"No saved session", "Session cleared. Next download will require login.", "Session reset. Next download will require login."}:
+            self._set_toast_status("No saved session. Next download will require login.", "gray")
 
 
 # ══════════════════════════════════════════════════════════════════════

@@ -1,6 +1,7 @@
 import importlib
 import json
 import os
+import socket
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -84,6 +85,14 @@ def _check_json_file(path: Path, label: str, checks: list[DiagnosticCheck], *, r
     _add(checks, label, "ok", str(path))
 
 
+def _check_endpoint(host: str, *, port: int = 443, timeout: float = 2.5) -> tuple[bool, str]:
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True, f"Connected to {host}:{port}"
+    except Exception as exc:
+        return False, str(exc)
+
+
 def run_environment_checks(local_config: dict | None = None) -> DiagnosticReport:
     checks: list[DiagnosticCheck] = []
     local_config = local_config or {}
@@ -128,6 +137,12 @@ def run_environment_checks(local_config: dict | None = None) -> DiagnosticReport
                 _add(checks, "Playwright Chromium", "error", "Chromium browser not installed")
     except Exception as exc:
         _add(checks, "Playwright Chromium", "error", f"Browser check failed: {exc}")
+
+    toast_ok, toast_msg = _check_endpoint("www.toasttab.com")
+    _add(checks, "Toast Reachability", "ok" if toast_ok else "warning", toast_msg if toast_ok else f"Toast may be unavailable: {toast_msg}")
+
+    google_ok, google_msg = _check_endpoint("accounts.google.com")
+    _add(checks, "Google Reachability", "ok" if google_ok else "warning", google_msg if google_ok else f"Google auth/upload may be unavailable: {google_msg}")
 
     env_path = runtime_path(".env.qb")
     env_values = _load_env_file(env_path)

@@ -61,6 +61,7 @@ launch.bat
 ## Startup diagnostics
 
 App tu chay environment diagnostics luc khoi dong va hien ket qua trong tab Settings.
+Tab `Settings` gio co them `Recovery Center` de user tu xuat health report, reset session/token an toan, tao file config mau, va doc playbook xu ly su co thong dung ma khong can dev.
 
 Co the chay doctor bang CLI:
 
@@ -102,6 +103,7 @@ Neu may build co Inno Setup (`ISCC.exe`), script se build them installer `.exe` 
 - Current state review: [docs/CURRENT_STATE_REVIEW.md](E:/Project/Toasttab Quickbook/New folder/integration-toasttab-qb/docs/CURRENT_STATE_REVIEW.md)
 - Operator guide: [docs/OPERATOR_GUIDE.md](E:/Project/Toasttab Quickbook/New folder/integration-toasttab-qb/docs/OPERATOR_GUIDE.md)
 - Final app requirements: [docs/FINAL_APP_REQUIREMENTS.md](E:/Project/Toasttab Quickbook/New folder/integration-toasttab-qb/docs/FINAL_APP_REQUIREMENTS.md)
+- Five-year self-recovery runbook: [docs/FIVE_YEAR_SELF_RECOVERY_RUNBOOK.md](E:/Project/Toasttab Quickbook/New folder/integration-toasttab-qb/docs/FIVE_YEAR_SELF_RECOVERY_RUNBOOK.md)
 - Engineering policy: [POLICY.md](E:/Project/Toasttab Quickbook/New folder/integration-toasttab-qb/POLICY.md)
 
 ## Delete safety
