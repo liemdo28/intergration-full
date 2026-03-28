@@ -575,6 +575,14 @@ class QBSyncTab(ctk.CTkFrame):
             command=self._save_selected_mapping,
         )
         self.save_mapping_btn.pack(side="left", padx=2)
+        self.save_and_preview_btn = ctk.CTkButton(
+            mapping_edit_row,
+            text="Save + Re-run Preview",
+            width=165,
+            state="disabled",
+            command=self._save_mapping_and_preview,
+        )
+        self.save_and_preview_btn.pack(side="left", padx=2)
 
         self.mapping_detail_box = ctk.CTkTextbox(mapping_frame, height=135, font=ctk.CTkFont(family="Consolas", size=11))
         self.mapping_detail_box.pack(fill="x", padx=10, pady=(0, 10))
@@ -1188,6 +1196,7 @@ class QBSyncTab(ctk.CTkFrame):
             self.mapping_candidate_combo.configure(values=["No mappable validation issues"], state="disabled")
             self.mapping_candidate_combo.set("No mappable validation issues")
             self.save_mapping_btn.configure(state="disabled")
+            self.save_and_preview_btn.configure(state="disabled")
             self.mapping_detail_box.insert("end", message or "Run Preview/Sync first, then use Validation Issues to drive mapping fixes here.")
             self.mapping_detail_box.configure(state="disabled")
             return
@@ -1217,6 +1226,7 @@ class QBSyncTab(ctk.CTkFrame):
         self.mapping_detail_box.insert("end", "\n".join(lines))
         self.mapping_detail_box.configure(state="disabled")
         self.save_mapping_btn.configure(state="normal")
+        self.save_and_preview_btn.configure(state="normal")
 
     def _refresh_mapping_candidates(self):
         try:
@@ -1247,13 +1257,13 @@ class QBSyncTab(ctk.CTkFrame):
         if candidate:
             self._set_mapping_candidate(candidate)
 
-    def _save_selected_mapping(self):
+    def _apply_mapping_save(self, *, rerun_preview: bool):
         if not self.selected_mapping_candidate:
-            return
+            return False
         qb_item = self.mapping_qb_item_var.get().strip()
         if not qb_item:
             messagebox.showwarning("QB Item Required", "Enter a QuickBooks item name before saving the mapping.")
-            return
+            return False
         try:
             from mapping_maintenance import upsert_candidate_mapping
 
@@ -1264,13 +1274,54 @@ class QBSyncTab(ctk.CTkFrame):
             self.log(
                 f"Mapping {result['action']} -> {candidate['store']} | {candidate['report']} | {candidate['note']} => {qb_item}"
             )
-            messagebox.showinfo(
-                "Mapping Saved",
-                f"Mapping {result['action']} in:\n{result['path']}\n\nRe-run Preview/Sync to confirm the issue is resolved.",
-            )
             self._refresh_mapping_candidates()
+            if rerun_preview:
+                if not self._prepare_preview_for_candidate(candidate):
+                    return False
+                self.log(f"Starting preview rerun for {candidate['store']} / {candidate['date']} after mapping save")
+                self.start_sync()
+            else:
+                messagebox.showinfo(
+                    "Mapping Saved",
+                    f"Mapping {result['action']} in:\n{result['path']}\n\nRe-run Preview/Sync to confirm the issue is resolved.",
+                )
+            return True
         except Exception as exc:
             messagebox.showerror("Save Mapping Failed", str(exc))
+            return False
+
+    def _save_selected_mapping(self):
+        self._apply_mapping_save(rerun_preview=False)
+
+    def _save_mapping_and_preview(self):
+        self._apply_mapping_save(rerun_preview=True)
+
+    def _resolve_store_selection_name(self, candidate_store):
+        if candidate_store in self.store_vars:
+            return candidate_store
+        for store_name in self.store_vars:
+            if candidate_store.startswith(f"{store_name} "):
+                return store_name
+        return None
+
+    def _prepare_preview_for_candidate(self, candidate):
+        if self._running:
+            messagebox.showinfo("Sync In Progress", "Wait for the current sync to finish before starting a preview rerun.")
+            return False
+        store_name = self._resolve_store_selection_name(candidate.get("store", ""))
+        if not store_name:
+            messagebox.showerror(
+                "Preview Setup Failed",
+                f"Could not match candidate store '{candidate.get('store')}' to a selectable store in QB Sync.",
+            )
+            return False
+        for name, var in self.store_vars.items():
+            var.set(name == store_name)
+        self.date_var.set(candidate.get("date") or "")
+        self.preview_var.set(True)
+        self.status_var.set(f"Preview armed for {store_name} / {candidate.get('date')}")
+        self._refresh_last_sync_status()
+        return True
 
     def _open_map_folder(self):
         try:
