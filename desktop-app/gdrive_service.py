@@ -11,16 +11,16 @@ from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
+from app_paths import runtime_path
 
-SCRIPT_DIR = Path(__file__).parent
 SCOPES = ["https://www.googleapis.com/auth/drive.file"]
 ROOT_FOLDER_NAME = "Toast Reports"
 
 
 class GDriveService:
     def __init__(self, credentials_file=None, token_file=None, on_log=None):
-        self.credentials_file = credentials_file or str(SCRIPT_DIR / "credentials.json")
-        self.token_file = token_file or str(SCRIPT_DIR / "token.json")
+        self.credentials_file = credentials_file or str(runtime_path("credentials.json"))
+        self.token_file = token_file or str(runtime_path("token.json"))
         self.on_log = on_log or (lambda msg: None)
         self.service = None
         self._folder_cache = {}  # name -> id

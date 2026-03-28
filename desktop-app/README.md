@@ -13,6 +13,7 @@ Ung dung desktop hop nhat cho quy trinh Toast -> QuickBooks:
 - Python 3.12+
 - QuickBooks Desktop da cai san
 - Chromium cho Playwright (`python -m playwright install chromium`)
+- Nen dung Python 64-bit de pywin32/QB COM on dinh
 
 ## Cau truc chinh
 
@@ -56,6 +57,40 @@ Hoac chay:
 ```bat
 launch.bat
 ```
+
+## Startup diagnostics
+
+App tu chay environment diagnostics luc khoi dong va hien ket qua trong tab Settings.
+
+Co the chay doctor bang CLI:
+
+```powershell
+python app.py --doctor-cli
+```
+
+## Build EXE
+
+```powershell
+python -m pip install -r requirements-build.txt
+python -m playwright install chromium
+pyinstaller ToastPOSManager.spec --noconfirm
+```
+
+Hoac dung script:
+
+```powershell
+.\build_release.ps1
+```
+
+Output:
+
+- `dist\ToastPOSManager\ToastPOSManager.exe`
+
+## Delete safety
+
+- Remove Transactions co `Dry run only` mac dinh
+- App tu export snapshot truoc khi xoa
+- Ket qua xoa/giả lập duoc ghi vao `audit-logs\delete-transactions`
 
 ## Ghi chu van hanh
 

@@ -18,12 +18,12 @@ if sys.platform == "win32":
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 import openpyxl
+from app_paths import app_path, runtime_path
 
 # ── Paths ────────────────────────────────────────────────────────────
-SCRIPT_DIR = Path(__file__).parent
-MAPPING_FILE = SCRIPT_DIR / "qb-mapping.json"
-MAP_DIR = SCRIPT_DIR / "Map"
-REPORTS_DIR = SCRIPT_DIR / "toast-reports"
+MAPPING_FILE = app_path("qb-mapping.json")
+MAP_DIR = app_path("Map")
+REPORTS_DIR = runtime_path("toast-reports")
 
 
 # ── Helpers ──────────────────────────────────────────────────────────
@@ -326,15 +326,18 @@ def extract_receipt_lines(reader, store_config):
 
     # 5. Tips (POSITIVE)
     tips = d(revenue.get("Tips", 0))
+    gratuity_amt = d(revenue.get("Gratuity", 0))
+    gratuity_is_separate = bool(fixed.get("gratuity"))
     if fixed.get("tips_includes_gratuity"):
-        gratuity = d(revenue.get("Gratuity", 0))
-        tips = tips + gratuity
+        if gratuity_is_separate:
+            log("  Gratuity is mapped separately; skipping tips_includes_gratuity merge to avoid double count")
+        else:
+            tips = tips + gratuity_amt
     if tips != 0 and fixed.get("tips"):
         lines.append({"item_name": fixed["tips"], "amount": tips, "desc": "Tips"})
 
     # 5a. Gratuity (POSITIVE, separate line)
-    if fixed.get("gratuity"):
-        gratuity_amt = d(revenue.get("Gratuity", 0))
+    if gratuity_amt != 0 and fixed.get("gratuity"):
         lines.append({"item_name": fixed["gratuity"], "amount": gratuity_amt, "desc": "Gratuity"})
 
     # 5b. Deferred Gift Cards (POSITIVE)
@@ -458,7 +461,7 @@ class QBSyncClient:
                 items.append({"name": child.findtext("FullName", ""), "type": child.tag.replace("Ret", "")})
         return items
 
-    def check_exists(self, date_str, ref_number):
+    def find_existing_sales_receipts(self, ref_number):
         qbxml = f"""<?xml version="1.0" encoding="utf-8"?>
 <?qbxml version="{self.qbxml_version}"?>
 <QBXML>
@@ -470,7 +473,21 @@ class QBSyncClient:
 </QBXML>"""
         resp = self._send(qbxml)
         result = self._parse(resp)
-        return result["ok"]
+        receipts = []
+        if result["ok"] and result.get("element") is not None:
+            for child in result["element"]:
+                if child.tag != "SalesReceiptRet":
+                    continue
+                receipts.append({
+                    "txn_id": child.findtext("TxnID", ""),
+                    "txn_date": child.findtext("TxnDate", ""),
+                    "ref_number": child.findtext("RefNumber", ""),
+                })
+        return receipts
+
+    def check_exists(self, date_str, ref_number):
+        matches = self.find_existing_sales_receipts(ref_number)
+        return any(match["txn_date"] == date_str and match["ref_number"] == ref_number for match in matches)
 
     def create_sales_receipt(self, txn_date, ref_number, customer_name, memo, lines, class_name=None):
         lines_xml = ""

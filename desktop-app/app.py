@@ -9,6 +9,7 @@ Combines 3 tools into 1 app:
 No API required - all data comes from Toast website scraping + local Excel files.
 """
 
+import argparse
 import sys
 import os
 import json
@@ -17,7 +18,7 @@ import threading
 import glob as glob_mod
 from pathlib import Path
 from datetime import datetime, timedelta
-from tkinter import filedialog
+from tkinter import filedialog, simpledialog
 
 # Fix encoding for Windows console
 if sys.platform == "win32":
@@ -28,11 +29,15 @@ import customtkinter as ctk
 import tkinter as tk
 from tkinter import messagebox
 from tkcalendar import Calendar
+from app_paths import APP_DIR, RUNTIME_DIR, app_path, runtime_path
+from audit_utils import export_transactions_snapshot, write_delete_audit
+from diagnostics import format_report_lines, run_environment_checks
 
-SCRIPT_DIR = Path(__file__).parent
-MAPPING_FILE = SCRIPT_DIR / "qb-mapping.json"
-LOCAL_CONFIG_FILE = SCRIPT_DIR / "local-config.json"
-REPORTS_DIR = SCRIPT_DIR / "toast-reports"
+MAPPING_FILE = app_path("qb-mapping.json")
+LOCAL_CONFIG_FILE = runtime_path("local-config.json")
+REPORTS_DIR = runtime_path("toast-reports")
+AUDIT_LOG_DIR = runtime_path("audit-logs")
+DELETE_AUDIT_DIR = AUDIT_LOG_DIR / "delete-transactions"
 
 # Toast locations (for download tab)
 TOAST_LOCATIONS = ["Stockton", "The Rim", "Stone Oak", "Bandera", "WA1", "WA2", "WA3"]
@@ -689,6 +694,8 @@ class QBSyncTab(ctk.CTkFrame):
 
                             total_bal = sum(l["amount"] for l in lines)
                             self.log(f"  Lines: {len(lines)}, Balance: {float(total_bal):.2f}")
+                            if total_bal != 0:
+                                self.log("  Warning: Sales receipt lines are not balanced; verify mapping or over/short setup")
                             for l in lines:
                                 amt = float(l["amount"])
                                 if amt != 0:
@@ -715,12 +722,16 @@ class QBSyncTab(ctk.CTkFrame):
                             ref_number = f"{prefix}{date_str.replace('-', '')}"
                             memo = f"Toast {toast_loc} {date_str}"
 
-                            exists = qb.check_exists(date_str, ref_number)
+                            existing_receipts = qb.find_existing_sales_receipts(ref_number)
+                            exists = any(item["txn_date"] == date_str for item in existing_receipts)
                             if exists:
                                 self.log(f"  Sales Receipt #{ref_number} already exists, skipping")
                                 qb.disconnect()
                                 success_count += 1
                                 continue
+                            if existing_receipts:
+                                existing_dates = ", ".join(sorted({item["txn_date"] for item in existing_receipts if item["txn_date"]}))
+                                self.log(f"  Note: found same RefNumber on other date(s): {existing_dates}")
 
                             result = qb.create_sales_receipt(
                                 txn_date=date_str,
@@ -777,6 +788,7 @@ class RemoveTab(ctk.CTkFrame):
         self.accounts = []
         self.found_txns = []
         self._running = False
+        self.delete_dry_run_var = ctk.BooleanVar(value=True)
         self._global_cfg, self._stores = load_mapping()
         self._local_cfg = load_local_config()
         self._build_ui()
@@ -976,6 +988,21 @@ class RemoveTab(ctk.CTkFrame):
         btn_frame.pack(fill="x", padx=10, pady=10)
         self.btn_search = ctk.CTkButton(btn_frame, text="Search Transactions", height=36, command=self._search, state="disabled")
         self.btn_search.pack(fill="x", padx=5, pady=3)
+        ctk.CTkCheckBox(
+            btn_frame,
+            text="Dry run only (export + simulate, no delete in QuickBooks)",
+            variable=self.delete_dry_run_var,
+        ).pack(anchor="w", padx=5, pady=(4, 2))
+        self.btn_export = ctk.CTkButton(
+            btn_frame,
+            text="Export Selected",
+            height=32,
+            fg_color="#2563eb",
+            hover_color="#1d4ed8",
+            command=self._export_selected,
+            state="disabled",
+        )
+        self.btn_export.pack(fill="x", padx=5, pady=3)
         self.btn_delete = ctk.CTkButton(btn_frame, text="Delete Selected", height=36,
                                           fg_color="#c0392b", hover_color="#e74c3c",
                                           command=self._delete_selected, state="disabled")
@@ -1217,6 +1244,7 @@ class RemoveTab(ctk.CTkFrame):
 
         if txns:
             self.btn_delete.configure(state="normal")
+            self.btn_export.configure(state="normal")
 
     def _on_search_error(self, error):
         self._running = False
@@ -1231,42 +1259,112 @@ class RemoveTab(ctk.CTkFrame):
         self.result_count.configure(text="")
         self.placeholder_label.configure(text="Search to show transactions")
         self.placeholder_label.pack(pady=30)
+        self.btn_export.configure(state="disabled")
+
+    def _selected_transactions(self):
+        return [txn for var, _, txn in self.txn_rows if var.get()]
+
+    def _export_selected(self):
+        selected = self._selected_transactions()
+        if not selected:
+            messagebox.showwarning("Nothing Selected", "Please select transactions to export.")
+            return
+        audit_files = export_transactions_snapshot(
+            selected,
+            DELETE_AUDIT_DIR / "exports",
+            "selected-transactions",
+            metadata={"action": "manual_export"},
+        )
+        self._log(f"Exported selected transactions -> {audit_files['csv_path']}")
+        messagebox.showinfo(
+            "Export Complete",
+            f"CSV: {audit_files['csv_path']}\nJSON: {audit_files['json_path']}",
+        )
 
     # ── Delete ───────────────────────────────────────────────────────
 
     def _delete_selected(self):
         if self._running or not self.qb:
             return
-        selected = [(var, txn) for var, _, txn in self.txn_rows if var.get()]
-        if not selected:
+        txn_list = self._selected_transactions()
+        if not txn_list:
             messagebox.showwarning("Nothing Selected", "Please select transactions to delete.")
             return
-        count = len(selected)
-        if not messagebox.askyesno("Confirm Delete",
-                                    f"Are you sure you want to delete {count} transaction(s)?\n\nThis action CANNOT be undone!",
-                                    icon="warning"):
-            return
-        if count > 20:
-            if not messagebox.askyesno("Large Batch Delete",
-                                        f"You are about to delete {count} transactions.\nAre you absolutely sure?",
-                                        icon="warning"):
+        count = len(txn_list)
+        snapshot_files = export_transactions_snapshot(
+            txn_list,
+            DELETE_AUDIT_DIR / "snapshots",
+            "delete-request",
+            metadata={"count": count, "dry_run": bool(self.delete_dry_run_var.get())},
+        )
+        self._log(f"Delete snapshot exported -> {snapshot_files['csv_path']}")
+
+        dry_run = bool(self.delete_dry_run_var.get())
+        if dry_run:
+            if not messagebox.askyesno(
+                "Dry Run Delete",
+                f"Run dry delete for {count} transaction(s)?\n\nA snapshot was exported first:\n{snapshot_files['csv_path']}",
+                icon="warning",
+            ):
+                return
+        else:
+            confirm_phrase = "DELETE" if count <= 20 else f"DELETE {count}"
+            typed = simpledialog.askstring(
+                "Confirm Delete",
+                f"A delete snapshot was exported first:\n{snapshot_files['csv_path']}\n\n"
+                f"Type '{confirm_phrase}' to permanently delete {count} transaction(s).",
+            )
+            if typed != confirm_phrase:
+                self._log("Delete cancelled: confirmation phrase did not match")
                 return
 
         self._running = True
-        self.btn_delete.configure(state="disabled", text="Deleting...")
+        self.btn_delete.configure(state="disabled", text="Dry Running..." if dry_run else "Deleting...")
         self.btn_search.configure(state="disabled")
-        txn_list = [txn for _, txn in selected]
-        self._log(f"Starting deletion of {count} transactions...")
-        threading.Thread(target=self._delete_worker, args=(txn_list,), daemon=True).start()
+        self.btn_export.configure(state="disabled")
+        self._log(f"Starting {'dry run for' if dry_run else 'deletion of'} {count} transactions...")
+        threading.Thread(target=self._delete_worker, args=(txn_list, snapshot_files, dry_run), daemon=True).start()
 
-    def _delete_worker(self, txn_list):
+    def _delete_worker(self, txn_list, snapshot_files, dry_run):
+        audit_rows = []
+
         def on_progress(current, total, txn, success, msg):
             status = "OK" if success else f"FAIL: {msg}"
             log_msg = f"  [{current}/{total}] {txn['Label']} {txn['TxnDate']} {txn.get('RefNumber', '')} - {status}"
+            audit_rows.append({
+                **txn,
+                "status": "ok" if success else "error",
+                "message": msg or ("Deleted" if success else "Delete failed"),
+            })
             self.after(0, lambda m=log_msg: self._log(m))
 
         try:
-            result = self.qb.delete_transactions(txn_list, callback=on_progress)
+            if dry_run:
+                for index, txn in enumerate(txn_list, start=1):
+                    on_progress(index, len(txn_list), txn, True, "Dry run only - no delete sent to QuickBooks")
+                result = {
+                    "success_count": 0,
+                    "fail_count": 0,
+                    "errors": [],
+                    "dry_run": True,
+                }
+            else:
+                result = self.qb.delete_transactions(txn_list, callback=on_progress)
+                result["dry_run"] = False
+
+            audit_files = write_delete_audit(
+                audit_rows,
+                {
+                    "success_count": result["success_count"],
+                    "fail_count": result["fail_count"],
+                    "dry_run": result["dry_run"],
+                    "snapshot_csv": snapshot_files["csv_path"],
+                    "snapshot_json": snapshot_files["json_path"],
+                },
+                DELETE_AUDIT_DIR / "results",
+                "delete-run",
+            )
+            result["audit_files"] = audit_files
             self.after(0, lambda r=result: self._on_delete_done(r))
         except Exception as e:
             err_msg = str(e)
@@ -1275,14 +1373,28 @@ class RemoveTab(ctk.CTkFrame):
     def _on_delete_done(self, result):
         self._running = False
         self.btn_search.configure(state="normal")
-        self._log(f"Delete complete: {result['success_count']} deleted, {result['fail_count']} failed")
-        messagebox.showinfo("Delete Complete", f"Deleted: {result['success_count']}\nFailed: {result['fail_count']}")
+        self.btn_export.configure(state="normal" if self.txn_rows else "disabled")
+        mode_label = "Dry run complete" if result.get("dry_run") else "Delete complete"
+        self._log(f"{mode_label}: {result['success_count']} deleted, {result['fail_count']} failed")
+        if result.get("audit_files"):
+            self._log(f"Audit saved -> {result['audit_files']['csv_path']}")
+        if result.get("dry_run"):
+            messagebox.showinfo(
+                "Dry Run Complete",
+                f"No QuickBooks records were deleted.\n\nAudit CSV: {result['audit_files']['csv_path']}",
+            )
+        else:
+            messagebox.showinfo(
+                "Delete Complete",
+                f"Deleted: {result['success_count']}\nFailed: {result['fail_count']}\n\nAudit CSV: {result['audit_files']['csv_path']}",
+            )
         self._clear_results()
         self.btn_delete.configure(text="Delete Selected", state="disabled")
 
     def _on_delete_error(self, error):
         self._running = False
         self.btn_search.configure(state="normal")
+        self.btn_export.configure(state="normal" if self.txn_rows else "disabled")
         self.btn_delete.configure(text="Delete Selected", state="normal")
         self._log(f"Delete error: {error}")
 
@@ -1291,8 +1403,9 @@ class RemoveTab(ctk.CTkFrame):
 #  Tab 4: Settings
 # ══════════════════════════════════════════════════════════════════════
 class SettingsTab(ctk.CTkFrame):
-    def __init__(self, master, **kwargs):
+    def __init__(self, master, run_diagnostics=None, **kwargs):
         super().__init__(master, **kwargs)
+        self.run_diagnostics = run_diagnostics
         self._build_ui()
 
     def _build_ui(self):
@@ -1330,7 +1443,7 @@ class SettingsTab(ctk.CTkFrame):
         qb_frame = ctk.CTkFrame(content)
         qb_frame.pack(fill="x", padx=15, pady=5)
         ctk.CTkLabel(qb_frame, text="QuickBooks Desktop", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=10, pady=(10, 5))
-        env_file = SCRIPT_DIR / ".env.qb"
+        env_file = runtime_path(".env.qb")
         if env_file.exists():
             ctk.CTkLabel(qb_frame, text=f"Config: {env_file}", text_color="#059669").pack(anchor="w", padx=10, pady=2)
         else:
@@ -1342,6 +1455,24 @@ class SettingsTab(ctk.CTkFrame):
                           font=ctk.CTkFont(size=11), wraplength=600).pack(anchor="w", padx=10, pady=(2, 10))
         except Exception:
             pass
+
+        # ── Diagnostics ──
+        diag_frame = ctk.CTkFrame(content)
+        diag_frame.pack(fill="x", padx=15, pady=5)
+        ctk.CTkLabel(diag_frame, text="Startup Diagnostics", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=10, pady=(10, 5))
+        self.diag_summary = ctk.CTkLabel(diag_frame, text="Environment check not run yet", text_color="gray")
+        self.diag_summary.pack(anchor="w", padx=10, pady=2)
+        diag_btn_row = ctk.CTkFrame(diag_frame, fg_color="transparent")
+        diag_btn_row.pack(fill="x", padx=10, pady=(5, 5))
+        ctk.CTkButton(
+            diag_btn_row,
+            text="Run Diagnostics",
+            width=140,
+            command=(lambda: self.run_diagnostics(True)) if self.run_diagnostics else None,
+        ).pack(side="left", padx=2)
+        self.diag_box = ctk.CTkTextbox(diag_frame, height=180, font=ctk.CTkFont(family="Consolas", size=11))
+        self.diag_box.pack(fill="x", padx=10, pady=(0, 10))
+        self.diag_box.configure(state="disabled")
 
         # ── Appearance ──
         theme_frame = ctk.CTkFrame(content)
@@ -1364,9 +1495,22 @@ class SettingsTab(ctk.CTkFrame):
         ctk.CTkButton(links_row, text="Open Reports Folder", width=150,
                        command=lambda: os.startfile(str(REPORTS_DIR))).pack(side="left", padx=2)
         ctk.CTkButton(links_row, text="Open Map Folder", width=130,
-                       command=lambda: os.startfile(str(SCRIPT_DIR / "Map"))).pack(side="left", padx=2)
+                       command=lambda: os.startfile(str(app_path("Map")))).pack(side="left", padx=2)
         ctk.CTkButton(links_row, text="Open Project Folder", width=150,
-                       command=lambda: os.startfile(str(SCRIPT_DIR))).pack(side="left", padx=2)
+                       command=lambda: os.startfile(str(RUNTIME_DIR))).pack(side="left", padx=2)
+
+    def update_diagnostics(self, report):
+        summary_color = "#059669"
+        if report.error_count:
+            summary_color = "#dc2626"
+        elif report.warning_count:
+            summary_color = "#d97706"
+
+        self.diag_summary.configure(text=report.summary, text_color=summary_color)
+        self.diag_box.configure(state="normal")
+        self.diag_box.delete("1.0", "end")
+        self.diag_box.insert("end", "\n".join(format_report_lines(report)))
+        self.diag_box.configure(state="disabled")
 
     def _connect_gdrive(self):
         def _worker():
@@ -1397,13 +1541,13 @@ class SettingsTab(ctk.CTkFrame):
         threading.Thread(target=_worker, daemon=True).start()
 
     def _clear_token(self):
-        token_file = SCRIPT_DIR / "token.json"
+        token_file = runtime_path("token.json")
         if token_file.exists():
             token_file.unlink()
             self.gdrive_status.configure(text="Token cleared. Reconnect to authenticate.", text_color="gray")
 
     def _clear_session(self):
-        session_file = SCRIPT_DIR / ".toast-session.json"
+        session_file = runtime_path(".toast-session.json")
         if session_file.exists():
             session_file.unlink()
             self.toast_status.configure(text="Session cleared. Next download will require login.", text_color="gray")
@@ -1424,7 +1568,9 @@ class App(ctk.CTk):
         ctk.set_default_color_theme("blue")
 
         self.status_var = ctk.StringVar(value="Ready")
+        self.diagnostics_report = None
         self._build_ui()
+        self.run_diagnostics_async(False)
 
     def _build_ui(self):
         # ── Header ──
@@ -1433,8 +1579,11 @@ class App(ctk.CTk):
         header.pack_propagate(False)
         ctk.CTkLabel(header, text="Toast POS Manager",
                       font=ctk.CTkFont(size=20, weight="bold")).pack(side="left", padx=20, pady=10)
-        ctk.CTkLabel(header, text="v2.0 - Unified", text_color="gray",
+        ctk.CTkLabel(header, text="v2.1 - Hardened", text_color="gray",
                       font=ctk.CTkFont(size=12)).pack(side="right", padx=20)
+        self.env_status_label = ctk.CTkLabel(header, text="Environment: checking...", text_color="#d97706",
+                                             font=ctk.CTkFont(size=12))
+        self.env_status_label.pack(side="right", padx=(0, 12))
 
         # ── Tab View ──
         self.tabview = ctk.CTkTabview(self, corner_radius=8)
@@ -1454,7 +1603,7 @@ class App(ctk.CTk):
         self.rm_tab = RemoveTab(rm_tab, self.status_var)
         self.rm_tab.pack(fill="both", expand=True)
 
-        self.settings_tab = SettingsTab(settings_tab)
+        self.settings_tab = SettingsTab(settings_tab, run_diagnostics=self.run_diagnostics_async)
         self.settings_tab.pack(fill="both", expand=True)
 
         # ── Status Bar ──
@@ -1464,12 +1613,62 @@ class App(ctk.CTk):
         ctk.CTkLabel(status_bar, textvariable=self.status_var,
                       font=ctk.CTkFont(size=11), text_color="gray").pack(side="left", padx=10)
 
+    def run_diagnostics_async(self, show_popup_on_error=False):
+        self.env_status_label.configure(text="Environment: checking...", text_color="#d97706")
+        threading.Thread(
+            target=self._run_diagnostics_worker,
+            args=(show_popup_on_error,),
+            daemon=True,
+        ).start()
 
-def main():
+    def _run_diagnostics_worker(self, show_popup_on_error):
+        report = run_environment_checks(load_local_config())
+        self.after(0, lambda r=report, show=show_popup_on_error: self._on_diagnostics_ready(r, show))
+
+    def _on_diagnostics_ready(self, report, show_popup_on_error):
+        self.diagnostics_report = report
+        if report.error_count:
+            text = f"Environment: {report.error_count} error(s)"
+            color = "#dc2626"
+            self.status_var.set("Environment issues detected. Open Settings > Startup Diagnostics.")
+        elif report.warning_count:
+            text = f"Environment: {report.warning_count} warning(s)"
+            color = "#d97706"
+            self.status_var.set("Environment warnings detected. Open Settings > Startup Diagnostics.")
+        else:
+            text = "Environment: ready"
+            color = "#059669"
+            self.status_var.set("Ready")
+
+        self.env_status_label.configure(text=text, text_color=color)
+        if hasattr(self, "settings_tab"):
+            self.settings_tab.update_diagnostics(report)
+
+        if show_popup_on_error and (report.error_count or report.warning_count):
+            preview_lines = format_report_lines(report)[:8]
+            messagebox.showwarning("Startup Diagnostics", "\n".join(preview_lines))
+
+
+def run_cli_doctor():
+    report = run_environment_checks(load_local_config())
+    print("\n".join(format_report_lines(report)))
+    return 0 if report.error_count == 0 else 1
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="Toast POS Manager")
+    parser.add_argument("--doctor-cli", action="store_true", help="Run environment diagnostics and exit")
+    args = parser.parse_args(argv)
+
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    AUDIT_LOG_DIR.mkdir(parents=True, exist_ok=True)
+    if args.doctor_cli:
+        return run_cli_doctor()
+
     app = App()
     app.mainloop()
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

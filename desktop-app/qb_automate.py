@@ -8,6 +8,7 @@ import sys
 import time
 import subprocess
 from pathlib import Path
+from app_paths import runtime_path
 
 if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -32,8 +33,7 @@ def load_env(filepath):
                 os.environ[key] = val
 
 
-SCRIPT_DIR = Path(__file__).parent
-load_env(SCRIPT_DIR / ".env.qb")
+load_env(runtime_path(".env.qb"))
 
 QB_EXE = os.environ.get(
     "QB_EXE_PATH",

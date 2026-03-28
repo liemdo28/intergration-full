@@ -2,6 +2,7 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
+.pytest_cache/
 .toast-session.json
 .env.qb
 credentials.json
@@ -9,3 +10,6 @@ token.json
 local-config.json
 toast-reports/
 *.log
+audit-logs/
+desktop-app/build/
+desktop-app/dist/

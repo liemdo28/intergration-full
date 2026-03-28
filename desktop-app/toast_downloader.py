@@ -8,12 +8,12 @@ import re
 import time
 from pathlib import Path
 from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
+from app_paths import runtime_path
 
 
-SCRIPT_DIR = Path(__file__).parent
 REPORTS_BASE = "https://www.toasttab.com/restaurants/admin/reports"
-DEFAULT_SESSION_FILE = str(SCRIPT_DIR / ".toast-session.json")
-DEFAULT_DOWNLOAD_DIR = str(SCRIPT_DIR / "toast-reports")
+DEFAULT_SESSION_FILE = str(runtime_path(".toast-session.json"))
+DEFAULT_DOWNLOAD_DIR = str(runtime_path("toast-reports"))
 
 TOAST_LOCATIONS = ["Stockton", "The Rim", "Stone Oak", "Bandera", "WA1", "WA2", "WA3"]
 
