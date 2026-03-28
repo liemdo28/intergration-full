@@ -96,6 +96,8 @@ Neu may build co Inno Setup (`ISCC.exe`), script se build them installer `.exe` 
 - Co the tat strict mode khi can debug, nhung khong nen dung cho run production binh thuong
 - Tab `QB Sync` co panel `Validation Issues` rieng de operator xem va export issue CSV/JSON thay vi chi doc log textbox
 - Download Reports gio validate file `.xlsx` sau khi tai, retry neu download/validation fail, va ghi audit manifest vao `audit-logs\download-reports`
+- QB open/sync gio co `company-file guard` dua tren `qbw_match` de giam nguy co mo nham company file
+- Neu Toast session het han hoac password/login flow thay doi, app se hien warning ro rang va huong user sang `Settings -> Recovery Center`
 
 ## Release planning
 

@@ -347,7 +347,7 @@ class DownloadTab(ctk.CTkFrame):
 
     def _download_worker(self, locations, dates):
         try:
-            from toast_downloader import ToastDownloader
+            from toast_downloader import ToastDownloader, ToastLoginRequiredError
 
             self.log(f"Starting download for {len(locations)} locations, {len(dates)} day(s): {dates[0]} -> {dates[-1]}")
 
@@ -384,6 +384,9 @@ class DownloadTab(ctk.CTkFrame):
 
             self.log(f"All done! {results['success']}/{results['total']} downloaded")
 
+        except ToastLoginRequiredError as e:
+            self.log(f"Error: {e}")
+            self.after(0, lambda msg=str(e): messagebox.showwarning("Toast Login Required", msg))
         except Exception as e:
             self.log(f"Error: {e}")
             import traceback
@@ -671,7 +674,7 @@ class QBSyncTab(ctk.CTkFrame):
                 qb_opened = False
                 if not preview:
                     try:
-                        from qb_automate import open_store, close_qb_completely
+                        from qb_automate import open_store, close_qb_completely, validate_company_file_path
                         close_qb_completely()
                         time.sleep(2)
 
@@ -686,6 +689,18 @@ class QBSyncTab(ctk.CTkFrame):
                             current_task += sum(len(dates) for _ in group_stores)
                             fail_count += sum(len(dates) for _ in group_stores)
                             continue
+
+                        file_ok, file_msg = validate_company_file_path(
+                            qbw_path,
+                            first_cfg.get("qbw_match"),
+                            first_orig_name,
+                        )
+                        if not file_ok:
+                            self.log(f"  {file_msg}")
+                            current_task += sum(len(dates) for _ in group_stores)
+                            fail_count += sum(len(dates) for _ in group_stores)
+                            continue
+                        self.log(f"  {file_msg}")
 
                         store_paths = {first_orig_name: qbw_path}
                         qb_opened = open_store(first_orig_name, store_paths,
@@ -1313,12 +1328,18 @@ class RemoveTab(ctk.CTkFrame):
     def _connect_worker(self, store_name, qbw_path, password_key):
         try:
             from qb_automate import close_qb_completely, open_qb_with_file
+            store_cfg = self._stores.get(store_name, {})
             self._log_safe("Closing existing QB...")
             close_qb_completely(callback=lambda msg: self._log_safe(msg))
 
             self.after(0, lambda: self.btn_connect.configure(text="Logging in..."))
-            success = open_qb_with_file(qbw_path, password_key=password_key,
-                                         callback=lambda msg: self._log_safe(msg))
+            success = open_qb_with_file(
+                qbw_path,
+                password_key=password_key,
+                callback=lambda msg: self._log_safe(msg),
+                expected_match=store_cfg.get("qbw_match"),
+                store_name=store_name,
+            )
             if not success:
                 raise Exception(f"Failed to open QB for '{store_name}'.")
 

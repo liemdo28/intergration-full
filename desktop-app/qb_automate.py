@@ -48,6 +48,30 @@ PASSWORDS = {
 }
 
 
+def _normalize_text(value):
+    return "".join(ch.lower() for ch in str(value or "") if ch.isalnum())
+
+
+def company_file_matches(path, expected_match):
+    if not expected_match:
+        return True
+    filename = Path(path).stem
+    return _normalize_text(expected_match) in _normalize_text(filename)
+
+
+def validate_company_file_path(path, expected_match=None, store_name=None):
+    file_path = Path(path)
+    if not file_path.exists():
+        return False, f"QB company file not found: {file_path}"
+    if expected_match and not company_file_matches(file_path, expected_match):
+        label = store_name or "store"
+        return False, (
+            f"QB company guard failed for {label}. Expected file name to contain "
+            f"'{expected_match}', got '{file_path.name}'."
+        )
+    return True, f"QB company file preflight passed: {file_path.name}"
+
+
 def _candidate_qb_paths():
     env_path = os.environ.get("QB_EXE_PATH")
     if env_path:
@@ -123,7 +147,7 @@ def close_qb_completely(callback=None):
 
 
 # ── Open QB with file ────────────────────────────────────────────────
-def open_qb_with_file(qbw_path, password_key="pass1", callback=None):
+def open_qb_with_file(qbw_path, password_key="pass1", callback=None, expected_match=None, store_name=None):
     """
     Open QB Desktop with a specific company file, login, dismiss popups.
 
@@ -146,13 +170,15 @@ def open_qb_with_file(qbw_path, password_key="pass1", callback=None):
     password = PASSWORDS.get(password_key, "")
     qb_exe = resolve_qb_executable()
 
-    if not Path(qbw_path).exists():
-        _log(f"QB company file not found: {qbw_path}")
+    valid_file, file_msg = validate_company_file_path(qbw_path, expected_match, store_name)
+    if not valid_file:
+        _log(file_msg)
         return False
     if not qb_exe:
         _log("QuickBooks executable not found. Check QB_EXE_PATH or install path.")
         return False
 
+    _log(file_msg)
     _log(f"Opening QB with: {os.path.basename(qbw_path)}")
 
     # Launch QB with company file
@@ -188,6 +214,8 @@ def open_qb_with_file(qbw_path, password_key="pass1", callback=None):
 
     # Wait for QB to be ready
     _wait_for_ready(app, _log)
+    if expected_match:
+        _warn_if_window_title_mismatch(app, expected_match, _log)
 
     # Dismiss popups
     _dismiss_all_popups(app, _log)
@@ -207,13 +235,15 @@ def open_store(store_name, store_paths, qbw_match=None, password_key="pass1"):
     password = PASSWORDS.get(password_key, "")
     qb_exe = resolve_qb_executable()
 
-    if not Path(qbw_path).exists():
-        log(f"QB file not found: {qbw_path}")
+    valid_file, file_msg = validate_company_file_path(qbw_path, qbw_match, store_name)
+    if not valid_file:
+        log(file_msg)
         return False
     if not qb_exe:
         log("QuickBooks executable not found. Check QB_EXE_PATH or install path.")
         return False
 
+    log(file_msg)
     log(f"Opening store: {store_name}")
     log(f"  File: {qbw_path}")
 
@@ -247,6 +277,8 @@ def open_store(store_name, store_paths, qbw_match=None, password_key="pass1"):
         return False
 
     _wait_for_ready(app, log)
+    if qbw_match:
+        _warn_if_window_title_mismatch(app, qbw_match, log)
     _dismiss_all_popups(app, log)
 
     log(f"{store_name} is ready!")
@@ -335,6 +367,18 @@ def _wait_for_ready(app, _log, timeout=90):
 
     _log("QB load timeout, continuing anyway...")
     return True
+
+
+def _warn_if_window_title_mismatch(app, expected_match, _log):
+    try:
+        title = app.top_window().window_text()
+    except Exception:
+        return
+    if title and _normalize_text(expected_match) not in _normalize_text(title):
+        _log(
+            "Warning: QuickBooks window title does not appear to match the expected company. "
+            "Verify the opened company file before continuing."
+        )
 
 
 def _dismiss_all_popups(app, _log):

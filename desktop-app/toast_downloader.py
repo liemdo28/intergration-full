@@ -21,6 +21,10 @@ DOWNLOAD_AUDIT_DIR = runtime_path("audit-logs", "download-reports")
 TOAST_LOCATIONS = ["Stockton", "The Rim", "Stone Oak", "Bandera", "WA1", "WA2", "WA3"]
 
 
+class ToastLoginRequiredError(RuntimeError):
+    pass
+
+
 class ToastDownloader:
     def __init__(self, download_dir=None, headless=False, session_file=None,
                  on_log=None, on_progress=None, max_download_attempts=3):
@@ -38,6 +42,10 @@ class ToastDownloader:
 
     def log(self, msg):
         self.on_log(msg)
+
+    def _is_logged_in(self, url=None):
+        target = url or self.page.url
+        return "/reports/" in target or "/admin/" in target
 
     def _click_first_visible(self, selectors, *, timeout=2000, log_msg=None):
         for sel in selectors:
@@ -79,8 +87,11 @@ class ToastDownloader:
         self.page.wait_for_timeout(3000)
 
         url = self.page.url
-        if "/reports/" not in url and "/admin/" not in url:
+        had_saved_session = os.path.exists(self.session_file)
+        if not self._is_logged_in(url):
             # Not logged in
+            if had_saved_session:
+                self.log("Saved Toast session appears expired or invalid. A fresh login is required.")
             login_btn = self.page.locator("a, button").filter(has_text=re.compile(r"^Login$|^Sign In$", re.I)).first
             try:
                 if login_btn.is_visible(timeout=3000):
@@ -90,10 +101,16 @@ class ToastDownloader:
                 pass
 
             self.log("Please login in the browser window... (5 min timeout)")
-            self.page.wait_for_url(
-                lambda u: "/admin/" in u or "/reports/" in u,
-                timeout=5 * 60 * 1000,
-            )
+            try:
+                self.page.wait_for_url(
+                    lambda u: self._is_logged_in(u),
+                    timeout=5 * 60 * 1000,
+                )
+            except PWTimeout as exc:
+                raise ToastLoginRequiredError(
+                    "Toast login did not complete in time. If the password changed or Toast asked for a new auth step, "
+                    "open Settings > Recovery Center, use 'Backup + Reset Toast Session', then try one small download again."
+                ) from exc
             self.log("Login successful!")
         else:
             self.log("Session valid.")

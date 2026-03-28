@@ -193,6 +193,13 @@ def run_environment_checks(local_config: dict | None = None) -> DiagnosticReport
     _add(checks, "QB Mapping", "ok" if mapping_path.exists() else "error", str(mapping_path))
     _add(checks, "CSV Map Folder", "ok" if map_dir.exists() else "error", str(map_dir))
 
+    mapping_data = {}
+    if mapping_path.exists():
+        try:
+            mapping_data = json.loads(mapping_path.read_text(encoding="utf-8"))
+        except Exception:
+            mapping_data = {}
+
     qbw_paths = (local_config or {}).get("qbw_paths", {})
     if qbw_paths:
         missing = [f"{store}: {path}" for store, path in qbw_paths.items() if not Path(path).exists()]
@@ -200,6 +207,21 @@ def run_environment_checks(local_config: dict | None = None) -> DiagnosticReport
             _add(checks, "QB Company Files", "warning", "Missing paths -> " + "; ".join(missing))
         else:
             _add(checks, "QB Company Files", "ok", f"{len(qbw_paths)} configured path(s) look valid")
+        stores = mapping_data.get("stores", {}) if isinstance(mapping_data, dict) else {}
+        mismatches = []
+        try:
+            from qb_automate import company_file_matches
+        except Exception:
+            company_file_matches = None
+        if company_file_matches:
+            for store, path in qbw_paths.items():
+                expected = (stores.get(store) or {}).get("qbw_match")
+                if expected and Path(path).exists() and not company_file_matches(path, expected):
+                    mismatches.append(f"{store}: expected '{expected}' in {Path(path).name}")
+        if mismatches:
+            _add(checks, "QB Company Guards", "warning", "; ".join(mismatches))
+        elif qbw_paths:
+            _add(checks, "QB Company Guards", "ok", "Configured QB file names match expected store guards")
     else:
         _add(checks, "QB Company Files", "warning", "No .qbw paths saved yet")
 
