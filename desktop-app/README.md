@@ -100,6 +100,7 @@ Neu may build co Inno Setup (`ISCC.exe`), script se build them installer `.exe` 
 - Neu Toast session het han hoac password/login flow thay doi, app se hien warning ro rang va huong user sang `Settings -> Recovery Center`
 - QB Sync gio co `sync ledger` bang SQLite (`sync-ledger.db`) de block duplicate same-report, ghi preview/live run, va detect stale running sync
 - Tab `QB Sync` gio co `Last Sync Status` de operator xem run gan nhat, export sync audit, mark stale run as failed, va arm `Force Re-run` voi ly do luu vao ledger
+- Tab `QB Sync` gio co `Mapping Maintenance` de operator sua map category/tax/payment ngay trong app, luu vao CSV map, roi re-run preview ma khong can dev sua file thu cong
 
 ## Release planning
 

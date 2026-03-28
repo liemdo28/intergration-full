@@ -407,6 +407,10 @@ class QBSyncTab(ctk.CTkFrame):
         self._running = False
         self._global_cfg, self._stores = load_mapping()
         self.validation_records = []
+        self.mapping_candidates = []
+        self.mapping_candidate_index = {}
+        self.mapping_saved_keys = set()
+        self.selected_mapping_candidate = None
         self.pending_force_reruns = {}
         self.last_sync_run = None
         self._build_ui()
@@ -529,6 +533,53 @@ class QBSyncTab(ctk.CTkFrame):
         self.validation_box.pack(fill="x", padx=10, pady=(0, 10))
         self.validation_box.configure(state="disabled")
 
+        # ── Mapping Maintenance ──
+        mapping_frame = ctk.CTkFrame(self)
+        mapping_frame.pack(fill="x", padx=15, pady=(5, 5))
+        mapping_header = ctk.CTkFrame(mapping_frame, fg_color="transparent")
+        mapping_header.pack(fill="x", padx=10, pady=(10, 4))
+        ctk.CTkLabel(mapping_header, text="Mapping Maintenance", font=ctk.CTkFont(size=13, weight="bold")).pack(side="left")
+        self.mapping_summary = ctk.CTkLabel(mapping_header, text="No unmapped issues to fix yet", text_color="gray")
+        self.mapping_summary.pack(side="left", padx=10)
+
+        mapping_btn_row = ctk.CTkFrame(mapping_frame, fg_color="transparent")
+        mapping_btn_row.pack(fill="x", padx=10, pady=(0, 4))
+        ctk.CTkButton(mapping_btn_row, text="Refresh From Issues", width=135, command=self._refresh_mapping_candidates).pack(side="left", padx=2)
+        ctk.CTkButton(mapping_btn_row, text="Open Map Folder", width=120, command=self._open_map_folder).pack(side="left", padx=2)
+
+        self.mapping_candidate_combo = ctk.CTkComboBox(
+            mapping_frame,
+            values=["No mappable validation issues"],
+            command=self._on_mapping_candidate_selected,
+            state="readonly",
+        )
+        self.mapping_candidate_combo.pack(fill="x", padx=10, pady=(0, 6))
+        self.mapping_candidate_combo.set("No mappable validation issues")
+
+        mapping_edit_row = ctk.CTkFrame(mapping_frame, fg_color="transparent")
+        mapping_edit_row.pack(fill="x", padx=10, pady=(0, 4))
+        ctk.CTkLabel(mapping_edit_row, text="QB Item:").pack(side="left", padx=(0, 8))
+        self.mapping_qb_item_var = ctk.StringVar(value="")
+        self.mapping_qb_item_entry = ctk.CTkEntry(
+            mapping_edit_row,
+            textvariable=self.mapping_qb_item_var,
+            width=320,
+            placeholder_text="Enter the QuickBooks item name to save into CSV map",
+        )
+        self.mapping_qb_item_entry.pack(side="left", padx=(0, 8))
+        self.save_mapping_btn = ctk.CTkButton(
+            mapping_edit_row,
+            text="Save Mapping",
+            width=110,
+            state="disabled",
+            command=self._save_selected_mapping,
+        )
+        self.save_mapping_btn.pack(side="left", padx=2)
+
+        self.mapping_detail_box = ctk.CTkTextbox(mapping_frame, height=135, font=ctk.CTkFont(family="Consolas", size=11))
+        self.mapping_detail_box.pack(fill="x", padx=10, pady=(0, 10))
+        self.mapping_detail_box.configure(state="disabled")
+
         # ── Last Sync Status ──
         status_frame = ctk.CTkFrame(self)
         status_frame.pack(fill="x", padx=15, pady=(5, 5))
@@ -554,6 +605,7 @@ class QBSyncTab(ctk.CTkFrame):
 
         # ── Log ──
         self.log_box = make_log_box(self)
+        self._refresh_mapping_candidates()
         self._refresh_last_sync_status()
 
     def _browse_qbw(self, store_name):
@@ -1125,7 +1177,111 @@ class QBSyncTab(ctk.CTkFrame):
         messagebox.showinfo("Force Re-run Armed", f"The next sync for {store} / {date} will carry this override reason:\n\n{reason}")
         self._refresh_last_sync_status()
 
+    def _set_mapping_candidate(self, candidate, message=None):
+        self.selected_mapping_candidate = candidate
+        self.mapping_detail_box.configure(state="normal")
+        self.mapping_detail_box.delete("1.0", "end")
+
+        if not candidate:
+            self.mapping_summary.configure(text=message or "No unmapped issues to fix yet", text_color="gray")
+            self.mapping_qb_item_var.set("")
+            self.mapping_candidate_combo.configure(values=["No mappable validation issues"], state="disabled")
+            self.mapping_candidate_combo.set("No mappable validation issues")
+            self.save_mapping_btn.configure(state="disabled")
+            self.mapping_detail_box.insert("end", message or "Run Preview/Sync first, then use Validation Issues to drive mapping fixes here.")
+            self.mapping_detail_box.configure(state="disabled")
+            return
+
+        label = candidate["title"]
+        self.mapping_summary.configure(
+            text=f"{candidate['issue_code']} | {candidate['store']} | {candidate['date']}",
+            text_color="#d97706",
+        )
+        if self.mapping_candidate_combo.cget("state") == "disabled":
+            self.mapping_candidate_combo.configure(state="readonly")
+        self.mapping_candidate_combo.set(label)
+        self.mapping_qb_item_var.set(candidate.get("current_qb") or "")
+        lines = [
+            f"Store: {candidate.get('store')}",
+            f"Date: {candidate.get('date')}",
+            f"Issue: {candidate.get('issue_code')}",
+            f"Report Value: {candidate.get('report')}",
+            f"CSV Note: {candidate.get('note')}",
+            f"Current QB Item: {candidate.get('current_qb') or '-'}",
+            "",
+            "This will save or update a row in the store CSV map:",
+            f"  QB     = {self.mapping_qb_item_var.get().strip() or '<enter QB item>'}",
+            f"  Report = {candidate.get('report')}",
+            f"  Note   = {candidate.get('note')}",
+        ]
+        self.mapping_detail_box.insert("end", "\n".join(lines))
+        self.mapping_detail_box.configure(state="disabled")
+        self.save_mapping_btn.configure(state="normal")
+
+    def _refresh_mapping_candidates(self):
+        try:
+            from mapping_maintenance import collect_mapping_candidates
+
+            candidates = [
+                item for item in collect_mapping_candidates(self.validation_records)
+                if item["key"] not in self.mapping_saved_keys
+            ]
+        except Exception as exc:
+            self.mapping_candidate_index = {}
+            self.mapping_candidates = []
+            self._set_mapping_candidate(None, f"Could not load mapping candidates: {exc}")
+            return
+
+        self.mapping_candidates = candidates
+        self.mapping_candidate_index = {item["title"]: item for item in candidates}
+        if not candidates:
+            self._set_mapping_candidate(None)
+            return
+
+        labels = [item["title"] for item in candidates]
+        self.mapping_candidate_combo.configure(values=labels, state="readonly")
+        self._set_mapping_candidate(candidates[0])
+
+    def _on_mapping_candidate_selected(self, label):
+        candidate = self.mapping_candidate_index.get(label)
+        if candidate:
+            self._set_mapping_candidate(candidate)
+
+    def _save_selected_mapping(self):
+        if not self.selected_mapping_candidate:
+            return
+        qb_item = self.mapping_qb_item_var.get().strip()
+        if not qb_item:
+            messagebox.showwarning("QB Item Required", "Enter a QuickBooks item name before saving the mapping.")
+            return
+        try:
+            from mapping_maintenance import upsert_candidate_mapping
+
+            result = upsert_candidate_mapping(self.selected_mapping_candidate, qb_item)
+            candidate = dict(self.selected_mapping_candidate)
+            candidate["current_qb"] = qb_item
+            self.mapping_saved_keys.add(candidate["key"])
+            self.log(
+                f"Mapping {result['action']} -> {candidate['store']} | {candidate['report']} | {candidate['note']} => {qb_item}"
+            )
+            messagebox.showinfo(
+                "Mapping Saved",
+                f"Mapping {result['action']} in:\n{result['path']}\n\nRe-run Preview/Sync to confirm the issue is resolved.",
+            )
+            self._refresh_mapping_candidates()
+        except Exception as exc:
+            messagebox.showerror("Save Mapping Failed", str(exc))
+
+    def _open_map_folder(self):
+        try:
+            map_dir = app_path("Map")
+            map_dir.mkdir(parents=True, exist_ok=True)
+            os.startfile(str(map_dir))
+        except Exception as exc:
+            messagebox.showerror("Open Folder Failed", str(exc))
+
     def _set_validation_records(self, records):
+        self.mapping_saved_keys = set()
         self.validation_records = records
         counts = {"error": 0, "warning": 0, "info": 0}
         lines = []
@@ -1160,6 +1316,7 @@ class QBSyncTab(ctk.CTkFrame):
         if lines:
             self.validation_box.insert("end", "\n".join(lines).strip())
         self.validation_box.configure(state="disabled")
+        self._refresh_mapping_candidates()
 
     def _export_validation_issues(self):
         if not self.validation_records:
