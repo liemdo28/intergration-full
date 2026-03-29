@@ -62,22 +62,26 @@ class ToastDownloader:
 
     def _start_browser(self):
         """Launch browser and restore session."""
-        self.playwright = sync_playwright().start()
-        self.browser = self.playwright.chromium.launch(
-            headless=self.headless,
-            args=[] if self.headless else ["--start-maximized"],
-        )
+        try:
+            self.playwright = sync_playwright().start()
+            self.browser = self.playwright.chromium.launch(
+                headless=self.headless,
+                args=[] if self.headless else ["--start-maximized"],
+            )
 
-        ctx_opts = {
-            "accept_downloads": True,
-            "viewport": {"width": 1920, "height": 1080} if self.headless else None,
-        }
-        if os.path.exists(self.session_file):
-            ctx_opts["storage_state"] = self.session_file
-            self.log("Restoring session...")
+            ctx_opts = {
+                "accept_downloads": True,
+                "viewport": {"width": 1920, "height": 1080} if self.headless else None,
+            }
+            if os.path.exists(self.session_file):
+                ctx_opts["storage_state"] = self.session_file
+                self.log("Restoring session...")
 
-        self.context = self.browser.new_context(**ctx_opts)
-        self.page = self.context.new_page()
+            self.context = self.browser.new_context(**ctx_opts)
+            self.page = self.context.new_page()
+        except Exception:
+            self.close()
+            raise
 
     def _login(self):
         """Navigate to Toast and handle login if needed."""

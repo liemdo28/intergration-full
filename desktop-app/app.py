@@ -106,10 +106,14 @@ def append_log(log_box, msg):
     """Thread-safe log append."""
     ts = time.strftime("%H:%M:%S")
     text = f"[{ts}] {msg}\n"
-    log_box.configure(state="normal")
-    log_box.insert("end", text)
-    log_box.see("end")
-    log_box.configure(state="disabled")
+    try:
+        log_box.configure(state="normal")
+        log_box.insert("end", text)
+        log_box.see("end")
+        log_box.configure(state="disabled")
+    except tk.TclError:
+        # The window can be closing while background threads are still flushing logs.
+        pass
 
 
 def make_calendar(parent, initial_date=None):
@@ -431,8 +435,11 @@ class QBSyncTab(ctk.CTkFrame):
         self._build_ui()
 
     def _build_ui(self):
+        content = ctk.CTkScrollableFrame(self, fg_color="transparent")
+        content.pack(fill="both", expand=True)
+
         # ── Date Section ──
-        date_frame = ctk.CTkFrame(self)
+        date_frame = ctk.CTkFrame(content)
         date_frame.pack(fill="x", padx=15, pady=(15, 5))
         ctk.CTkLabel(date_frame, text="Date(s)", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=10, pady=(10, 5))
 
@@ -452,7 +459,7 @@ class QBSyncTab(ctk.CTkFrame):
         hint.pack(anchor="w", padx=10, pady=(0, 5))
 
         # ── Stores Section ──
-        store_frame = ctk.CTkFrame(self)
+        store_frame = ctk.CTkFrame(content)
         store_frame.pack(fill="x", padx=15, pady=5)
         ctk.CTkLabel(store_frame, text="QB Stores", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=10, pady=(10, 5))
 
@@ -494,7 +501,7 @@ class QBSyncTab(ctk.CTkFrame):
                        fg_color="#6366f1", hover_color="#4f46e5").pack(side="left", padx=10)
 
         # ── Options ──
-        opt_frame = ctk.CTkFrame(self)
+        opt_frame = ctk.CTkFrame(content)
         opt_frame.pack(fill="x", padx=15, pady=5)
         opt_inner = ctk.CTkFrame(opt_frame, fg_color="transparent")
         opt_inner.pack(fill="x", padx=10, pady=10)
@@ -515,7 +522,7 @@ class QBSyncTab(ctk.CTkFrame):
         ).grid(row=2, column=0, columnspan=3, pady=(8, 0), sticky="w")
 
         # ── Marketplace Uploads ──
-        marketplace_frame = ctk.CTkFrame(self)
+        marketplace_frame = ctk.CTkFrame(content)
         marketplace_frame.pack(fill="x", padx=15, pady=5)
         marketplace_header = ctk.CTkFrame(marketplace_frame, fg_color="transparent")
         marketplace_header.pack(fill="x", padx=10, pady=(10, 4))
@@ -596,21 +603,21 @@ class QBSyncTab(ctk.CTkFrame):
         marketplace_grid.columnconfigure(2, weight=1)
 
         # ── Action Button ──
-        self.sync_btn = ctk.CTkButton(self, text="Sync to QuickBooks",
+        self.sync_btn = ctk.CTkButton(content, text="Sync to QuickBooks",
                                        font=ctk.CTkFont(size=15, weight="bold"),
                                        height=45, command=self.start_sync,
                                        fg_color="#059669", hover_color="#047857")
         self.sync_btn.pack(fill="x", padx=15, pady=10)
 
         # ── Progress ──
-        self.progress_bar = ctk.CTkProgressBar(self)
+        self.progress_bar = ctk.CTkProgressBar(content)
         self.progress_bar.pack(fill="x", padx=15, pady=(0, 5))
         self.progress_bar.set(0)
-        self.progress_label = ctk.CTkLabel(self, text="Ready", text_color="gray")
+        self.progress_label = ctk.CTkLabel(content, text="Ready", text_color="gray")
         self.progress_label.pack(anchor="w", padx=15)
 
         # ── Validation Issues ──
-        issue_frame = ctk.CTkFrame(self)
+        issue_frame = ctk.CTkFrame(content)
         issue_frame.pack(fill="x", padx=15, pady=(5, 5))
         issue_header = ctk.CTkFrame(issue_frame, fg_color="transparent")
         issue_header.pack(fill="x", padx=10, pady=(10, 4))
@@ -631,7 +638,7 @@ class QBSyncTab(ctk.CTkFrame):
         self.validation_box.configure(state="disabled")
 
         # ── Mapping Maintenance ──
-        mapping_frame = ctk.CTkFrame(self)
+        mapping_frame = ctk.CTkFrame(content)
         mapping_frame.pack(fill="x", padx=15, pady=(5, 5))
         mapping_header = ctk.CTkFrame(mapping_frame, fg_color="transparent")
         mapping_header.pack(fill="x", padx=10, pady=(10, 4))
@@ -749,7 +756,7 @@ class QBSyncTab(ctk.CTkFrame):
         self.item_creation_history_box.configure(state="disabled")
 
         # ── Last Sync Status ──
-        status_frame = ctk.CTkFrame(self)
+        status_frame = ctk.CTkFrame(content)
         status_frame.pack(fill="x", padx=15, pady=(5, 5))
         status_header = ctk.CTkFrame(status_frame, fg_color="transparent")
         status_header.pack(fill="x", padx=10, pady=(10, 4))
@@ -776,7 +783,7 @@ class QBSyncTab(ctk.CTkFrame):
         self.source_sync_box.configure(state="disabled")
 
         # ── Log ──
-        self.log_box = make_log_box(self)
+        self.log_box = make_log_box(content)
         self._refresh_mapping_candidates()
         self._refresh_marketplace_source_statuses()
         self._refresh_last_sync_status()
@@ -945,6 +952,39 @@ class QBSyncTab(ctk.CTkFrame):
         self.progress_label.configure(text=f"{msg} ({current}/{total})")
         self.status_var.set(msg)
 
+    def _reset_progress_ui(self, message="Ready"):
+        self.progress_bar.set(0)
+        self.progress_label.configure(text=message, text_color="gray")
+
+    def _safe_close_reader(self, reader):
+        if not reader:
+            return
+        try:
+            reader.close()
+        except Exception:
+            pass
+
+    def _safe_disconnect_qb(self, qb):
+        if not qb:
+            return
+        try:
+            qb.disconnect()
+        except Exception:
+            pass
+
+    def _count_sync_tasks_for_store(self, store_name, store_cfg, dates):
+        from marketplace_sync import get_marketplace_sources_for_store
+
+        marketplace_count = len(
+            get_marketplace_sources_for_store(
+                store_cfg,
+                map_dir=app_path("Map"),
+                uploaded_paths=self._get_marketplace_uploaded_paths(store_name),
+                require_uploaded_path=True,
+            )
+        )
+        return len(dates) * (1 + marketplace_count)
+
     def start_sync(self):
         if self._running:
             return
@@ -965,6 +1005,7 @@ class QBSyncTab(ctk.CTkFrame):
                 return
         self._set_validation_records([])
         self._running = True
+        self._reset_progress_ui("Starting sync...")
         self.sync_btn.configure(state="disabled", text="Syncing...")
         threading.Thread(target=self._sync_worker,
                           args=(stores, dates, self.source_var.get(), self.preview_var.get(), self.strict_sync_var.get()),
@@ -1014,20 +1055,11 @@ class QBSyncTab(ctk.CTkFrame):
 
             total_tasks = 0
             for _, orig_name, cfg in expanded_stores:
-                total_tasks += len(dates) * (
-                    1
-                    + len(
-                        get_marketplace_sources_for_store(
-                            cfg,
-                            map_dir=app_path("Map"),
-                            uploaded_paths=self._get_marketplace_uploaded_paths(orig_name),
-                            require_uploaded_path=True,
-                        )
-                    )
-                )
+                total_tasks += self._count_sync_tasks_for_store(orig_name, cfg, dates)
             current_task = 0
             success_count = 0
             fail_count = 0
+            duplicate_count = 0
             validation_records = []
             ledger = SyncLedger()
 
@@ -1058,8 +1090,9 @@ class QBSyncTab(ctk.CTkFrame):
 
                         if not qbw_path or not os.path.exists(qbw_path):
                             self.log(f"  QB file not set or not found for '{first_orig_name}'")
-                            current_task += sum(len(dates) for _ in group_stores)
-                            fail_count += sum(len(dates) for _ in group_stores)
+                            skipped_tasks = sum(self._count_sync_tasks_for_store(orig_name, cfg, dates) for _, orig_name, cfg in group_stores)
+                            current_task += skipped_tasks
+                            fail_count += skipped_tasks
                             continue
 
                         file_ok, file_msg = validate_company_file_path(
@@ -1069,8 +1102,9 @@ class QBSyncTab(ctk.CTkFrame):
                         )
                         if not file_ok:
                             self.log(f"  {file_msg}")
-                            current_task += sum(len(dates) for _ in group_stores)
-                            fail_count += sum(len(dates) for _ in group_stores)
+                            skipped_tasks = sum(self._count_sync_tasks_for_store(orig_name, cfg, dates) for _, orig_name, cfg in group_stores)
+                            current_task += skipped_tasks
+                            fail_count += skipped_tasks
                             continue
                         self.log(f"  {file_msg}")
 
@@ -1097,6 +1131,8 @@ class QBSyncTab(ctk.CTkFrame):
                         try:
                             sync_id = None
                             filepath = None
+                            reader = None
+                            qb = None
                             toast_loc = store_cfg.get("toast_location", orig_name)
                             prefix = store_cfg.get("sale_no_prefix", "")
                             ref_number = f"{prefix}{date_str.replace('-', '')}"
@@ -1178,7 +1214,7 @@ class QBSyncTab(ctk.CTkFrame):
                                 continue
 
                             total_bal = sum(l["amount"] for l in lines)
-                            self.log(f"  Lines: {len(lines)}, Balance: {float(total_bal):.2f}")
+                            self.log(f"  Lines: {len(lines)}, Balance: {total_bal:.2f}")
                             if total_bal != 0:
                                 self.log("  Warning: Sales receipt lines are not balanced; verify mapping or over/short setup")
                             if issues:
@@ -1225,20 +1261,11 @@ class QBSyncTab(ctk.CTkFrame):
                                     source_mode="toast_report",
                                 )
                                 fail_count += 1
-                                try:
-                                    reader.close()
-                                except Exception:
-                                    pass
                                 continue
                             for l in lines:
-                                amt = float(l["amount"])
+                                amt = l["amount"]
                                 if amt != 0:
                                     self.log(f"    {l['item_name']:<30} {amt:>10.2f}")
-
-                            try:
-                                reader.close()
-                            except Exception:
-                                pass
 
                             begin_result = ledger.begin_run(
                                 store=display_name,
@@ -1288,14 +1315,17 @@ class QBSyncTab(ctk.CTkFrame):
                                         ],
                                     }
                                 )
-                                fail_count += 1
+                                if begin_result.status == STATUS_BLOCKED_DUPLICATE:
+                                    duplicate_count += 1
+                                else:
+                                    fail_count += 1
                                 continue
 
                             if preview:
                                 self.log(f"  [PREVIEW MODE - not creating Sales Receipt]")
                                 ledger.mark_success(sync_id, preview=True)
                                 success_count += 1
-                                current_task, extra_success, extra_fail, extra_records = self._process_marketplace_receipts_for_date(
+                                current_task, extra_success, extra_duplicate, extra_fail, extra_records = self._process_marketplace_receipts_for_date(
                                     display_name=display_name,
                                     orig_name=orig_name,
                                     store_cfg=store_cfg,
@@ -1311,6 +1341,7 @@ class QBSyncTab(ctk.CTkFrame):
                                     override_reason=override_reason,
                                 )
                                 success_count += extra_success
+                                duplicate_count += extra_duplicate
                                 fail_count += extra_fail
                                 validation_records.extend(extra_records)
                                 self.pending_force_reruns.pop((orig_name, date_str), None)
@@ -1335,14 +1366,13 @@ class QBSyncTab(ctk.CTkFrame):
                             exists = any(item["txn_date"] == date_str for item in existing_receipts)
                             if exists:
                                 self.log(f"  Sales Receipt #{ref_number} already exists, skipping")
-                                qb.disconnect()
                                 ledger.mark_status(
                                     sync_id,
                                     STATUS_BLOCKED_DUPLICATE,
                                     error_message="Sales Receipt already exists in QuickBooks",
                                     payload={"ref_number": ref_number},
                                 )
-                                success_count += 1
+                                duplicate_count += 1
                                 continue
                             if existing_receipts:
                                 existing_dates = ", ".join(sorted({item["txn_date"] for item in existing_receipts if item["txn_date"]}))
@@ -1356,13 +1386,12 @@ class QBSyncTab(ctk.CTkFrame):
                                 lines=lines,
                                 class_name=store_cfg.get("class_name"),
                             )
-                            qb.disconnect()
 
                             if result.get("success"):
                                 self.log(f"  Sales Receipt created! TxnID: {result.get('txn_id')}")
                                 ledger.mark_success(sync_id, txn_id=result.get("txn_id"))
                                 success_count += 1
-                                current_task, extra_success, extra_fail, extra_records = self._process_marketplace_receipts_for_date(
+                                current_task, extra_success, extra_duplicate, extra_fail, extra_records = self._process_marketplace_receipts_for_date(
                                     display_name=display_name,
                                     orig_name=orig_name,
                                     store_cfg=store_cfg,
@@ -1378,6 +1407,7 @@ class QBSyncTab(ctk.CTkFrame):
                                     override_reason=override_reason,
                                 )
                                 success_count += extra_success
+                                duplicate_count += extra_duplicate
                                 fail_count += extra_fail
                                 validation_records.extend(extra_records)
                                 self.pending_force_reruns.pop((orig_name, date_str), None)
@@ -1396,6 +1426,9 @@ class QBSyncTab(ctk.CTkFrame):
                             except Exception:
                                 pass
                             fail_count += 1
+                        finally:
+                            self._safe_close_reader(reader)
+                            self._safe_disconnect_qb(qb)
 
                 if not preview and qb_opened:
                     try:
@@ -1408,7 +1441,7 @@ class QBSyncTab(ctk.CTkFrame):
             self.update_progress(total_tasks, total_tasks, "Done")
             self.after(0, lambda records=validation_records: self._set_validation_records(records))
             self.after(0, self._refresh_last_sync_status)
-            self.log(f"\nAll done! Success: {success_count}, Failed: {fail_count}")
+            self.log(f"\nAll done! Success: {success_count}, Duplicates skipped: {duplicate_count}, Failed: {fail_count}")
 
         except Exception as e:
             self.log(f"Fatal error: {e}")
@@ -1417,6 +1450,7 @@ class QBSyncTab(ctk.CTkFrame):
         finally:
             self._running = False
             self.after(0, lambda: self.sync_btn.configure(state="normal", text="Sync to QuickBooks"))
+            self.after(0, self._reset_progress_ui)
             self.after(0, lambda: self.status_var.set("Ready"))
 
     def _process_marketplace_receipts_for_date(
@@ -1452,6 +1486,7 @@ class QBSyncTab(ctk.CTkFrame):
             require_uploaded_path=True,
         )
         success_count = 0
+        duplicate_count = 0
         fail_count = 0
         validation_records = []
 
@@ -1461,6 +1496,7 @@ class QBSyncTab(ctk.CTkFrame):
             self.log(f"--- {display_name} / {date_str} / {source.name} ---")
 
             sync_id = None
+            qb = None
             try:
                 lines, issues, row = extract_marketplace_receipt_lines(
                     report_path=source.report_path,
@@ -1530,7 +1566,7 @@ class QBSyncTab(ctk.CTkFrame):
                     continue
 
                 for line in lines:
-                    amt = float(line["amount"])
+                    amt = line["amount"]
                     if amt != 0:
                         self.log(f"    {line['item_name']:<30} {amt:>10.2f}")
 
@@ -1582,7 +1618,10 @@ class QBSyncTab(ctk.CTkFrame):
                             ],
                         }
                     )
-                    fail_count += 1
+                    if begin_result.status == STATUS_BLOCKED_DUPLICATE:
+                        duplicate_count += 1
+                    else:
+                        fail_count += 1
                     continue
 
                 if preview:
@@ -1607,14 +1646,13 @@ class QBSyncTab(ctk.CTkFrame):
                 exists = any(item["txn_date"] == date_str for item in existing_receipts)
                 if exists:
                     self.log(f"  {source.name} Sales Receipt #{ref_number} already exists, skipping")
-                    qb.disconnect()
                     ledger.mark_status(
                         sync_id,
                         STATUS_BLOCKED_DUPLICATE,
                         error_message="Sales Receipt already exists in QuickBooks",
                         payload={"ref_number": ref_number, "source": source.name},
                     )
-                    success_count += 1
+                    duplicate_count += 1
                     continue
 
                 result = qb.create_sales_receipt(
@@ -1625,7 +1663,6 @@ class QBSyncTab(ctk.CTkFrame):
                     lines=lines,
                     class_name=store_cfg.get("class_name"),
                 )
-                qb.disconnect()
 
                 if result.get("success"):
                     self.log(f"  {source.name} Sales Receipt created! TxnID: {result.get('txn_id')}")
@@ -1645,8 +1682,10 @@ class QBSyncTab(ctk.CTkFrame):
                 except Exception:
                     pass
                 fail_count += 1
+            finally:
+                self._safe_disconnect_qb(qb)
 
-        return current_task, success_count, fail_count, validation_records
+        return current_task, success_count, duplicate_count, fail_count, validation_records
 
     def _status_target(self):
         stores = [name for name, var in self.store_vars.items() if var.get()]
@@ -3518,8 +3557,8 @@ class App(ctk.CTk):
         super().__init__()
 
         self.title("Toast POS Manager")
-        self.geometry("1150x900")
-        self.minsize(1000, 800)
+        self._set_initial_window_geometry()
+        self.minsize(1000, 760)
 
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
@@ -3527,7 +3566,50 @@ class App(ctk.CTk):
         self.status_var = ctk.StringVar(value="Ready")
         self.diagnostics_report = None
         self._build_ui()
+        self.protocol("WM_DELETE_WINDOW", self._on_close_requested)
         self.run_diagnostics_async(False)
+
+    def _set_initial_window_geometry(self):
+        screen_w = self.winfo_screenwidth()
+        screen_h = self.winfo_screenheight()
+        width = min(1280, max(1000, screen_w - 120))
+        height = min(960, max(760, screen_h - 120))
+        x = max(40, (screen_w - width) // 2)
+        y = max(40, (screen_h - height) // 2)
+        self.geometry(f"{width}x{height}+{x}+{y}")
+
+    def _active_background_tasks(self):
+        tasks = []
+        if hasattr(self, "download_tab") and getattr(self.download_tab, "_running", False):
+            tasks.append("Download Reports")
+        if hasattr(self, "qb_tab") and getattr(self.qb_tab, "_running", False):
+            tasks.append("QB Sync")
+        if hasattr(self, "rm_tab") and getattr(self.rm_tab, "_running", False):
+            tasks.append("Remove Transactions")
+        return tasks
+
+    def _cleanup_before_close(self):
+        qb = getattr(getattr(self, "rm_tab", None), "qb", None)
+        if qb:
+            try:
+                qb.disconnect()
+            except Exception:
+                pass
+
+    def _on_close_requested(self):
+        active_tasks = self._active_background_tasks()
+        if active_tasks:
+            confirmed = messagebox.askyesno(
+                "Close While Work Is Running?",
+                "The following work is still running:\n\n"
+                f" - " + "\n - ".join(active_tasks) + "\n\n"
+                "Closing now can leave sync history stale until recovery runs again. Close anyway?",
+                icon="warning",
+            )
+            if not confirmed:
+                return
+        self._cleanup_before_close()
+        self.destroy()
 
     def _build_ui(self):
         # ── Header ──

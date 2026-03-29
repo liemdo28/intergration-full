@@ -7,6 +7,7 @@ import csv
 import difflib
 import json
 import os
+import re
 import sys
 import time
 import xml.etree.ElementTree as ET
@@ -351,8 +352,9 @@ def d(value):
 def escape_xml(text):
     if not text:
         return ""
+    cleaned = re.sub(r"[\x00-\x08\x0B\x0C\x0E-\x1F]", "", str(text))
     return (
-        str(text)
+        cleaned
         .replace("&", "&amp;")
         .replace("<", "&lt;")
         .replace(">", "&gt;")

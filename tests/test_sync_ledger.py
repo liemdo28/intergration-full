@@ -41,6 +41,18 @@ def test_begin_run_and_mark_success(tmp_path):
     assert last_run["status"] == STATUS_SUCCESS
 
 
+def test_connect_enables_wal_and_busy_timeout(tmp_path):
+    db_path = tmp_path / "sync-ledger.db"
+    ledger = SyncLedger(db_path)
+
+    with ledger._connect() as conn:
+        journal_mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
+        busy_timeout = conn.execute("PRAGMA busy_timeout").fetchone()[0]
+
+    assert str(journal_mode).lower() == "wal"
+    assert int(busy_timeout) == 5000
+
+
 def test_same_hash_after_success_blocks_duplicate(tmp_path):
     db_path = tmp_path / "sync-ledger.db"
     report_path = tmp_path / "report.xlsx"

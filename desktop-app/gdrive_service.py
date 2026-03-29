@@ -5,6 +5,7 @@ Google Drive Service - Upload/Download Toast reports
 import os
 import io
 import json
+import time
 from pathlib import Path
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
@@ -17,6 +18,10 @@ SCOPES = ["https://www.googleapis.com/auth/drive.file"]
 ROOT_FOLDER_NAME = "Toast Reports"
 
 
+def _drive_query_literal(value):
+    return str(value or "").replace("\\", "\\\\").replace("'", "\\'")
+
+
 class GDriveService:
     def __init__(self, credentials_file=None, token_file=None, on_log=None):
         self.credentials_file = credentials_file or str(runtime_path("credentials.json"))
@@ -27,6 +32,20 @@ class GDriveService:
 
     def log(self, msg):
         self.on_log(msg)
+
+    def _execute_with_retry(self, action, *, attempts=3, delay_seconds=1.0, operation="Google Drive request"):
+        last_error = None
+        for attempt in range(1, max(1, attempts) + 1):
+            try:
+                return action()
+            except Exception as exc:
+                last_error = exc
+                if attempt >= attempts:
+                    break
+                wait_seconds = delay_seconds * attempt
+                self.log(f"{operation} failed (attempt {attempt}/{attempts}): {exc}. Retrying in {wait_seconds:.0f}s...")
+                time.sleep(wait_seconds)
+        raise last_error
 
     def authenticate(self):
         """Authenticate with Google Drive. Returns True on success."""
@@ -41,6 +60,7 @@ class GDriveService:
         if creds and creds.expired and creds.refresh_token:
             try:
                 creds.refresh(Request())
+                Path(self.token_file).write_text(creds.to_json(), encoding="utf-8")
             except Exception:
                 creds = None
 
@@ -79,11 +99,14 @@ class GDriveService:
         if cache_key in self._folder_cache:
             return self._folder_cache[cache_key]
 
-        q = f"name='{name}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
+        q = f"name='{_drive_query_literal(name)}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
         if parent_id:
             q += f" and '{parent_id}' in parents"
 
-        results = self.service.files().list(q=q, spaces="drive", fields="files(id, name)").execute()
+        results = self._execute_with_retry(
+            lambda: self.service.files().list(q=q, spaces="drive", fields="files(id, name)").execute(),
+            operation=f"Find Drive folder '{name}'",
+        )
         files = results.get("files", [])
 
         if files:
@@ -101,7 +124,10 @@ class GDriveService:
         if parent_id:
             metadata["parents"] = [parent_id]
 
-        folder = self.service.files().create(body=metadata, fields="id").execute()
+        folder = self._execute_with_retry(
+            lambda: self.service.files().create(body=metadata, fields="id").execute(),
+            operation=f"Create Drive folder '{name}'",
+        )
         folder_id = folder["id"]
         cache_key = f"{parent_id}:{name}"
         self._folder_cache[cache_key] = folder_id
@@ -141,20 +167,29 @@ class GDriveService:
         filename = os.path.basename(local_path)
 
         # Check if file already exists
-        q = f"name='{filename}' and '{folder_id}' in parents and trashed=false"
-        existing = self.service.files().list(q=q, fields="files(id)").execute().get("files", [])
+        q = f"name='{_drive_query_literal(filename)}' and '{folder_id}' in parents and trashed=false"
+        existing = self._execute_with_retry(
+            lambda: self.service.files().list(q=q, fields="files(id)").execute().get("files", []),
+            operation=f"Check existing Drive file '{filename}'",
+        )
 
         media = MediaFileUpload(local_path, resumable=True)
 
         if existing:
             # Delete old file(s) and upload fresh
             for old_file in existing:
-                self.service.files().delete(fileId=old_file["id"]).execute()
+                self._execute_with_retry(
+                    lambda file_id=old_file["id"]: self.service.files().delete(fileId=file_id).execute(),
+                    operation=f"Delete old Drive file '{filename}'",
+                )
             self.log(f"  Deleted old: {ROOT_FOLDER_NAME}/{store_name}/{filename}")
         # Upload new file
         if True:
             metadata = {"name": filename, "parents": [folder_id]}
-            result = self.service.files().create(body=metadata, media_body=media, fields="id").execute()
+            result = self._execute_with_retry(
+                lambda: self.service.files().create(body=metadata, media_body=media, fields="id").execute(),
+                operation=f"Upload Drive file '{filename}'",
+            )
             self.log(f"  Uploaded: {ROOT_FOLDER_NAME}/{store_name}/{filename}")
             return result["id"]
 
@@ -164,8 +199,11 @@ class GDriveService:
             raise RuntimeError("Not authenticated")
 
         folder_id = self._get_store_folder(store_name)
-        q = f"name='{filename}' and '{folder_id}' in parents and trashed=false"
-        results = self.service.files().list(q=q, fields="files(id, name)").execute()
+        q = f"name='{_drive_query_literal(filename)}' and '{folder_id}' in parents and trashed=false"
+        results = self._execute_with_retry(
+            lambda: self.service.files().list(q=q, fields="files(id, name)").execute(),
+            operation=f"Find Drive report '{filename}'",
+        )
         files = results.get("files", [])
 
         if not files:
@@ -180,7 +218,10 @@ class GDriveService:
             downloader = MediaIoBaseDownload(f, request)
             done = False
             while not done:
-                status, done = downloader.next_chunk()
+                status, done = self._execute_with_retry(
+                    downloader.next_chunk,
+                    operation=f"Download Drive report '{filename}'",
+                )
 
         self.log(f"  Downloaded: {filename} -> {local_path}")
         return local_path

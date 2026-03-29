@@ -228,6 +228,15 @@ def test_unmapped_payment_subtype_reports_issue(tmp_path):
     assert any(issue["code"] == "unmapped_payment_subtype" for issue in issues)
 
 
+def test_escape_xml_strips_control_characters():
+    escaped = qb_sync.escape_xml("Bad\x00Name\x1f & <ok>")
+
+    assert "\x00" not in escaped
+    assert "\x1f" not in escaped
+    assert "&amp;" in escaped
+    assert "&lt;ok&gt;" in escaped
+
+
 def test_validation_issue_has_severity_and_blocking_metadata(tmp_path):
     report_path = tmp_path / "SalesSummary_2026-03-30_2026-03-30.xlsx"
     _build_report(

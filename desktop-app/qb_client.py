@@ -7,6 +7,7 @@ Supports: Check, Deposit, General Journal Entry, Credit Card Charge/Credit,
 import sys
 import xml.etree.ElementTree as ET
 from datetime import datetime
+import re
 
 if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -21,8 +22,9 @@ def log(msg):
 def escape_xml(s):
     if not s:
         return ""
+    cleaned = re.sub(r"[\x00-\x08\x0B\x0C\x0E-\x1F]", "", str(s))
     return (
-        str(s)
+        cleaned
         .replace("&", "&amp;")
         .replace("<", "&lt;")
         .replace(">", "&gt;")
