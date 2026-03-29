@@ -228,6 +228,82 @@ def test_unmapped_payment_subtype_reports_issue(tmp_path):
     assert any(issue["code"] == "unmapped_payment_subtype" for issue in issues)
 
 
+def test_unmapped_tips_reports_blocking_issue(tmp_path):
+    report_path = tmp_path / "SalesSummary_2026-03-30_2026-03-30.xlsx"
+    _build_report(
+        report_path,
+        revenue={"Tax amount": 0, "Tips": 12, "Gratuity": 0, "Deferred (gift cards)": 0},
+        net_sales={"Sales discounts": 0, "Sales refunds": 0},
+        categories=[{"Sales category": "Food", "Net sales": 50, "Gross sales": 50}],
+        payments=[{"Payment type": "Cash", "Payment sub type": "", "Total": 62}],
+    )
+
+    issues = []
+    reader = qb_sync.ToastExcelReader(report_path)
+    qb_sync.extract_receipt_lines(
+        reader,
+        {
+            "sales_category_map": {"Food": "Food Sales"},
+            "payment_map": {"Cash": "Cash Drawer"},
+            "fixed_items": {"over_short": "Over/Short"},
+        },
+        issues=issues,
+    )
+
+    assert any(issue.code == "unmapped_tips" and issue.blocking for issue in issues)
+
+
+def test_unmapped_gratuity_reports_blocking_issue(tmp_path):
+    report_path = tmp_path / "SalesSummary_2026-03-30_2026-03-30.xlsx"
+    _build_report(
+        report_path,
+        revenue={"Tax amount": 0, "Tips": 0, "Gratuity": 18, "Deferred (gift cards)": 0},
+        net_sales={"Sales discounts": 0, "Sales refunds": 0},
+        categories=[{"Sales category": "Food", "Net sales": 82, "Gross sales": 82}],
+        payments=[{"Payment type": "Cash", "Payment sub type": "", "Total": 100}],
+    )
+
+    issues = []
+    reader = qb_sync.ToastExcelReader(report_path)
+    qb_sync.extract_receipt_lines(
+        reader,
+        {
+            "sales_category_map": {"Food": "Food Sales"},
+            "payment_map": {"Cash": "Cash Drawer"},
+            "fixed_items": {"over_short": "Over/Short"},
+        },
+        issues=issues,
+    )
+
+    assert any(issue.code == "unmapped_gratuity" and issue.blocking for issue in issues)
+
+
+def test_over_short_adjustment_reports_warning_when_other_issues_exist(tmp_path):
+    report_path = tmp_path / "SalesSummary_2026-03-30_2026-03-30.xlsx"
+    _build_report(
+        report_path,
+        revenue={"Tax amount": 0, "Tips": 0, "Gratuity": 0, "Deferred (gift cards)": 0},
+        net_sales={"Sales discounts": 0, "Sales refunds": 0},
+        categories=[{"Sales category": "Food", "Net sales": 100, "Gross sales": 100}],
+        payments=[{"Payment type": "Cash", "Payment sub type": "", "Total": 99}],
+    )
+
+    issues = []
+    reader = qb_sync.ToastExcelReader(report_path)
+    lines = qb_sync.extract_receipt_lines(
+        reader,
+        {
+            "sales_category_map": {},
+            "payment_map": {"Cash": "Cash Drawer"},
+            "fixed_items": {"over_short": "Over/Short"},
+        },
+        issues=issues,
+    )
+
+    assert any(issue.code == "over_short_applied" and issue.severity == "warning" for issue in issues)
+    assert any(line["item_name"] == "Over/Short" for line in lines)
+
+
 def test_escape_xml_strips_control_characters():
     escaped = qb_sync.escape_xml("Bad\x00Name\x1f & <ok>")
 

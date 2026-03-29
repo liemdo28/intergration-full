@@ -58,6 +58,7 @@ DELETE_AUDIT_DIR = AUDIT_LOG_DIR / "delete-transactions"
 QBSYNC_ISSUE_DIR = AUDIT_LOG_DIR / "qb-sync-validation"
 ITEM_CREATION_AUDIT_DIR = AUDIT_LOG_DIR / "item-creations"
 QB_ITEM_CACHE_TTL_SECONDS = 300
+REMOVE_TAB_RENDER_LIMIT = 500
 
 # Toast locations (for download tab)
 TOAST_LOCATIONS = ["Stockton", "The Rim", "Stone Oak", "Bandera", "WA1", "WA2", "WA3"]
@@ -2589,6 +2590,7 @@ class RemoveTab(ctk.CTkFrame):
         self.qb = None
         self.accounts = []
         self.found_txns = []
+        self.results_truncated = False
         self._running = False
         self.delete_dry_run_var = ctk.BooleanVar(value=True)
         self._global_cfg, self._stores = load_mapping()
@@ -2903,6 +2905,27 @@ class RemoveTab(ctk.CTkFrame):
         for var, _, _ in self.txn_rows:
             var.set(value)
 
+    def _render_transaction_row(self, txn):
+        var = ctk.BooleanVar(value=True)
+        row = ctk.CTkFrame(self.txn_scroll, fg_color="transparent")
+        row.pack(fill="x", pady=1)
+        row.grid_columnconfigure(0, minsize=30)
+        row.grid_columnconfigure(1, weight=1, minsize=80)
+        row.grid_columnconfigure(2, weight=1, minsize=80)
+        row.grid_columnconfigure(3, weight=2, minsize=120)
+        row.grid_columnconfigure(4, weight=1, minsize=70)
+        row.grid_columnconfigure(5, weight=1, minsize=60)
+        row.grid_columnconfigure(6, weight=2, minsize=120)
+
+        ctk.CTkCheckBox(row, text="", variable=var, width=25).grid(row=0, column=0, padx=3)
+        ctk.CTkLabel(row, text=txn["TxnDate"], font=ctk.CTkFont(size=11)).grid(row=0, column=1, sticky="w", padx=3)
+        ctk.CTkLabel(row, text=txn["Label"], font=ctk.CTkFont(size=11)).grid(row=0, column=2, sticky="w", padx=3)
+        ctk.CTkLabel(row, text=txn["Account"], font=ctk.CTkFont(size=11)).grid(row=0, column=3, sticky="w", padx=3)
+        ctk.CTkLabel(row, text=txn.get("RefNumber", ""), font=ctk.CTkFont(size=11)).grid(row=0, column=4, sticky="w", padx=3)
+        ctk.CTkLabel(row, text=txn.get("Amount", ""), font=ctk.CTkFont(size=11)).grid(row=0, column=5, sticky="e", padx=3)
+        ctk.CTkLabel(row, text=txn.get("Memo", "")[:40], font=ctk.CTkFont(size=11)).grid(row=0, column=6, sticky="w", padx=3)
+        self.txn_rows.append((var, row, txn))
+
     # ── Connect ──────────────────────────────────────────────────────
 
     def _connect_qb(self):
@@ -3056,9 +3079,24 @@ class RemoveTab(ctk.CTkFrame):
     def _on_search_done(self, txns):
         self._running = False
         self.found_txns = txns
+        self.results_truncated = len(txns) > REMOVE_TAB_RENDER_LIMIT
         self.btn_search.configure(state="normal", text="Search Transactions")
-        self.result_count.configure(text=f"({len(txns)} found)")
-        self._log(f"Search complete: {len(txns)} transactions found")
+        rendered = txns[:REMOVE_TAB_RENDER_LIMIT]
+        if self.results_truncated:
+            self.result_count.configure(text=f"({len(txns)} found, showing first {len(rendered)})")
+            self._log(
+                f"Search complete: {len(txns)} transactions found. Rendering first {len(rendered)} only to keep the UI responsive."
+            )
+            full_export = export_transactions_snapshot(
+                txns,
+                DELETE_AUDIT_DIR / "search-results",
+                "search-results",
+                metadata={"action": "search_snapshot", "truncated": True, "render_limit": REMOVE_TAB_RENDER_LIMIT},
+            )
+            self._log(f"Full search results exported -> {full_export['csv_path']}")
+        else:
+            self.result_count.configure(text=f"({len(txns)} found)")
+            self._log(f"Search complete: {len(txns)} transactions found")
 
         if not txns:
             self.placeholder_label.configure(text="No transactions found")
@@ -3066,30 +3104,14 @@ class RemoveTab(ctk.CTkFrame):
             return
 
         self.placeholder_label.pack_forget()
-        for txn in txns:
-            var = ctk.BooleanVar(value=True)
-            row = ctk.CTkFrame(self.txn_scroll, fg_color="transparent")
-            row.pack(fill="x", pady=1)
-            row.grid_columnconfigure(0, minsize=30)
-            row.grid_columnconfigure(1, weight=1, minsize=80)
-            row.grid_columnconfigure(2, weight=1, minsize=80)
-            row.grid_columnconfigure(3, weight=2, minsize=120)
-            row.grid_columnconfigure(4, weight=1, minsize=70)
-            row.grid_columnconfigure(5, weight=1, minsize=60)
-            row.grid_columnconfigure(6, weight=2, minsize=120)
-
-            ctk.CTkCheckBox(row, text="", variable=var, width=25).grid(row=0, column=0, padx=3)
-            ctk.CTkLabel(row, text=txn["TxnDate"], font=ctk.CTkFont(size=11)).grid(row=0, column=1, sticky="w", padx=3)
-            ctk.CTkLabel(row, text=txn["Label"], font=ctk.CTkFont(size=11)).grid(row=0, column=2, sticky="w", padx=3)
-            ctk.CTkLabel(row, text=txn["Account"], font=ctk.CTkFont(size=11)).grid(row=0, column=3, sticky="w", padx=3)
-            ctk.CTkLabel(row, text=txn.get("RefNumber", ""), font=ctk.CTkFont(size=11)).grid(row=0, column=4, sticky="w", padx=3)
-            ctk.CTkLabel(row, text=txn.get("Amount", ""), font=ctk.CTkFont(size=11)).grid(row=0, column=5, sticky="e", padx=3)
-            ctk.CTkLabel(row, text=txn.get("Memo", "")[:40], font=ctk.CTkFont(size=11)).grid(row=0, column=6, sticky="w", padx=3)
-            self.txn_rows.append((var, row, txn))
+        for txn in rendered:
+            self._render_transaction_row(txn)
 
         if txns:
-            self.btn_delete.configure(state="normal")
+            self.btn_delete.configure(state="disabled" if self.results_truncated else "normal")
             self.btn_export.configure(state="normal")
+            if self.results_truncated:
+                self._log("Delete is disabled for truncated result sets. Narrow the search range before deleting.")
 
     def _on_search_error(self, error):
         self._running = False
@@ -3101,10 +3123,12 @@ class RemoveTab(ctk.CTkFrame):
             row.destroy()
         self.txn_rows.clear()
         self.found_txns.clear()
+        self.results_truncated = False
         self.result_count.configure(text="")
         self.placeholder_label.configure(text="Search to show transactions")
         self.placeholder_label.pack(pady=30)
         self.btn_export.configure(state="disabled")
+        self.btn_delete.configure(state="disabled")
 
     def _selected_transactions(self):
         return [txn for var, _, txn in self.txn_rows if var.get()]

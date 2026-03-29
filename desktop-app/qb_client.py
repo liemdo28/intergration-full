@@ -130,13 +130,36 @@ class QBClient:
             except Exception:
                 pass
 
+    def _wrap_qb_error(self, exc, operation):
+        message = str(exc)
+        lower = message.lower()
+        guidance = "Check that QuickBooks Desktop is open, the correct company file is selected, and no modal popup is blocking automation."
+        if "cannot begin session" in lower or "beginsession" in lower:
+            guidance = "QuickBooks could not start a QBXML session. Open the company file fully, dismiss popups, then retry."
+        elif "lock" in lower or "in use" in lower:
+            guidance = "The QuickBooks company file appears locked or busy. Wait for other users or processes to finish, then retry."
+        elif "timeout" in lower or "timed out" in lower:
+            guidance = "QuickBooks took too long to respond. Let it finish loading, close popups, then retry."
+        elif "modal" in lower or "popup" in lower:
+            guidance = "A QuickBooks popup is likely blocking automation. Dismiss it and retry."
+        return RuntimeError(f"{operation} failed: {message}. {guidance}")
+
     def _send(self, qbxml):
         """Send QBXML request and return response XML."""
-        ticket = self.rp.BeginSession(self.qbw_path, 0)
         try:
-            return self.rp.ProcessRequest(ticket, qbxml)
+            ticket = self.rp.BeginSession(self.qbw_path, 0)
+        except Exception as exc:
+            raise self._wrap_qb_error(exc, "QuickBooks session start") from exc
+        try:
+            try:
+                return self.rp.ProcessRequest(ticket, qbxml)
+            except Exception as exc:
+                raise self._wrap_qb_error(exc, "QuickBooks request") from exc
         finally:
-            self.rp.EndSession(ticket)
+            try:
+                self.rp.EndSession(ticket)
+            except Exception:
+                pass
 
     def _parse(self, response_xml):
         root = ET.fromstring(response_xml)

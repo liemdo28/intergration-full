@@ -366,10 +366,13 @@ def escape_xml(text):
 ISSUE_SEVERITY = {
     "unmapped_categories": ("error", True),
     "unmapped_tax": ("error", True),
+    "unmapped_tips": ("error", True),
+    "unmapped_gratuity": ("error", True),
     "unmapped_payment_subtype": ("error", True),
     "unmapped_other_payment": ("error", True),
     "unmapped_payment_type": ("error", True),
     "unbalanced_receipt": ("error", True),
+    "over_short_applied": ("warning", False),
 }
 
 
@@ -591,7 +594,7 @@ def extract_receipt_lines(reader, store_config, issues=None):
     # 5. Tips (POSITIVE)
     tips = d(revenue.get("Tips", 0))
     gratuity_amt = d(revenue.get("Gratuity", 0))
-    gratuity_is_separate = bool(fixed.get("gratuity"))
+    gratuity_is_separate = bool(fixed.get("gratuity")) and gratuity_amt != 0
     if fixed.get("tips_includes_gratuity"):
         if gratuity_is_separate:
             log("  Gratuity is mapped separately; skipping tips_includes_gratuity merge to avoid double count")
@@ -599,10 +602,14 @@ def extract_receipt_lines(reader, store_config, issues=None):
             tips = tips + gratuity_amt
     if tips != 0 and fixed.get("tips"):
         lines.append({"item_name": fixed["tips"], "amount": tips, "desc": "Tips"})
+    elif tips != 0:
+        add_issue("unmapped_tips", "Tips amount exists but no QuickBooks mapping is configured", amount=str(tips))
 
     # 5a. Gratuity (POSITIVE, separate line)
     if gratuity_amt != 0 and fixed.get("gratuity"):
         lines.append({"item_name": fixed["gratuity"], "amount": gratuity_amt, "desc": "Gratuity"})
+    elif gratuity_amt != 0 and not fixed.get("tips_includes_gratuity"):
+        add_issue("unmapped_gratuity", "Gratuity amount exists but no QuickBooks mapping is configured", amount=str(gratuity_amt))
 
     # 5b. Deferred Gift Cards (POSITIVE)
     deferred_gc = d(revenue.get("Deferred (gift cards)", 0))
@@ -659,6 +666,12 @@ def extract_receipt_lines(reader, store_config, issues=None):
         total_negative = sum(l["amount"] for l in lines if l["amount"] < 0)
         balance = total_positive + total_negative
         if balance != 0:
+            if issues and abs(balance) >= Decimal("0.50"):
+                add_issue(
+                    "over_short_applied",
+                    f"Over/Short adjustment applied by {balance}; review unmapped or mismatched report data.",
+                    balance=str(balance),
+                )
             lines.append({"item_name": fixed["over_short"], "amount": -balance, "desc": "Over/Short adjustment"})
     else:
         total_positive = sum(l["amount"] for l in lines if l["amount"] > 0)
@@ -697,12 +710,35 @@ class QBSyncClient:
             except Exception:
                 pass
 
+    def _wrap_qb_error(self, exc, operation):
+        message = str(exc)
+        lower = message.lower()
+        guidance = "Check that QuickBooks Desktop is open, the correct company file is active, and no modal popup is blocking automation."
+        if "cannot begin session" in lower or "beginsession" in lower:
+            guidance = "QuickBooks could not start a QBXML session. Confirm the company file is open and fully loaded, then retry."
+        elif "lock" in lower or "in use" in lower:
+            guidance = "The QuickBooks company file appears locked or busy. Wait for other users/processes to finish, then retry."
+        elif "timeout" in lower or "timed out" in lower:
+            guidance = "QuickBooks took too long to respond. Close popups, let the company file settle, and retry."
+        elif "modal" in lower or "popup" in lower:
+            guidance = "A QuickBooks popup is likely blocking QBXML requests. Dismiss it and retry."
+        return RuntimeError(f"{operation} failed: {message}. {guidance}")
+
     def _send(self, qbxml):
-        ticket = self.rp.BeginSession("", 0)
         try:
-            return self.rp.ProcessRequest(ticket, qbxml)
+            ticket = self.rp.BeginSession("", 0)
+        except Exception as exc:
+            raise self._wrap_qb_error(exc, "QuickBooks session start") from exc
+        try:
+            try:
+                return self.rp.ProcessRequest(ticket, qbxml)
+            except Exception as exc:
+                raise self._wrap_qb_error(exc, "QuickBooks request") from exc
         finally:
-            self.rp.EndSession(ticket)
+            try:
+                self.rp.EndSession(ticket)
+            except Exception:
+                pass
 
     def _parse(self, response_xml):
         root = ET.fromstring(response_xml)
