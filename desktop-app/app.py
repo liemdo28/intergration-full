@@ -51,6 +51,12 @@ from recovery_center import (
     get_recovery_playbooks,
 )
 from toast_reports import DEFAULT_REPORT_TYPE_KEYS, REPORT_TYPES, build_local_report_dir
+from integration_status import (
+    get_auto_download_plan,
+    get_auto_qb_sync_plan,
+    get_safe_target_date,
+    get_world_clocks,
+)
 
 import logging
 from logging.handlers import RotatingFileHandler
@@ -191,8 +197,8 @@ class DownloadTab(ctk.CTkFrame):
         cal_row = ctk.CTkFrame(date_frame, fg_color="transparent")
         cal_row.pack(fill="x", padx=10, pady=(0, 5))
 
-        yesterday = datetime.now() - timedelta(days=1)
-        yesterday_str = yesterday.strftime("%Y-%m-%d")
+        yesterday_str = get_safe_target_date(TOAST_LOCATIONS, include_today=False)
+        yesterday = datetime.strptime(yesterday_str, "%Y-%m-%d")
 
         # Start Date
         start_col = ctk.CTkFrame(cal_row, fg_color="transparent")
@@ -239,9 +245,9 @@ class DownloadTab(ctk.CTkFrame):
         btn_row = ctk.CTkFrame(date_frame, fg_color="transparent")
         btn_row.pack(fill="x", padx=10, pady=(5, 10))
 
-        def set_single_date(days_ago):
-            d = datetime.now() - timedelta(days=days_ago)
-            d_str = d.strftime("%Y-%m-%d")
+        def set_single_date(include_today):
+            d_str = self._selection_target_date(include_today=include_today)
+            d = datetime.strptime(d_str, "%Y-%m-%d")
             self.start_date_var.set(d_str)
             self.end_date_var.set(d_str)
             self.start_cal.selection_set(d)
@@ -249,16 +255,16 @@ class DownloadTab(ctk.CTkFrame):
             self._update_date_info()
 
         def set_last_n_days(n):
-            end = datetime.now() - timedelta(days=1)
-            start = datetime.now() - timedelta(days=n)
+            end = datetime.strptime(self._selection_target_date(include_today=False), "%Y-%m-%d")
+            start = end - timedelta(days=max(n - 1, 0))
             self.start_date_var.set(start.strftime("%Y-%m-%d"))
             self.end_date_var.set(end.strftime("%Y-%m-%d"))
             self.start_cal.selection_set(start)
             self.end_cal.selection_set(end)
             self._update_date_info()
 
-        ctk.CTkButton(btn_row, text="Yesterday", width=90, command=lambda: set_single_date(1)).pack(side="left", padx=2)
-        ctk.CTkButton(btn_row, text="Today", width=70, command=lambda: set_single_date(0)).pack(side="left", padx=2)
+        ctk.CTkButton(btn_row, text="Yesterday (US)", width=110, command=lambda: set_single_date(False)).pack(side="left", padx=2)
+        ctk.CTkButton(btn_row, text="Today (US)", width=90, command=lambda: set_single_date(True)).pack(side="left", padx=2)
         ctk.CTkButton(btn_row, text="Last 7 days", width=100, command=lambda: set_last_n_days(7)).pack(side="left", padx=2)
         ctk.CTkButton(btn_row, text="Last 30 days", width=100, command=lambda: set_last_n_days(30)).pack(side="left", padx=2)
 
@@ -298,6 +304,22 @@ class DownloadTab(ctk.CTkFrame):
         report_btn_row.pack(fill="x", padx=10, pady=(0, 10))
         ctk.CTkButton(report_btn_row, text="Select All", width=90, command=lambda: [v.set(True) for v in self.report_type_vars.values()]).pack(side="left", padx=2)
         ctk.CTkButton(report_btn_row, text="Sales Summary Only", width=140, command=self._select_sales_summary_only).pack(side="left", padx=2)
+        ctk.CTkButton(
+            report_btn_row,
+            text="Auto Fill Missing (US Yesterday)",
+            width=190,
+            command=lambda: self._apply_auto_download_plan(False),
+            fg_color="#0f766e",
+            hover_color="#0d5f59",
+        ).pack(side="left", padx=(10, 2))
+        ctk.CTkButton(
+            report_btn_row,
+            text="Auto Fill Missing (US Today)",
+            width=170,
+            command=lambda: self._apply_auto_download_plan(True),
+            fg_color="#2563eb",
+            hover_color="#1d4ed8",
+        ).pack(side="left", padx=2)
 
         # ── Options ──
         opt_frame = ctk.CTkFrame(content)
@@ -448,6 +470,37 @@ class DownloadTab(ctk.CTkFrame):
         for key, var in self.report_type_vars.items():
             var.set(key == "sales_summary")
 
+    def _selected_locations(self):
+        return [loc for loc, var in self.loc_vars.items() if var.get()]
+
+    def _selection_target_date(self, include_today=False):
+        locations = self._selected_locations() or TOAST_LOCATIONS
+        return get_safe_target_date(locations, include_today=include_today)
+
+    def _apply_auto_download_plan(self, include_today=False):
+        locations = self._selected_locations()
+        if not locations:
+            messagebox.showwarning("Warning", "Please select at least one location")
+            return
+        report_types = [key for key, var in self.report_type_vars.items() if var.get()]
+        if not report_types:
+            messagebox.showwarning("Warning", "Please select at least one report type")
+            return
+
+        plan = get_auto_download_plan(locations, report_types, include_today=include_today)
+        if not plan["has_gap"]:
+            messagebox.showinfo("Downloads Up To Date", plan["message"])
+            return
+
+        start_dt = datetime.strptime(plan["start_date"], "%Y-%m-%d")
+        end_dt = datetime.strptime(plan["end_date"], "%Y-%m-%d")
+        self.start_date_var.set(plan["start_date"])
+        self.end_date_var.set(plan["end_date"])
+        self.start_cal.selection_set(start_dt)
+        self.end_cal.selection_set(end_dt)
+        self._update_date_info()
+        self.log(plan["message"])
+
     def start_download(self):
         if self._running:
             return
@@ -560,8 +613,8 @@ class QBSyncTab(ctk.CTkFrame):
         date_frame.pack(fill="x", padx=15, pady=(15, 5))
         ctk.CTkLabel(date_frame, text="Date Range", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=10, pady=(10, 5))
 
-        yesterday_dt = datetime.now() - timedelta(days=1)
-        yesterday = yesterday_dt.strftime("%Y-%m-%d")
+        yesterday = get_safe_target_date(include_today=False)
+        yesterday_dt = datetime.strptime(yesterday, "%Y-%m-%d")
         self.date_from_var = ctk.StringVar(value=yesterday)
         self.date_to_var = ctk.StringVar(value=yesterday)
         self.date_var = ctk.StringVar(value=yesterday)
@@ -602,9 +655,9 @@ class QBSyncTab(ctk.CTkFrame):
         btn_row = ctk.CTkFrame(date_frame, fg_color="transparent")
         btn_row.pack(fill="x", padx=10, pady=(5, 10))
 
-        def set_single_date(days_ago):
-            d = datetime.now() - timedelta(days=days_ago)
-            d_str = d.strftime("%Y-%m-%d")
+        def set_single_date(include_today):
+            d_str = self._selection_target_date(include_today=include_today)
+            d = datetime.strptime(d_str, "%Y-%m-%d")
             self.date_from_var.set(d_str)
             self.date_to_var.set(d_str)
             self.start_cal.selection_set(d)
@@ -612,18 +665,34 @@ class QBSyncTab(ctk.CTkFrame):
             self._update_date_range_info()
 
         def set_last_n_days(n):
-            end = datetime.now() - timedelta(days=1)
-            start = datetime.now() - timedelta(days=n)
+            end = datetime.strptime(self._selection_target_date(include_today=False), "%Y-%m-%d")
+            start = end - timedelta(days=max(n - 1, 0))
             self.date_from_var.set(start.strftime("%Y-%m-%d"))
             self.date_to_var.set(end.strftime("%Y-%m-%d"))
             self.start_cal.selection_set(start)
             self.end_cal.selection_set(end)
             self._update_date_range_info()
 
-        ctk.CTkButton(btn_row, text="Yesterday", width=90, command=lambda: set_single_date(1)).pack(side="left", padx=2)
-        ctk.CTkButton(btn_row, text="Today", width=70, command=lambda: set_single_date(0)).pack(side="left", padx=2)
+        ctk.CTkButton(btn_row, text="Yesterday (US)", width=110, command=lambda: set_single_date(False)).pack(side="left", padx=2)
+        ctk.CTkButton(btn_row, text="Today (US)", width=90, command=lambda: set_single_date(True)).pack(side="left", padx=2)
         ctk.CTkButton(btn_row, text="Last 7 days", width=100, command=lambda: set_last_n_days(7)).pack(side="left", padx=2)
         ctk.CTkButton(btn_row, text="Last 30 days", width=100, command=lambda: set_last_n_days(30)).pack(side="left", padx=2)
+        ctk.CTkButton(
+            btn_row,
+            text="Auto Fill QB Missing",
+            width=150,
+            command=lambda: self._apply_auto_qb_plan(False),
+            fg_color="#0f766e",
+            hover_color="#0d5f59",
+        ).pack(side="left", padx=(10, 2))
+        ctk.CTkButton(
+            btn_row,
+            text="Auto Fill QB + Today",
+            width=150,
+            command=lambda: self._apply_auto_qb_plan(True),
+            fg_color="#2563eb",
+            hover_color="#1d4ed8",
+        ).pack(side="left", padx=2)
 
         # ── Stores Section ──
         store_frame = ctk.CTkFrame(_parent)
@@ -966,6 +1035,34 @@ class QBSyncTab(ctk.CTkFrame):
         self._refresh_marketplace_source_statuses()
         self._refresh_last_sync_status()
         self._refresh_item_creation_history()
+
+    def _selected_qb_stores(self):
+        return [name for name, var in self.store_vars.items() if var.get()]
+
+    def _selection_target_date(self, include_today=False):
+        stores = self._selected_qb_stores() or list(self._stores.keys())
+        return get_safe_target_date(stores, include_today=include_today)
+
+    def _apply_auto_qb_plan(self, include_today=False):
+        stores = self._selected_qb_stores()
+        if not stores:
+            messagebox.showwarning("Warning", "Please select at least one store")
+            return
+
+        plan = get_auto_qb_sync_plan(stores, include_today=include_today)
+        if not plan["has_gap"]:
+            messagebox.showinfo("QB Sync Up To Date", plan["message"])
+            return
+
+        start_dt = datetime.strptime(plan["start_date"], "%Y-%m-%d")
+        end_dt = datetime.strptime(plan["end_date"], "%Y-%m-%d")
+        self.date_from_var.set(plan["start_date"])
+        self.date_to_var.set(plan["end_date"])
+        self.start_cal.selection_set(start_dt)
+        self.end_cal.selection_set(end_dt)
+        self.source_filter_var.set("toast")
+        self._update_date_range_info()
+        self.log(plan["message"])
 
     def _browse_qbw(self, store_name):
         filepath = filedialog.askopenfilename(
@@ -3884,6 +3981,19 @@ class App(ctk.CTk):
         self.env_status_label = ctk.CTkLabel(header, text="Environment: checking...", text_color="#d97706",
                                              font=ctk.CTkFont(size=12))
         self.env_status_label.pack(side="right", padx=(0, 12))
+        self.clock_frame = ctk.CTkFrame(header, fg_color="transparent")
+        self.clock_frame.pack(side="right", padx=(0, 12))
+        self.clock_labels = {}
+        for clock in get_world_clocks():
+            label = ctk.CTkLabel(
+                self.clock_frame,
+                text="",
+                text_color="#9ca3af",
+                font=ctk.CTkFont(size=11),
+            )
+            label.pack(side="left", padx=8)
+            self.clock_labels[clock["key"]] = label
+        self._refresh_clock_labels()
 
         # ── Main: Sidebar + Content ──
         main = ctk.CTkFrame(self, fg_color="transparent")
@@ -3971,6 +4081,13 @@ class App(ctk.CTk):
         status_bar.pack_propagate(False)
         ctk.CTkLabel(status_bar, textvariable=self.status_var,
                       font=ctk.CTkFont(size=11), text_color="gray").pack(side="left", padx=10)
+
+    def _refresh_clock_labels(self):
+        for clock in get_world_clocks():
+            label = self.clock_labels.get(clock["key"])
+            if label:
+                label.configure(text=f"{clock['label']}: {clock['display']}")
+        self.after(1000, self._refresh_clock_labels)
 
     def _switch_tab(self, key: str):
         """Switch to the given tab, highlighting the active nav button."""
