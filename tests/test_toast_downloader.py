@@ -194,3 +194,16 @@ def test_switch_location_short_circuits_when_store_already_visible():
 
     assert ok is True
     assert any("Already on location: Stockton" in line for line in logs)
+
+
+def test_build_saved_filename_normalizes_download_name():
+    downloader = toast_downloader.ToastDownloader()
+
+    filename = downloader._build_saved_filename(
+        "report.xlsx",
+        report_type="orders",
+        store_name="Stone Oak",
+        business_date="2026-04-07",
+    )
+
+    assert filename == "2026-04-07_OrderDetails_Stone Oak.xlsx"

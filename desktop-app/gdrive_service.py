@@ -5,6 +5,7 @@ Google Drive Service - Upload/Download Toast reports
 import os
 import re
 import time
+import json
 from pathlib import Path
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
@@ -21,6 +22,8 @@ from toast_reports import (
 )
 
 SCOPES = ["https://www.googleapis.com/auth/drive.file"]
+LOCAL_CONFIG_FILE = runtime_path("local-config.json")
+FOLDER_ID_RE = re.compile(r"/folders/([a-zA-Z0-9_-]+)")
 
 
 def _drive_query_literal(value):
@@ -31,15 +34,43 @@ DATE_FOLDER_RE = re.compile(r"(20\d{2})[-_]?(\d{2})")
 
 
 class GDriveService:
-    def __init__(self, credentials_file=None, token_file=None, on_log=None):
+    def __init__(self, credentials_file=None, token_file=None, on_log=None, config=None):
         self.credentials_file = credentials_file or str(runtime_path("credentials.json"))
         self.token_file = token_file or str(runtime_path("token.json"))
         self.on_log = on_log or (lambda msg: None)
         self.service = None
         self._folder_cache = {}
+        self._config = config or self._load_local_config()
+        drive_cfg = dict(self._config.get("google_drive") or {})
+        self._configured_root_folder_id = self._extract_folder_id(
+            drive_cfg.get("root_folder_id") or drive_cfg.get("root_folder_url")
+        )
+        self._configured_brand_folder_name = str(drive_cfg.get("brand_folder_name") or "").strip()
+        self._use_date_subfolders = bool(drive_cfg.get("use_date_subfolders", False))
 
     def log(self, msg):
         self.on_log(msg)
+
+    @staticmethod
+    def _load_local_config():
+        if not LOCAL_CONFIG_FILE.exists():
+            return {}
+        try:
+            return json.loads(LOCAL_CONFIG_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+
+    @staticmethod
+    def _extract_folder_id(value):
+        raw = str(value or "").strip()
+        if not raw:
+            return ""
+        match = FOLDER_ID_RE.search(raw)
+        if match:
+            return match.group(1)
+        if "/" not in raw and "?" not in raw and " " not in raw:
+            return raw
+        return ""
 
     def _execute_with_retry(self, action, *, attempts=3, delay_seconds=1.0, operation="Google Drive request"):
         last_error = None
@@ -156,6 +187,12 @@ class GDriveService:
         )
         return results.get("files", [])
 
+    def _resolve_root_folder(self):
+        if self._configured_root_folder_id:
+            return self._configured_root_folder_id, f"id:{self._configured_root_folder_id}"
+        root_id = self._get_or_create_folder(ROOT_FOLDER_NAME)
+        return root_id, ROOT_FOLDER_NAME
+
     def _extract_year_month(self, filename):
         match = DATE_FOLDER_RE.search(str(filename or ""))
         if not match:
@@ -165,7 +202,14 @@ class GDriveService:
     def _iter_store_folder_candidates(self, store_name):
         candidates = []
         seen = set()
-        for root_name, root_id in self._find_existing_root_folders():
+        configured_root_id, configured_root_name = self._resolve_root_folder()
+        roots = [(configured_root_name, configured_root_id)] if configured_root_id else self._find_existing_root_folders()
+        for root_name, root_id in roots:
+            if self._configured_brand_folder_name:
+                brand_root_id = self._find_folder(self._configured_brand_folder_name, root_id)
+                if brand_root_id:
+                    root_name = f"{root_name}/{self._configured_brand_folder_name}"
+                    root_id = brand_root_id
             direct_store_id = self._find_folder(store_name, root_id)
             if direct_store_id and direct_store_id not in seen:
                 candidates.append(
@@ -235,7 +279,8 @@ class GDriveService:
         return candidates
 
     def _get_primary_root_folder(self):
-        return self._get_or_create_folder(ROOT_FOLDER_NAME)
+        root_id, _root_name = self._resolve_root_folder()
+        return root_id
 
     def _find_existing_root_folders(self):
         roots = []
@@ -248,15 +293,32 @@ class GDriveService:
         return roots
 
     def _get_store_folder(self, store_name):
-        root_id = self._get_primary_root_folder()
+        root_id, _root_name = self._resolve_root_folder()
+        if self._configured_brand_folder_name:
+            root_id = self._get_or_create_folder(self._configured_brand_folder_name, root_id)
         store_id = self._get_or_create_folder(store_name, root_id)
         return store_id
 
-    def _get_report_folder(self, store_name, report_type="sales_summary"):
+    def _get_report_folder(self, store_name, report_type="sales_summary", filename=None):
         report = get_report_type(report_type)
-        root_id = self._get_primary_root_folder()
-        store_id = self._get_or_create_folder(store_name, root_id)
-        return self._get_or_create_folder(report.folder_name, store_id)
+        root_id, root_name = self._resolve_root_folder()
+        current_id = root_id
+        relative_parts = [root_name]
+        if self._configured_brand_folder_name:
+            current_id = self._get_or_create_folder(self._configured_brand_folder_name, current_id)
+            relative_parts.append(self._configured_brand_folder_name)
+        current_id = self._get_or_create_folder(store_name, current_id)
+        relative_parts.append(store_name)
+        if self._use_date_subfolders:
+            year, month = self._extract_year_month(filename or "")
+            if year and month:
+                current_id = self._get_or_create_folder(year, current_id)
+                relative_parts.append(year)
+                current_id = self._get_or_create_folder(month, current_id)
+                relative_parts.append(month)
+        current_id = self._get_or_create_folder(report.folder_name, current_id)
+        relative_parts.append(report.folder_name)
+        return current_id, relative_parts
 
     def _find_matching_files(self, folder_id, filename):
         q = f"name='{_drive_query_literal(filename)}' and '{folder_id}' in parents and trashed=false"
@@ -286,15 +348,21 @@ class GDriveService:
     def setup_folders(self, store_names, report_types=None):
         reports = normalize_report_types(report_types or DEFAULT_REPORT_TYPE_KEYS)
         self.log("Setting up Google Drive folder structure...")
-        root_id = self._get_primary_root_folder()
-        self.log(f"  Root folder: {ROOT_FOLDER_NAME}")
+        root_id, root_name = self._resolve_root_folder()
+        self.log(f"  Root folder: {root_name}")
+        current_root_id = root_id
+        current_root_parts = [root_name]
+        if self._configured_brand_folder_name:
+            current_root_id = self._get_or_create_folder(self._configured_brand_folder_name, current_root_id)
+            current_root_parts.append(self._configured_brand_folder_name)
+            self.log(f"  Brand folder: {'/'.join(current_root_parts)}")
 
         for name in store_names:
-            store_id = self._get_or_create_folder(name, root_id)
-            self.log(f"  Created/found: {ROOT_FOLDER_NAME}/{name}")
+            store_id = self._get_or_create_folder(name, current_root_id)
+            self.log(f"  Created/found: {'/'.join([*current_root_parts, name])}")
             for report in reports:
                 self._get_or_create_folder(report.folder_name, store_id)
-                self.log(f"    Ready: {ROOT_FOLDER_NAME}/{name}/{report.folder_name}")
+                self.log(f"    Ready: {'/'.join([*current_root_parts, name, report.folder_name])}")
 
         self.log("Folder structure ready")
 
@@ -303,7 +371,7 @@ class GDriveService:
             raise RuntimeError("Not authenticated")
 
         report = get_report_type(report_type)
-        folder_id = self._get_report_folder(store_name, report.key)
+        folder_id, relative_parts = self._get_report_folder(store_name, report.key, filename=os.path.basename(local_path))
         filename = os.path.basename(local_path)
         existing = self._find_matching_files(folder_id, filename)
         media = MediaFileUpload(local_path, resumable=True)
@@ -314,14 +382,14 @@ class GDriveService:
                     lambda file_id=old_file["id"]: self.service.files().delete(fileId=file_id).execute(),
                     operation=f"Delete old Drive file '{filename}'",
                 )
-            self.log(f"  Deleted old: {ROOT_FOLDER_NAME}/{store_name}/{report.folder_name}/{filename}")
+            self.log(f"  Deleted old: {'/'.join([*relative_parts, filename])}")
 
         metadata = {"name": filename, "parents": [folder_id]}
         result = self._execute_with_retry(
             lambda: self.service.files().create(body=metadata, media_body=media, fields="id").execute(),
             operation=f"Upload Drive file '{filename}'",
         )
-        self.log(f"  Uploaded: {ROOT_FOLDER_NAME}/{store_name}/{report.folder_name}/{filename}")
+        self.log(f"  Uploaded: {'/'.join([*relative_parts, filename])}")
         return result["id"]
 
     def download_report(self, store_name, filename, local_dir, report_type="sales_summary"):

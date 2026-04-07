@@ -65,6 +65,28 @@ class ToastDownloader:
         except ValueError:
             return None
 
+    @staticmethod
+    def _canonical_report_stem(report_type):
+        stems = {
+            "sales_summary": "SalesSummary",
+            "orders": "OrderDetails",
+            "order_items": "ItemSelectionDetails",
+            "payments": "PaymentDetails",
+            "discounts": "Discounts",
+            "cash_activity_audit": "CashActivityAudit",
+            "voided_orders": "VoidedOrder",
+            "sales_orders": "Order",
+        }
+        return stems.get(report_type, "ToastReport")
+
+    def _build_saved_filename(self, suggested_filename, *, report_type, store_name=None, business_date=None):
+        suffix = Path(suggested_filename or "report.xlsx").suffix or ".xlsx"
+        if not business_date:
+            return suggested_filename or f"{self._canonical_report_stem(report_type)}{suffix}"
+        store_part = self._sanitize(store_name or "Store")
+        stem = self._canonical_report_stem(report_type)
+        return f"{business_date}_{stem}_{store_part}{suffix}"
+
     def _is_logged_in(self, url=None):
         target = url or self.page.url
         return "/reports/" in target or "/admin/" in target
@@ -658,7 +680,7 @@ class ToastDownloader:
                 pass
         return False
 
-    def _download_report(self, save_dir, report_type="sales_summary"):
+    def _download_report(self, save_dir, report_type="sales_summary", store_name=None, business_date=None):
         """Click download icon -> Tab -> Enter. Returns file metadata or None."""
         if not self._click_download_icon():
             self.log("    Download button not found")
@@ -685,7 +707,13 @@ class ToastDownloader:
 
             download = download_info.value
             filename = download.suggested_filename or "report.xlsx"
-            filepath = os.path.join(save_dir, filename)
+            save_name = self._build_saved_filename(
+                filename,
+                report_type=report_type,
+                store_name=store_name,
+                business_date=business_date,
+            )
+            filepath = os.path.join(save_dir, save_name)
             download.save_as(filepath)
             validation = validate_toast_report_file(filepath, report_type=report_type)
             if not validation.ok:
@@ -693,8 +721,8 @@ class ToastDownloader:
                 return None
             if validation.warnings:
                 self.log(f"    Download warnings: {'; '.join(validation.warnings)}")
-            self.log(f"    Downloaded: {filename} [{validation.checksum_sha256[:12]}]")
-            return {"filepath": filepath, "validation": validation.to_dict()}
+            self.log(f"    Downloaded: {save_name} [{validation.checksum_sha256[:12]}]")
+            return {"filepath": filepath, "filename": save_name, "original_filename": filename, "validation": validation.to_dict()}
 
         except Exception as e:
             self.log(f"    Download failed: {e}")
@@ -857,7 +885,12 @@ class ToastDownloader:
                                 self.page.wait_for_timeout(backoff * 1000)
                                 self._dismiss_overlays()
                                 self._wait_for_report_ready()
-                            download_info = self._download_report(str(report_dir), report_type=report.key)
+                            download_info = self._download_report(
+                                str(report_dir),
+                                report_type=report.key,
+                                store_name=loc_name,
+                                business_date=business_date,
+                            )
                             self.run_audit.append({
                                 "location": loc_name,
                                 "date": date_label,

@@ -16,6 +16,12 @@
     "allow_live_delete": false,
     "approver": "Accounting lead"
   },
+  "google_drive": {
+    "root_folder_url": "https://drive.google.com/drive/folders/PUT_SHARED_FOLDER_ID_HERE",
+    "root_folder_id": "",
+    "brand_folder_name": "",
+    "use_date_subfolders": false
+  },
   "agentai_sync": {
     "enabled": false,
     "api_url": "https://agentai.yourdomain.com",
