@@ -241,6 +241,199 @@ def _write_inventory_tables(rows: list[dict], missing_rows: list[dict]) -> None:
         conn.commit()
 
 
+def build_report_coverage_summary(
+    inventory_rows: list[dict],
+    missing_rows: list[dict],
+    *,
+    report_keys: list[str] | tuple[str, ...] | None = None,
+    store_names: list[str] | tuple[str, ...] | None = None,
+) -> list[dict]:
+    normalized_reports = normalize_report_types(report_keys or list(DEFAULT_REPORT_TYPE_KEYS))
+    target_reports = [report for report in normalized_reports if report.download_supported]
+    target_stores = list(store_names or KNOWN_STORE_NAMES)
+
+    by_pair: dict[tuple[str, str], list[dict]] = {}
+    for row in inventory_rows:
+        if row.get("business_date"):
+            by_pair.setdefault((row["store"], row["report_key"]), []).append(row)
+
+    missing_by_pair: dict[tuple[str, str], list[dict]] = {}
+    for row in missing_rows:
+        missing_by_pair.setdefault((row["store"], row["report_key"]), []).append(row)
+
+    summary_rows: list[dict] = []
+    for store in target_stores:
+        for report in target_reports:
+            key = (store, report.key)
+            present_rows = sorted(by_pair.get(key, []), key=lambda item: item.get("business_date") or "")
+            missing_for_pair = sorted(missing_by_pair.get(key, []), key=lambda item: item["business_date"])
+            present_dates = [item["business_date"] for item in present_rows if item.get("business_date")]
+            latest_row = max(
+                present_rows,
+                key=lambda item: (
+                    item.get("business_date") or "",
+                    item.get("modified_at") or "",
+                ),
+                default=None,
+            )
+            summary_rows.append(
+                {
+                    "store": store,
+                    "report_key": report.key,
+                    "report_label": report.label,
+                    "available_dates_count": len(set(present_dates)),
+                    "first_date": min(present_dates) if present_dates else "",
+                    "last_date": max(present_dates) if present_dates else "",
+                    "missing_count": len(missing_for_pair),
+                    "next_missing_date": missing_for_pair[0]["business_date"] if missing_for_pair else "",
+                    "missing_ranges": group_missing_report_records(missing_for_pair),
+                    "latest_file_name": (latest_row or {}).get("filename", ""),
+                    "latest_file_path": (latest_row or {}).get("filepath", ""),
+                    "latest_modified_at": (latest_row or {}).get("modified_at", ""),
+                    "source": (latest_row or {}).get("source", ""),
+                    "health": (
+                        "missing"
+                        if missing_for_pair
+                        else "ready"
+                        if present_rows
+                        else "empty"
+                    ),
+                }
+            )
+
+    summary_rows.sort(
+        key=lambda item: (
+            0 if item["health"] == "missing" else 1 if item["health"] == "empty" else 2,
+            -item["missing_count"],
+            item["store"],
+            item["report_label"],
+        )
+    )
+    return summary_rows
+
+
+def _write_drive_inventory_tables(rows: list[dict], missing_rows: list[dict], summary_rows: list[dict]) -> None:
+    INVENTORY_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(INVENTORY_DB_PATH) as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS drive_report_inventory (
+                store TEXT NOT NULL,
+                report_key TEXT NOT NULL,
+                report_label TEXT NOT NULL,
+                business_date TEXT,
+                filepath TEXT NOT NULL,
+                filename TEXT NOT NULL,
+                modified_at TEXT,
+                size_bytes INTEGER NOT NULL DEFAULT 0,
+                source TEXT NOT NULL DEFAULT 'drive_inventory'
+            )
+            """
+        )
+        conn.execute("DELETE FROM drive_report_inventory")
+        conn.executemany(
+            """
+            INSERT INTO drive_report_inventory (
+                store, report_key, report_label, business_date, filepath, filename, modified_at, size_bytes, source
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    row["store"],
+                    row["report_key"],
+                    row["report_label"],
+                    row.get("business_date"),
+                    row["filepath"],
+                    row["filename"],
+                    row.get("modified_at"),
+                    row.get("size_bytes", 0),
+                    row.get("source", "drive_inventory"),
+                )
+                for row in rows
+            ],
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS drive_missing_report_records (
+                store TEXT NOT NULL,
+                report_key TEXT NOT NULL,
+                report_label TEXT NOT NULL,
+                business_date TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                detected_at TEXT NOT NULL,
+                download_supported INTEGER NOT NULL DEFAULT 1
+            )
+            """
+        )
+        conn.execute("DELETE FROM drive_missing_report_records")
+        conn.executemany(
+            """
+            INSERT INTO drive_missing_report_records (
+                store, report_key, report_label, business_date, reason, detected_at, download_supported
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    row["store"],
+                    row["report_key"],
+                    row["report_label"],
+                    row["business_date"],
+                    row["reason"],
+                    row["detected_at"],
+                    int(bool(row.get("download_supported", True))),
+                )
+                for row in missing_rows
+            ],
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS drive_report_summary (
+                store TEXT NOT NULL,
+                report_key TEXT NOT NULL,
+                report_label TEXT NOT NULL,
+                available_dates_count INTEGER NOT NULL DEFAULT 0,
+                first_date TEXT,
+                last_date TEXT,
+                missing_count INTEGER NOT NULL DEFAULT 0,
+                next_missing_date TEXT,
+                latest_file_name TEXT,
+                latest_file_path TEXT,
+                latest_modified_at TEXT,
+                health TEXT NOT NULL,
+                source TEXT
+            )
+            """
+        )
+        conn.execute("DELETE FROM drive_report_summary")
+        conn.executemany(
+            """
+            INSERT INTO drive_report_summary (
+                store, report_key, report_label, available_dates_count, first_date, last_date, missing_count,
+                next_missing_date, latest_file_name, latest_file_path, latest_modified_at, health, source
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    row["store"],
+                    row["report_key"],
+                    row["report_label"],
+                    row["available_dates_count"],
+                    row["first_date"],
+                    row["last_date"],
+                    row["missing_count"],
+                    row["next_missing_date"],
+                    row["latest_file_name"],
+                    row["latest_file_path"],
+                    row["latest_modified_at"],
+                    row["health"],
+                    row.get("source", ""),
+                )
+                for row in summary_rows
+            ],
+        )
+        conn.commit()
+
+
 def _build_missing_rows(
     inventory_rows: list[dict],
     *,
@@ -368,3 +561,32 @@ def group_missing_report_records(rows: list[dict]) -> list[dict]:
             grouped.append(current)
         previous_date = row_date
     return grouped
+
+
+def refresh_drive_report_inventory(
+    inventory_rows: list[dict],
+    *,
+    include_today: bool = False,
+    now: datetime | None = None,
+    store_names: list[str] | tuple[str, ...] | None = None,
+    report_keys: list[str] | tuple[str, ...] | None = None,
+) -> dict:
+    missing_rows = _build_missing_rows(
+        inventory_rows,
+        include_today=include_today,
+        now=now,
+        store_names=store_names,
+        report_keys=report_keys,
+    )
+    summary_rows = build_report_coverage_summary(
+        inventory_rows,
+        missing_rows,
+        report_keys=report_keys,
+        store_names=store_names,
+    )
+    _write_drive_inventory_tables(inventory_rows, missing_rows, summary_rows)
+    return {
+        "inventory_rows": inventory_rows,
+        "missing_rows": missing_rows,
+        "summary_rows": summary_rows,
+    }

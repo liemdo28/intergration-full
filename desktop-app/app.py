@@ -42,6 +42,7 @@ from delete_policy import load_delete_policy
 from diagnostics import format_report_lines, run_environment_checks
 from report_validator import validate_toast_report_file
 from report_inventory import refresh_report_inventory
+from report_inventory import refresh_drive_report_inventory
 from date_parser import get_date_range_from_inputs
 from recovery_center import (
     backup_and_remove,
@@ -4134,6 +4135,60 @@ class SettingsTab(ctk.CTkFrame):
         make_action_button(gdrive_btns, "Setup Folders", self._setup_folders, tone="neutral", width=130).pack(side="left", padx=(0, 8))
         make_action_button(gdrive_btns, "Clear Token", self._clear_token, tone="danger", width=110).pack(side="left")
 
+        _drive_inventory_card, drive_inventory_frame = make_section_card(
+            content,
+            "Drive Inventory Center",
+            "Scan Google Drive and build a clean coverage matrix showing which report types each store already has, which dates are covered, and where gaps still exist.",
+        )
+        self.drive_inventory_summary = ctk.CTkLabel(
+            drive_inventory_frame,
+            text="No Google Drive inventory snapshot yet",
+            text_color=UI_MUTED_TEXT,
+            font=ctk.CTkFont(size=12, weight="bold"),
+        )
+        self.drive_inventory_summary.pack(anchor="w", pady=2)
+        drive_inventory_btns = ctk.CTkFrame(drive_inventory_frame, fg_color="transparent")
+        drive_inventory_btns.pack(fill="x", pady=(5, 8))
+        make_action_button(
+            drive_inventory_btns,
+            "Refresh Drive Inventory",
+            self._refresh_drive_inventory,
+            tone="primary",
+            width=170,
+        ).pack(side="left", padx=(0, 8))
+        ctk.CTkLabel(
+            drive_inventory_btns,
+            text="Rows sort by missing coverage first, then by store and report type.",
+            text_color=UI_MUTED_TEXT,
+            font=ctk.CTkFont(size=11),
+        ).pack(side="left", padx=(4, 0))
+
+        ctk.CTkLabel(
+            drive_inventory_frame,
+            text="Coverage Matrix",
+            font=ctk.CTkFont(size=12, weight="bold"),
+        ).pack(anchor="w", pady=(2, 4))
+        self.drive_inventory_box = ctk.CTkTextbox(
+            drive_inventory_frame,
+            height=230,
+            font=ctk.CTkFont(family="Consolas", size=11),
+        )
+        self.drive_inventory_box.pack(fill="x", pady=(0, 8))
+        self.drive_inventory_box.configure(state="disabled")
+
+        ctk.CTkLabel(
+            drive_inventory_frame,
+            text="Missing Ranges",
+            font=ctk.CTkFont(size=12, weight="bold"),
+        ).pack(anchor="w", pady=(0, 4))
+        self.drive_missing_box = ctk.CTkTextbox(
+            drive_inventory_frame,
+            height=170,
+            font=ctk.CTkFont(family="Consolas", size=11),
+        )
+        self.drive_missing_box.pack(fill="x")
+        self.drive_missing_box.configure(state="disabled")
+
         # ── Toast Session ──
         _toast_card, toast_frame = make_section_card(
             content,
@@ -4443,6 +4498,106 @@ class SettingsTab(ctk.CTkFrame):
 
     def _set_toast_status(self, text, color):
         self.toast_status.configure(text=text, text_color=color)
+
+    def _render_drive_inventory_snapshot(self, snapshot):
+        summary_rows = list(snapshot.get("summary_rows") or [])
+        missing_rows = list(snapshot.get("missing_rows") or [])
+        inventory_rows = list(snapshot.get("inventory_rows") or [])
+
+        ready_count = sum(1 for row in summary_rows if row["health"] == "ready")
+        missing_count = sum(1 for row in summary_rows if row["health"] == "missing")
+        empty_count = sum(1 for row in summary_rows if row["health"] == "empty")
+        summary_text = (
+            f"Drive snapshot: {len(inventory_rows)} file rows, {len(summary_rows)} store/report lanes, "
+            f"{missing_count} with gaps, {empty_count} empty, {ready_count} ready."
+        )
+        self.drive_inventory_summary.configure(text=summary_text, text_color="#cbd5e1")
+
+        matrix_lines = [
+            "STORE        REPORT                    LAST DATE    DAYS  MISS  NEXT GAP    STATUS   LAST FILE",
+            "-" * 108,
+        ]
+        for row in summary_rows[:60]:
+            matrix_lines.append(
+                f"{row['store'][:12]:12} "
+                f"{row['report_label'][:24]:24} "
+                f"{(row['last_date'] or '-'):12} "
+                f"{row['available_dates_count']:>4}  "
+                f"{row['missing_count']:>4}  "
+                f"{(row['next_missing_date'] or '-'):12} "
+                f"{row['health'][:7]:7} "
+                f"{(row['latest_file_name'] or '-')[:36]}"
+            )
+        if len(summary_rows) > 60:
+            matrix_lines.append(f"... {len(summary_rows) - 60} more row(s)")
+        self.drive_inventory_box.configure(state="normal")
+        self.drive_inventory_box.delete("1.0", "end")
+        self.drive_inventory_box.insert("end", "\n".join(matrix_lines))
+        self.drive_inventory_box.configure(state="disabled")
+
+        grouped = []
+        by_pair = {}
+        for row in missing_rows:
+            by_pair.setdefault((row["store"], row["report_label"]), []).append(row)
+        for (store, report_label), rows in sorted(by_pair.items()):
+            rows = sorted(rows, key=lambda item: item["business_date"])
+            start = rows[0]["business_date"]
+            prev = start
+            count = 1
+            for item in rows[1:]:
+                current = item["business_date"]
+                prev_dt = datetime.strptime(prev, "%Y-%m-%d")
+                cur_dt = datetime.strptime(current, "%Y-%m-%d")
+                if cur_dt == prev_dt + timedelta(days=1):
+                    prev = current
+                    count += 1
+                    continue
+                grouped.append((store, report_label, start, prev, count))
+                start = current
+                prev = current
+                count = 1
+            grouped.append((store, report_label, start, prev, count))
+
+        missing_lines = [
+            "STORE        REPORT                    RANGE                     DAYS",
+            "-" * 78,
+        ]
+        for store, report_label, start, end, count in grouped[:80]:
+            range_label = start if start == end else f"{start} -> {end}"
+            missing_lines.append(f"{store[:12]:12} {report_label[:24]:24} {range_label:25} {count:>4}")
+        if len(grouped) > 80:
+            missing_lines.append(f"... {len(grouped) - 80} more missing range(s)")
+        self.drive_missing_box.configure(state="normal")
+        self.drive_missing_box.delete("1.0", "end")
+        self.drive_missing_box.insert("end", "\n".join(missing_lines))
+        self.drive_missing_box.configure(state="disabled")
+
+    def _refresh_drive_inventory(self):
+        def _worker():
+            try:
+                from gdrive_service import GDriveService
+
+                gdrive = GDriveService(config=self._local_cfg)
+                if not gdrive.authenticate():
+                    self.after(0, lambda: messagebox.showerror("Google Drive", "Google Drive auth failed"))
+                    return
+
+                inventory_rows = gdrive.scan_report_inventory(store_names=TOAST_LOCATIONS)
+                snapshot = refresh_drive_report_inventory(
+                    inventory_rows,
+                    store_names=TOAST_LOCATIONS,
+                )
+                self.after(0, lambda snap=snapshot: self._render_drive_inventory_snapshot(snap))
+                if self.status_var is not None:
+                    self.after(0, lambda: self.status_var.set("Drive inventory refreshed"))
+            except Exception as exc:
+                if self.status_var is not None:
+                    self.after(0, lambda: self.status_var.set("Drive inventory failed"))
+                self.after(0, lambda err=str(exc): messagebox.showerror("Drive Inventory", err))
+
+        if self.status_var is not None:
+            self.status_var.set("Refreshing Drive inventory...")
+        threading.Thread(target=_worker, daemon=True).start()
 
     def _refresh_recovery_status(self):
         recovery_dir = runtime_path("recovery-backups")

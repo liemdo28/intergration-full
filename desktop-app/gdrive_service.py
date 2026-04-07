@@ -187,6 +187,19 @@ class GDriveService:
         )
         return results.get("files", [])
 
+    def _list_folder_items(self, parent_id):
+        q = f"'{parent_id}' in parents and trashed=false"
+        results = self._execute_with_retry(
+            lambda: self.service.files().list(
+                q=q,
+                spaces="drive",
+                fields="files(id, name, mimeType, modifiedTime, size)",
+                pageSize=200,
+            ).execute(),
+            operation="List Drive folder items",
+        )
+        return results.get("files", [])
+
     def _resolve_root_folder(self):
         if self._configured_root_folder_id:
             return self._configured_root_folder_id, f"id:{self._configured_root_folder_id}"
@@ -391,6 +404,71 @@ class GDriveService:
         )
         self.log(f"  Uploaded: {'/'.join([*relative_parts, filename])}")
         return result["id"]
+
+    def scan_report_inventory(self, store_names=None, report_types=None):
+        if not self.service:
+            raise RuntimeError("Not authenticated")
+
+        from report_inventory import extract_business_dates_from_name
+        from toast_reports import infer_report_type
+
+        allowed_stores = {item for item in (store_names or []) if item}
+        allowed_report_keys = {report.key for report in normalize_report_types(report_types)} if report_types else None
+        configured_root_id, configured_root_name = self._resolve_root_folder()
+        current_root_id = configured_root_id
+        current_root_parts = [configured_root_name]
+        if self._configured_brand_folder_name:
+            brand_id = self._find_folder(self._configured_brand_folder_name, configured_root_id)
+            if not brand_id:
+                return []
+            current_root_id = brand_id
+            current_root_parts.append(self._configured_brand_folder_name)
+
+        rows = []
+        for store_folder in self._list_folders(current_root_id):
+            store_name = store_folder["name"]
+            if allowed_stores and store_name not in allowed_stores:
+                continue
+            rows.extend(self._scan_store_folder(store_folder["id"], store_name, tuple(current_root_parts)))
+
+        if allowed_report_keys is not None:
+            rows = [row for row in rows if row["report_key"] in allowed_report_keys]
+        return rows
+
+    def _scan_store_folder(self, store_folder_id, store_name, root_parts):
+        from report_inventory import extract_business_dates_from_name
+        from toast_reports import infer_report_type
+
+        rows = []
+        stack = [(store_folder_id, [])]
+        while stack:
+            folder_id, relative_parts = stack.pop()
+            for item in self._list_folder_items(folder_id):
+                mime_type = item.get("mimeType", "")
+                if mime_type == "application/vnd.google-apps.folder":
+                    stack.append((item["id"], [*relative_parts, item["name"]]))
+                    continue
+                report = infer_report_type((store_name, *relative_parts), item["name"])
+                business_dates = extract_business_dates_from_name(" ".join([*relative_parts, item["name"]]))
+                if not business_dates:
+                    business_dates = [None]
+                relative_path = "/".join([*root_parts, store_name, *relative_parts, item["name"]])
+                for business_date in business_dates:
+                    rows.append(
+                        {
+                            "store": store_name,
+                            "report_key": report.key,
+                            "report_label": report.label,
+                            "business_date": business_date,
+                            "filepath": relative_path,
+                            "filename": item["name"],
+                            "modified_at": item.get("modifiedTime", ""),
+                            "size_bytes": int(item.get("size", 0) or 0),
+                            "source": "drive_inventory",
+                            "file_id": item["id"],
+                        }
+                    )
+        return rows
 
     def download_report(self, store_name, filename, local_dir, report_type="sales_summary"):
         if not self.service:
