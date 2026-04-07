@@ -41,6 +41,7 @@ from audit_utils import (
 from delete_policy import load_delete_policy
 from diagnostics import format_report_lines, run_environment_checks
 from report_validator import validate_toast_report_file
+from date_parser import get_date_range_from_inputs
 from recovery_center import (
     backup_and_remove,
     ensure_runtime_file_from_example,
@@ -49,6 +50,26 @@ from recovery_center import (
     get_playbook_by_title,
     get_recovery_playbooks,
 )
+from toast_reports import DEFAULT_REPORT_TYPE_KEYS, REPORT_TYPES, build_local_report_dir
+from integration_status import (
+    get_auto_download_plan,
+    get_auto_qb_sync_plan,
+    get_safe_target_date,
+    get_world_clocks,
+)
+
+import logging
+from logging.handlers import RotatingFileHandler
+
+_LOG_DIR = runtime_path("logs")
+_LOG_DIR.mkdir(parents=True, exist_ok=True)
+_file_handler = RotatingFileHandler(
+    _LOG_DIR / "app.log", maxBytes=2 * 1024 * 1024, backupCount=5, encoding="utf-8"
+)
+_file_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
+_app_logger = logging.getLogger("toast_pos_manager")
+_app_logger.setLevel(logging.INFO)
+_app_logger.addHandler(_file_handler)
 
 MAPPING_FILE = app_path("qb-mapping.json")
 LOCAL_CONFIG_FILE = runtime_path("local-config.json")
@@ -58,7 +79,6 @@ DELETE_AUDIT_DIR = AUDIT_LOG_DIR / "delete-transactions"
 QBSYNC_ISSUE_DIR = AUDIT_LOG_DIR / "qb-sync-validation"
 ITEM_CREATION_AUDIT_DIR = AUDIT_LOG_DIR / "item-creations"
 QB_ITEM_CACHE_TTL_SECONDS = 300
-REMOVE_TAB_RENDER_LIMIT = 500
 
 # Toast locations (for download tab)
 TOAST_LOCATIONS = ["Stockton", "The Rim", "Stone Oak", "Bandera", "WA1", "WA2", "WA3"]
@@ -107,33 +127,49 @@ def append_log(log_box, msg):
     """Thread-safe log append."""
     ts = time.strftime("%H:%M:%S")
     text = f"[{ts}] {msg}\n"
-    try:
-        log_box.configure(state="normal")
-        log_box.insert("end", text)
-        log_box.see("end")
-        log_box.configure(state="disabled")
-    except tk.TclError:
-        # The window can be closing while background threads are still flushing logs.
-        pass
+    log_box.configure(state="normal")
+    log_box.insert("end", text)
+    log_box.see("end")
+    log_box.configure(state="disabled")
+    _app_logger.info(msg)
+
+
+def _calendar_colors():
+    """Return calendar color scheme matching the current appearance mode."""
+    mode = ctk.get_appearance_mode()
+    if mode == "Light":
+        return dict(
+            background="#f0f0f0", foreground="#1a1a1a",
+            headersbackground="#1f538d", headersforeground="white",
+            selectbackground="#1f538d", selectforeground="white",
+            normalbackground="#ffffff", normalforeground="#1a1a1a",
+            weekendbackground="#f5f5f5", weekendforeground="#1a1a1a",
+            othermonthbackground="#e8e8e8", othermonthforeground="#999999",
+            othermonthwebackground="#e8e8e8", othermonthweforeground="#999999",
+        )
+    return dict(
+        background="#2b2b2b", foreground="white",
+        headersbackground="#1f538d", headersforeground="white",
+        selectbackground="#1f538d", selectforeground="white",
+        normalbackground="#333333", normalforeground="white",
+        weekendbackground="#3a3a3a", weekendforeground="white",
+        othermonthbackground="#252525", othermonthforeground="#666666",
+        othermonthwebackground="#252525", othermonthweforeground="#666666",
+    )
 
 
 def make_calendar(parent, initial_date=None):
-    """Create a styled dark calendar widget."""
+    """Create a styled calendar widget that respects the current theme."""
     if not initial_date:
         initial_date = datetime.now() - timedelta(days=1)
-    frame = tk.Frame(parent, bg="#2b2b2b")
+    colors = _calendar_colors()
+    frame = tk.Frame(parent, bg=colors["background"])
     frame.pack(pady=(5, 0))
     cal = Calendar(frame, selectmode="day",
                    year=initial_date.year, month=initial_date.month, day=initial_date.day,
                    date_pattern="yyyy-mm-dd",
-                   background="#2b2b2b", foreground="white",
-                   headersbackground="#1f538d", headersforeground="white",
-                   selectbackground="#1f538d", selectforeground="white",
-                   normalbackground="#333333", normalforeground="white",
-                   weekendbackground="#3a3a3a", weekendforeground="white",
-                   othermonthbackground="#252525", othermonthforeground="#666666",
-                   othermonthwebackground="#252525", othermonthweforeground="#666666",
-                   borderwidth=0, font=("Segoe UI", 10))
+                   borderwidth=0, font=("Segoe UI", 10),
+                   **colors)
     cal.pack()
     return frame, cal
 
@@ -161,8 +197,8 @@ class DownloadTab(ctk.CTkFrame):
         cal_row = ctk.CTkFrame(date_frame, fg_color="transparent")
         cal_row.pack(fill="x", padx=10, pady=(0, 5))
 
-        yesterday = datetime.now() - timedelta(days=1)
-        yesterday_str = yesterday.strftime("%Y-%m-%d")
+        yesterday_str = get_safe_target_date(TOAST_LOCATIONS, include_today=False)
+        yesterday = datetime.strptime(yesterday_str, "%Y-%m-%d")
 
         # Start Date
         start_col = ctk.CTkFrame(cal_row, fg_color="transparent")
@@ -190,6 +226,17 @@ class DownloadTab(ctk.CTkFrame):
         self.end_date_entry.bind("<Return>", lambda e: self._sync_end_cal())
         self.end_cal.bind("<<CalendarSelected>>", lambda e: self._on_end_date_selected())
 
+        # Date List Preview (scrollable, same height as calendar)
+        list_col = ctk.CTkFrame(cal_row, fg_color="transparent")
+        list_col.pack(side="left", padx=(20, 0), fill="y")
+        ctk.CTkLabel(list_col, text="Date List", font=ctk.CTkFont(size=12, weight="bold")).pack(anchor="w")
+        self.date_list_box = ctk.CTkTextbox(list_col, width=200, height=210,
+                                            font=ctk.CTkFont(family="Consolas", size=11),
+                                            state="disabled", fg_color="#1a1a2e",
+                                            text_color="#e2e8f0", border_width=1,
+                                            border_color="#334155")
+        self.date_list_box.pack(pady=(5, 0), fill="y", expand=True)
+
         self.date_info_label = ctk.CTkLabel(date_frame, text="", text_color="#60a5fa", font=ctk.CTkFont(size=12))
         self.date_info_label.pack(anchor="w", padx=10, pady=(2, 0))
         self._update_date_info()
@@ -198,9 +245,9 @@ class DownloadTab(ctk.CTkFrame):
         btn_row = ctk.CTkFrame(date_frame, fg_color="transparent")
         btn_row.pack(fill="x", padx=10, pady=(5, 10))
 
-        def set_single_date(days_ago):
-            d = datetime.now() - timedelta(days=days_ago)
-            d_str = d.strftime("%Y-%m-%d")
+        def set_single_date(include_today):
+            d_str = self._selection_target_date(include_today=include_today)
+            d = datetime.strptime(d_str, "%Y-%m-%d")
             self.start_date_var.set(d_str)
             self.end_date_var.set(d_str)
             self.start_cal.selection_set(d)
@@ -208,16 +255,16 @@ class DownloadTab(ctk.CTkFrame):
             self._update_date_info()
 
         def set_last_n_days(n):
-            end = datetime.now() - timedelta(days=1)
-            start = datetime.now() - timedelta(days=n)
+            end = datetime.strptime(self._selection_target_date(include_today=False), "%Y-%m-%d")
+            start = end - timedelta(days=max(n - 1, 0))
             self.start_date_var.set(start.strftime("%Y-%m-%d"))
             self.end_date_var.set(end.strftime("%Y-%m-%d"))
             self.start_cal.selection_set(start)
             self.end_cal.selection_set(end)
             self._update_date_info()
 
-        ctk.CTkButton(btn_row, text="Yesterday", width=90, command=lambda: set_single_date(1)).pack(side="left", padx=2)
-        ctk.CTkButton(btn_row, text="Today", width=70, command=lambda: set_single_date(0)).pack(side="left", padx=2)
+        ctk.CTkButton(btn_row, text="Yesterday (US)", width=110, command=lambda: set_single_date(False)).pack(side="left", padx=2)
+        ctk.CTkButton(btn_row, text="Today (US)", width=90, command=lambda: set_single_date(True)).pack(side="left", padx=2)
         ctk.CTkButton(btn_row, text="Last 7 days", width=100, command=lambda: set_last_n_days(7)).pack(side="left", padx=2)
         ctk.CTkButton(btn_row, text="Last 30 days", width=100, command=lambda: set_last_n_days(30)).pack(side="left", padx=2)
 
@@ -238,6 +285,41 @@ class DownloadTab(ctk.CTkFrame):
         btn_row2.pack(fill="x", padx=10, pady=(0, 10))
         ctk.CTkButton(btn_row2, text="Select All", width=90, command=lambda: [v.set(True) for v in self.loc_vars.values()]).pack(side="left", padx=2)
         ctk.CTkButton(btn_row2, text="Deselect All", width=100, command=lambda: [v.set(False) for v in self.loc_vars.values()]).pack(side="left", padx=2)
+
+        report_frame = ctk.CTkFrame(content)
+        report_frame.pack(fill="x", padx=15, pady=5)
+        ctk.CTkLabel(report_frame, text="Report Types", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=10, pady=(10, 5))
+
+        report_checks = ctk.CTkFrame(report_frame, fg_color="transparent")
+        report_checks.pack(fill="x", padx=10, pady=(0, 5))
+        self.report_type_vars = {}
+        for idx, report in enumerate(REPORT_TYPES.values()):
+            var = ctk.BooleanVar(value=report.key in DEFAULT_REPORT_TYPE_KEYS)
+            self.report_type_vars[report.key] = var
+            ctk.CTkCheckBox(report_checks, text=report.label, variable=var, width=140).grid(
+                row=idx // 4, column=idx % 4, padx=5, pady=3, sticky="w"
+            )
+
+        report_btn_row = ctk.CTkFrame(report_frame, fg_color="transparent")
+        report_btn_row.pack(fill="x", padx=10, pady=(0, 10))
+        ctk.CTkButton(report_btn_row, text="Select All", width=90, command=lambda: [v.set(True) for v in self.report_type_vars.values()]).pack(side="left", padx=2)
+        ctk.CTkButton(report_btn_row, text="Sales Summary Only", width=140, command=self._select_sales_summary_only).pack(side="left", padx=2)
+        ctk.CTkButton(
+            report_btn_row,
+            text="Auto Fill Missing (US Yesterday)",
+            width=190,
+            command=lambda: self._apply_auto_download_plan(False),
+            fg_color="#0f766e",
+            hover_color="#0d5f59",
+        ).pack(side="left", padx=(10, 2))
+        ctk.CTkButton(
+            report_btn_row,
+            text="Auto Fill Missing (US Today)",
+            width=170,
+            command=lambda: self._apply_auto_download_plan(True),
+            fg_color="#2563eb",
+            hover_color="#1d4ed8",
+        ).pack(side="left", padx=2)
 
         # ── Options ──
         opt_frame = ctk.CTkFrame(content)
@@ -315,38 +397,109 @@ class DownloadTab(ctk.CTkFrame):
             pass
 
     def _update_date_info(self):
-        try:
-            s = datetime.strptime(self.start_date_var.get(), "%Y-%m-%d")
-            e = datetime.strptime(self.end_date_var.get(), "%Y-%m-%d")
-            days = (e - s).days + 1
-            if days == 1:
-                self.date_info_label.configure(text=f"1 day selected: {s.strftime('%b %d, %Y')}")
-            else:
-                self.date_info_label.configure(text=f"{days} days selected: {s.strftime('%b %d')} - {e.strftime('%b %d, %Y')}")
-        except (ValueError, AttributeError):
-            pass
+        """Update date info label in DownloadTab. Uses flexible date parsing."""
+        from date_parser import parse_date_flexible
 
-    def _get_date_range(self):
         start_str = self.start_date_var.get().strip()
         end_str = self.end_date_var.get().strip()
+
         if not start_str or not end_str:
-            messagebox.showwarning("Warning", "Please enter Start Date and End Date")
+            self.date_info_label.configure(text="Enter both dates to see range", text_color="#9ca3af")
+            return
+
+        s_result = parse_date_flexible(start_str, "qb_sync_ui")
+        e_result = parse_date_flexible(end_str, "qb_sync_ui")
+
+        if not s_result.success or not e_result.success:
+            err = s_result.error if not s_result.success else e_result.error
+            self.date_info_label.configure(text=f"⚠ {err}", text_color="#f87171")
+            return
+
+        s_iso = s_result.value.date_str
+        e_iso = e_result.value.date_str
+
+        s_dt = datetime.strptime(s_iso, "%Y-%m-%d")
+        e_dt = datetime.strptime(e_iso, "%Y-%m-%d")
+        days = (e_dt - s_dt).days + 1
+
+        if days < 1:
+            self.date_info_label.configure(text="⚠ End date before start date", text_color="#f87171")
+            self._set_date_list([])
+        elif days == 1:
+            self.date_info_label.configure(
+                text=f"1 day selected: {s_dt.strftime('%b %d, %Y')}", text_color="#60a5fa"
+            )
+            self._set_date_list([s_dt])
+        else:
+            self.date_info_label.configure(
+                text=f"{days} days selected: {s_dt.strftime('%b %d')} - {e_dt.strftime('%b %d, %Y')}",
+                text_color="#60a5fa",
+            )
+            date_list = []
+            cur = s_dt
+            while cur <= e_dt:
+                date_list.append(cur)
+                cur += timedelta(days=1)
+            self._set_date_list(date_list)
+
+    def _set_date_list(self, dates):
+        """Populate the date list preview panel."""
+        self.date_list_box.configure(state="normal")
+        self.date_list_box.delete("1.0", "end")
+        for i, dt in enumerate(dates):
+            line = f"{i+1:>3}.  {dt.strftime('%m/%d/%Y')}  {dt.strftime('%a')}\n"
+            self.date_list_box.insert("end", line)
+        if not dates:
+            self.date_list_box.insert("end", "No dates")
+        self.date_list_box.configure(state="disabled")
+
+    def _get_date_range(self):
+        """Get list of date strings from start/end calendar inputs."""
+        start_str = self.start_date_var.get().strip()
+        end_str = self.end_date_var.get().strip()
+        success, dates, error = get_date_range_from_inputs(start_str, end_str)
+        if not success:
+            if "enter" in error.lower():
+                messagebox.showwarning("Warning", error)
+            else:
+                messagebox.showerror("Error", error)
             return None
-        try:
-            start_dt = datetime.strptime(start_str, "%Y-%m-%d")
-            end_dt = datetime.strptime(end_str, "%Y-%m-%d")
-        except ValueError:
-            messagebox.showerror("Error", "Invalid date format. Use YYYY-MM-DD")
-            return None
-        if start_dt > end_dt:
-            messagebox.showerror("Error", "Start Date must be before or equal to End Date")
-            return None
-        dates = []
-        current = start_dt
-        while current <= end_dt:
-            dates.append(current.strftime("%Y-%m-%d"))
-            current += timedelta(days=1)
         return dates
+
+    def _select_sales_summary_only(self):
+        for key, var in self.report_type_vars.items():
+            var.set(key == "sales_summary")
+
+    def _selected_locations(self):
+        return [loc for loc, var in self.loc_vars.items() if var.get()]
+
+    def _selection_target_date(self, include_today=False):
+        locations = self._selected_locations() or TOAST_LOCATIONS
+        return get_safe_target_date(locations, include_today=include_today)
+
+    def _apply_auto_download_plan(self, include_today=False):
+        locations = self._selected_locations()
+        if not locations:
+            messagebox.showwarning("Warning", "Please select at least one location")
+            return
+        report_types = [key for key, var in self.report_type_vars.items() if var.get()]
+        if not report_types:
+            messagebox.showwarning("Warning", "Please select at least one report type")
+            return
+
+        plan = get_auto_download_plan(locations, report_types, include_today=include_today)
+        if not plan["has_gap"]:
+            messagebox.showinfo("Downloads Up To Date", plan["message"])
+            return
+
+        start_dt = datetime.strptime(plan["start_date"], "%Y-%m-%d")
+        end_dt = datetime.strptime(plan["end_date"], "%Y-%m-%d")
+        self.start_date_var.set(plan["start_date"])
+        self.end_date_var.set(plan["end_date"])
+        self.start_cal.selection_set(start_dt)
+        self.end_cal.selection_set(end_dt)
+        self._update_date_info()
+        self.log(plan["message"])
 
     def start_download(self):
         if self._running:
@@ -355,18 +508,26 @@ class DownloadTab(ctk.CTkFrame):
         if not locations:
             messagebox.showwarning("Warning", "Please select at least one location")
             return
+        report_types = [key for key, var in self.report_type_vars.items() if var.get()]
+        if not report_types:
+            messagebox.showwarning("Warning", "Please select at least one report type")
+            return
         dates = self._get_date_range()
         if not dates:
             return
         self._running = True
         self.download_btn.configure(state="disabled", text="Downloading...")
-        threading.Thread(target=self._download_worker, args=(locations, dates), daemon=True).start()
+        threading.Thread(target=self._download_worker, args=(locations, dates, report_types), daemon=True).start()
 
-    def _download_worker(self, locations, dates):
+    def _download_worker(self, locations, dates, report_types):
         try:
             from toast_downloader import ToastDownloader, ToastLoginRequiredError
 
-            self.log(f"Starting download for {len(locations)} locations, {len(dates)} day(s): {dates[0]} -> {dates[-1]}")
+            selected_report_names = [REPORT_TYPES[key].label for key in report_types]
+            self.log(
+                f"Starting download for {len(locations)} locations, {len(dates)} day(s), "
+                f"{len(report_types)} report type(s): {', '.join(selected_report_names)}"
+            )
 
             downloader = ToastDownloader(
                 download_dir=str(REPORTS_DIR),
@@ -380,7 +541,7 @@ class DownloadTab(ctk.CTkFrame):
                 dt = datetime.strptime(d, "%Y-%m-%d")
                 toast_dates.append(dt.strftime("%m/%d/%Y"))
 
-            results = downloader.download_reports_daterange(locations=locations, dates=toast_dates)
+            results = downloader.download_reports_daterange(locations=locations, dates=toast_dates, report_types=report_types)
 
             if self.upload_gdrive_var.get() and results["files"]:
                 self.log("Uploading to Google Drive...")
@@ -390,9 +551,13 @@ class DownloadTab(ctk.CTkFrame):
                     if gdrive.authenticate():
                         for f in results["files"]:
                             try:
-                                gdrive.upload_report(f["filepath"], f["location"])
+                                gdrive.upload_report(
+                                    f["filepath"],
+                                    f["location"],
+                                    report_type=f.get("report_key", "sales_summary"),
+                                )
                             except Exception as e:
-                                self.log(f"  Upload error for {f['location']}: {e}")
+                                self.log(f"  Upload error for {f['location']} / {f.get('report_label', 'Sale Summary')}: {e}")
                         self.log("Google Drive upload complete")
                     else:
                         self.log("Google Drive authentication failed - skipping upload")
@@ -412,6 +577,8 @@ class DownloadTab(ctk.CTkFrame):
             self._running = False
             self.after(0, lambda: self.download_btn.configure(state="normal", text="Download Reports"))
             self.after(0, lambda: self.status_var.set("Ready"))
+            self.after(0, lambda: self.progress_bar.set(0))
+            self.after(0, lambda: self.progress_label.configure(text="Ready", text_color="gray"))
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -436,31 +603,99 @@ class QBSyncTab(ctk.CTkFrame):
         self._build_ui()
 
     def _build_ui(self):
-        content = ctk.CTkScrollableFrame(self, fg_color="transparent")
-        content.pack(fill="both", expand=True)
+        # ── Scrollable container for entire tab ──
+        self._scroll_container = ctk.CTkScrollableFrame(self, fg_color="transparent")
+        self._scroll_container.pack(fill="both", expand=True)
+        _parent = self._scroll_container
 
-        # ── Date Section ──
-        date_frame = ctk.CTkFrame(content)
+        # ── Date Range Section ──
+        date_frame = ctk.CTkFrame(_parent)
         date_frame.pack(fill="x", padx=15, pady=(15, 5))
-        ctk.CTkLabel(date_frame, text="Date(s)", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=10, pady=(10, 5))
+        ctk.CTkLabel(date_frame, text="Date Range", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=10, pady=(10, 5))
 
-        date_row = ctk.CTkFrame(date_frame, fg_color="transparent")
-        date_row.pack(fill="x", padx=10, pady=(0, 10))
-        yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+        yesterday = get_safe_target_date(include_today=False)
+        yesterday_dt = datetime.strptime(yesterday, "%Y-%m-%d")
+        self.date_from_var = ctk.StringVar(value=yesterday)
+        self.date_to_var = ctk.StringVar(value=yesterday)
         self.date_var = ctk.StringVar(value=yesterday)
-        ctk.CTkLabel(date_row, text="Date(s):").pack(side="left", padx=(0, 10))
-        self.date_entry = ctk.CTkEntry(date_row, textvariable=self.date_var, width=250,
-                                        placeholder_text="YYYY-MM-DD or YYYY-MM-DD,YYYY-MM-DD")
-        self.date_entry.pack(side="left", padx=(0, 10))
-        ctk.CTkButton(date_row, text="Yesterday", width=90,
-                       command=lambda: self.date_var.set((datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d"))).pack(side="left", padx=2)
 
-        hint = ctk.CTkLabel(date_frame, text="Multiple dates: comma-separated (e.g. 2026-03-18,2026-03-19)",
-                            text_color="gray", font=ctk.CTkFont(size=11))
-        hint.pack(anchor="w", padx=10, pady=(0, 5))
+        # ── Calendar widgets (matching Download tab) ──────────────────────
+        cal_row = ctk.CTkFrame(date_frame, fg_color="transparent")
+        cal_row.pack(fill="x", padx=10, pady=(0, 5))
+
+        # Start Date
+        start_col = ctk.CTkFrame(cal_row, fg_color="transparent")
+        start_col.pack(side="left", padx=(0, 20))
+        ctk.CTkLabel(start_col, text="Start Date", font=ctk.CTkFont(size=12, weight="bold")).pack(anchor="w")
+        self.start_cal_frame, self.start_cal = make_calendar(start_col, yesterday_dt)
+        start_entry_row = ctk.CTkFrame(start_col, fg_color="transparent")
+        start_entry_row.pack(fill="x", pady=(5, 0))
+        self.start_date_entry = ctk.CTkEntry(start_entry_row, textvariable=self.date_from_var, width=130)
+        self.start_date_entry.pack(side="left")
+        self.start_date_entry.bind("<Return>", lambda e: self._sync_start_cal())
+        self.start_cal.bind("<<CalendarSelected>>", lambda e: self._on_start_date_selected())
+
+        # End Date
+        end_col = ctk.CTkFrame(cal_row, fg_color="transparent")
+        end_col.pack(side="left", padx=(0, 20))
+        ctk.CTkLabel(end_col, text="End Date", font=ctk.CTkFont(size=12, weight="bold")).pack(anchor="w")
+        self.end_cal_frame, self.end_cal = make_calendar(end_col, yesterday_dt)
+        end_entry_row = ctk.CTkFrame(end_col, fg_color="transparent")
+        end_entry_row.pack(fill="x", pady=(5, 0))
+        self.end_date_entry = ctk.CTkEntry(end_entry_row, textvariable=self.date_to_var, width=130)
+        self.end_date_entry.pack(side="left")
+        self.end_date_entry.bind("<Return>", lambda e: self._sync_end_cal())
+        self.end_cal.bind("<<CalendarSelected>>", lambda e: self._on_end_date_selected())
+
+        self.date_info_label = ctk.CTkLabel(date_frame, text="", text_color="#60a5fa", font=ctk.CTkFont(size=12))
+        self.date_info_label.pack(anchor="w", padx=10, pady=(2, 0))
+        self._update_date_range_info()
+
+        # Quick buttons
+        btn_row = ctk.CTkFrame(date_frame, fg_color="transparent")
+        btn_row.pack(fill="x", padx=10, pady=(5, 10))
+
+        def set_single_date(include_today):
+            d_str = self._selection_target_date(include_today=include_today)
+            d = datetime.strptime(d_str, "%Y-%m-%d")
+            self.date_from_var.set(d_str)
+            self.date_to_var.set(d_str)
+            self.start_cal.selection_set(d)
+            self.end_cal.selection_set(d)
+            self._update_date_range_info()
+
+        def set_last_n_days(n):
+            end = datetime.strptime(self._selection_target_date(include_today=False), "%Y-%m-%d")
+            start = end - timedelta(days=max(n - 1, 0))
+            self.date_from_var.set(start.strftime("%Y-%m-%d"))
+            self.date_to_var.set(end.strftime("%Y-%m-%d"))
+            self.start_cal.selection_set(start)
+            self.end_cal.selection_set(end)
+            self._update_date_range_info()
+
+        ctk.CTkButton(btn_row, text="Yesterday (US)", width=110, command=lambda: set_single_date(False)).pack(side="left", padx=2)
+        ctk.CTkButton(btn_row, text="Today (US)", width=90, command=lambda: set_single_date(True)).pack(side="left", padx=2)
+        ctk.CTkButton(btn_row, text="Last 7 days", width=100, command=lambda: set_last_n_days(7)).pack(side="left", padx=2)
+        ctk.CTkButton(btn_row, text="Last 30 days", width=100, command=lambda: set_last_n_days(30)).pack(side="left", padx=2)
+        ctk.CTkButton(
+            btn_row,
+            text="Auto Fill QB Missing",
+            width=150,
+            command=lambda: self._apply_auto_qb_plan(False),
+            fg_color="#0f766e",
+            hover_color="#0d5f59",
+        ).pack(side="left", padx=(10, 2))
+        ctk.CTkButton(
+            btn_row,
+            text="Auto Fill QB + Today",
+            width=150,
+            command=lambda: self._apply_auto_qb_plan(True),
+            fg_color="#2563eb",
+            hover_color="#1d4ed8",
+        ).pack(side="left", padx=2)
 
         # ── Stores Section ──
-        store_frame = ctk.CTkFrame(content)
+        store_frame = ctk.CTkFrame(_parent)
         store_frame.pack(fill="x", padx=15, pady=5)
         ctk.CTkLabel(store_frame, text="QB Stores", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=10, pady=(10, 5))
 
@@ -502,7 +737,7 @@ class QBSyncTab(ctk.CTkFrame):
                        fg_color="#6366f1", hover_color="#4f46e5").pack(side="left", padx=10)
 
         # ── Options ──
-        opt_frame = ctk.CTkFrame(content)
+        opt_frame = ctk.CTkFrame(_parent)
         opt_frame.pack(fill="x", padx=15, pady=5)
         opt_inner = ctk.CTkFrame(opt_frame, fg_color="transparent")
         opt_inner.pack(fill="x", padx=10, pady=10)
@@ -512,18 +747,29 @@ class QBSyncTab(ctk.CTkFrame):
         ctk.CTkRadioButton(opt_inner, text="Google Drive", variable=self.source_var, value="gdrive").grid(row=0, column=1, padx=5)
         ctk.CTkRadioButton(opt_inner, text="Local Files", variable=self.source_var, value="local").grid(row=0, column=2, padx=5)
 
+        # ── Source filter buttons (sync specific sources only) ─────────────
+        source_filter_frame = ctk.CTkFrame(opt_inner, fg_color="transparent")
+        source_filter_frame.grid(row=1, column=0, columnspan=3, pady=(10, 0), sticky="w")
+        ctk.CTkLabel(source_filter_frame, text="Sync:").pack(side="left", padx=(0, 5))
+        self.source_filter_var = ctk.StringVar(value="all")
+        ctk.CTkRadioButton(source_filter_frame, text="All", variable=self.source_filter_var, value="all").pack(side="left", padx=3)
+        ctk.CTkRadioButton(source_filter_frame, text="Toasttab", variable=self.source_filter_var, value="toast").pack(side="left", padx=3)
+        ctk.CTkRadioButton(source_filter_frame, text="Uber", variable=self.source_filter_var, value="uber").pack(side="left", padx=3)
+        ctk.CTkRadioButton(source_filter_frame, text="DoorDash", variable=self.source_filter_var, value="doordash").pack(side="left", padx=3)
+        ctk.CTkRadioButton(source_filter_frame, text="Grubhub", variable=self.source_filter_var, value="grubhub").pack(side="left", padx=3)
+
         self.preview_var = ctk.BooleanVar(value=False)
         ctk.CTkCheckBox(opt_inner, text="Preview only (don't create Sales Receipts)",
-                         variable=self.preview_var).grid(row=1, column=0, columnspan=3, pady=(10, 0), sticky="w")
+                         variable=self.preview_var).grid(row=2, column=0, columnspan=3, pady=(10, 0), sticky="w")
         self.strict_sync_var = ctk.BooleanVar(value=True)
         ctk.CTkCheckBox(
             opt_inner,
             text="Strict accounting mode (block sync on unmapped or unbalanced report data)",
             variable=self.strict_sync_var,
-        ).grid(row=2, column=0, columnspan=3, pady=(8, 0), sticky="w")
+        ).grid(row=3, column=0, columnspan=3, pady=(8, 0), sticky="w")
 
         # ── Marketplace Uploads ──
-        marketplace_frame = ctk.CTkFrame(content)
+        marketplace_frame = ctk.CTkFrame(_parent)
         marketplace_frame.pack(fill="x", padx=15, pady=5)
         marketplace_header = ctk.CTkFrame(marketplace_frame, fg_color="transparent")
         marketplace_header.pack(fill="x", padx=10, pady=(10, 4))
@@ -604,21 +850,21 @@ class QBSyncTab(ctk.CTkFrame):
         marketplace_grid.columnconfigure(2, weight=1)
 
         # ── Action Button ──
-        self.sync_btn = ctk.CTkButton(content, text="Sync to QuickBooks",
+        self.sync_btn = ctk.CTkButton(_parent, text="Sync to QuickBooks",
                                        font=ctk.CTkFont(size=15, weight="bold"),
                                        height=45, command=self.start_sync,
                                        fg_color="#059669", hover_color="#047857")
         self.sync_btn.pack(fill="x", padx=15, pady=10)
 
         # ── Progress ──
-        self.progress_bar = ctk.CTkProgressBar(content)
+        self.progress_bar = ctk.CTkProgressBar(_parent)
         self.progress_bar.pack(fill="x", padx=15, pady=(0, 5))
         self.progress_bar.set(0)
-        self.progress_label = ctk.CTkLabel(content, text="Ready", text_color="gray")
+        self.progress_label = ctk.CTkLabel(_parent, text="Ready", text_color="gray")
         self.progress_label.pack(anchor="w", padx=15)
 
         # ── Validation Issues ──
-        issue_frame = ctk.CTkFrame(content)
+        issue_frame = ctk.CTkFrame(_parent)
         issue_frame.pack(fill="x", padx=15, pady=(5, 5))
         issue_header = ctk.CTkFrame(issue_frame, fg_color="transparent")
         issue_header.pack(fill="x", padx=10, pady=(10, 4))
@@ -639,7 +885,7 @@ class QBSyncTab(ctk.CTkFrame):
         self.validation_box.configure(state="disabled")
 
         # ── Mapping Maintenance ──
-        mapping_frame = ctk.CTkFrame(content)
+        mapping_frame = ctk.CTkFrame(_parent)
         mapping_frame.pack(fill="x", padx=15, pady=(5, 5))
         mapping_header = ctk.CTkFrame(mapping_frame, fg_color="transparent")
         mapping_header.pack(fill="x", padx=10, pady=(10, 4))
@@ -757,7 +1003,7 @@ class QBSyncTab(ctk.CTkFrame):
         self.item_creation_history_box.configure(state="disabled")
 
         # ── Last Sync Status ──
-        status_frame = ctk.CTkFrame(content)
+        status_frame = ctk.CTkFrame(_parent)
         status_frame.pack(fill="x", padx=15, pady=(5, 5))
         status_header = ctk.CTkFrame(status_frame, fg_color="transparent")
         status_header.pack(fill="x", padx=10, pady=(10, 4))
@@ -784,11 +1030,39 @@ class QBSyncTab(ctk.CTkFrame):
         self.source_sync_box.configure(state="disabled")
 
         # ── Log ──
-        self.log_box = make_log_box(content)
+        self.log_box = make_log_box(_parent)
         self._refresh_mapping_candidates()
         self._refresh_marketplace_source_statuses()
         self._refresh_last_sync_status()
         self._refresh_item_creation_history()
+
+    def _selected_qb_stores(self):
+        return [name for name, var in self.store_vars.items() if var.get()]
+
+    def _selection_target_date(self, include_today=False):
+        stores = self._selected_qb_stores() or list(self._stores.keys())
+        return get_safe_target_date(stores, include_today=include_today)
+
+    def _apply_auto_qb_plan(self, include_today=False):
+        stores = self._selected_qb_stores()
+        if not stores:
+            messagebox.showwarning("Warning", "Please select at least one store")
+            return
+
+        plan = get_auto_qb_sync_plan(stores, include_today=include_today)
+        if not plan["has_gap"]:
+            messagebox.showinfo("QB Sync Up To Date", plan["message"])
+            return
+
+        start_dt = datetime.strptime(plan["start_date"], "%Y-%m-%d")
+        end_dt = datetime.strptime(plan["end_date"], "%Y-%m-%d")
+        self.date_from_var.set(plan["start_date"])
+        self.date_to_var.set(plan["end_date"])
+        self.start_cal.selection_set(start_dt)
+        self.end_cal.selection_set(end_dt)
+        self.source_filter_var.set("toast")
+        self._update_date_range_info()
+        self.log(plan["message"])
 
     def _browse_qbw(self, store_name):
         filepath = filedialog.askopenfilename(
@@ -953,39 +1227,6 @@ class QBSyncTab(ctk.CTkFrame):
         self.progress_label.configure(text=f"{msg} ({current}/{total})")
         self.status_var.set(msg)
 
-    def _reset_progress_ui(self, message="Ready"):
-        self.progress_bar.set(0)
-        self.progress_label.configure(text=message, text_color="gray")
-
-    def _safe_close_reader(self, reader):
-        if not reader:
-            return
-        try:
-            reader.close()
-        except Exception:
-            pass
-
-    def _safe_disconnect_qb(self, qb):
-        if not qb:
-            return
-        try:
-            qb.disconnect()
-        except Exception:
-            pass
-
-    def _count_sync_tasks_for_store(self, store_name, store_cfg, dates):
-        from marketplace_sync import get_marketplace_sources_for_store
-
-        marketplace_count = len(
-            get_marketplace_sources_for_store(
-                store_cfg,
-                map_dir=app_path("Map"),
-                uploaded_paths=self._get_marketplace_uploaded_paths(store_name),
-                require_uploaded_path=True,
-            )
-        )
-        return len(dates) * (1 + marketplace_count)
-
     def start_sync(self):
         if self._running:
             return
@@ -993,26 +1234,115 @@ class QBSyncTab(ctk.CTkFrame):
         if not stores:
             messagebox.showwarning("Warning", "Please select at least one store")
             return
-        dates_str = self.date_var.get().strip()
-        if not dates_str:
-            messagebox.showwarning("Warning", "Please enter a date")
+        dates = self._get_date_range()
+        if not dates:
             return
-        dates = [d.strip() for d in dates_str.split(",") if d.strip()]
-        for d in dates:
-            try:
-                datetime.strptime(d, "%Y-%m-%d")
-            except ValueError:
-                messagebox.showerror("Error", f"Invalid date format: {d}\nUse YYYY-MM-DD")
-                return
+        source_filter = self.source_filter_var.get()
         self._set_validation_records([])
         self._running = True
-        self._reset_progress_ui("Starting sync...")
         self.sync_btn.configure(state="disabled", text="Syncing...")
         threading.Thread(target=self._sync_worker,
-                          args=(stores, dates, self.source_var.get(), self.preview_var.get(), self.strict_sync_var.get()),
+                          args=(stores, dates, self.source_var.get(), self.preview_var.get(), self.strict_sync_var.get(), source_filter),
                           daemon=True).start()
 
-    def _sync_worker(self, stores, dates, source, preview, strict_mode):
+    # ── Date helper methods for QB Sync tab ────────────────────────────
+
+    def _on_start_date_selected(self):
+        """Handle calendar Start Date selection."""
+        self.date_from_var.set(self.start_cal.get_date())
+        try:
+            s = datetime.strptime(self.date_from_var.get(), "%Y-%m-%d")
+            e = datetime.strptime(self.date_to_var.get(), "%Y-%m-%d")
+            if s > e:
+                self.date_to_var.set(self.date_from_var.get())
+                self.end_cal.selection_set(s)
+        except ValueError:
+            pass
+        self._update_date_range_info()
+
+    def _on_end_date_selected(self):
+        """Handle calendar End Date selection."""
+        self.date_to_var.set(self.end_cal.get_date())
+        try:
+            s = datetime.strptime(self.date_from_var.get(), "%Y-%m-%d")
+            e = datetime.strptime(self.date_to_var.get(), "%Y-%m-%d")
+            if e < s:
+                self.date_from_var.set(self.date_to_var.get())
+                self.start_cal.selection_set(e)
+        except ValueError:
+            pass
+        self._update_date_range_info()
+
+    def _sync_start_cal(self):
+        """Sync start calendar when user types in entry."""
+        try:
+            d = datetime.strptime(self.date_from_var.get(), "%Y-%m-%d")
+            self.start_cal.selection_set(d)
+            self._update_date_range_info()
+        except ValueError:
+            pass
+
+    def _sync_end_cal(self):
+        """Sync end calendar when user types in entry."""
+        try:
+            d = datetime.strptime(self.date_to_var.get(), "%Y-%m-%d")
+            self.end_cal.selection_set(d)
+            self._update_date_range_info()
+        except ValueError:
+            pass
+
+    def _update_date_range_info(self):
+        """Update date info label in QBSyncTab."""
+        from date_parser import parse_date_flexible
+
+        start_str = self.date_from_var.get().strip()
+        end_str = self.date_to_var.get().strip()
+
+        if not start_str or not end_str:
+            self.date_info_label.configure(text="Enter both dates to see range", text_color="#9ca3af")
+            return
+
+        s_result = parse_date_flexible(start_str, "qb_sync_ui")
+        e_result = parse_date_flexible(end_str, "qb_sync_ui")
+
+        if not s_result.success or not e_result.success:
+            err = s_result.error if not s_result.success else e_result.error
+            self.date_info_label.configure(text=f"⚠ {err}", text_color="#f87171")
+            return
+
+        s_iso = s_result.value.date_str
+        e_iso = e_result.value.date_str
+
+        s_dt = datetime.strptime(s_iso, "%Y-%m-%d")
+        e_dt = datetime.strptime(e_iso, "%Y-%m-%d")
+        days = (e_dt - s_dt).days + 1
+
+        if days < 1:
+            self.date_info_label.configure(text="⚠ End date before start date", text_color="#f87171")
+        elif days == 1:
+            self.date_info_label.configure(
+                text=f"1 day selected: {s_dt.strftime('%b %d, %Y')}", text_color="#60a5fa"
+            )
+        else:
+            self.date_info_label.configure(
+                text=f"{days} days selected: {s_dt.strftime('%b %d')} - {e_dt.strftime('%b %d, %Y')}",
+                text_color="#60a5fa",
+            )
+
+    def _get_date_range(self):
+        """Get list of date strings from From/To inputs using unified date parser."""
+        start_str = self.date_from_var.get().strip()
+        end_str = self.date_to_var.get().strip()
+        success, dates, error = get_date_range_from_inputs(start_str, end_str)
+        if not success:
+            if "enter" in error.lower():
+                messagebox.showwarning("Warning", error)
+            else:
+                messagebox.showerror("Error", error)
+            return None
+        return dates
+
+    def _sync_worker(self, stores, dates, source, preview, strict_mode, source_filter="all"):
         try:
             global_cfg, all_stores = load_mapping()
             sys.path.insert(0, str(APP_DIR))
@@ -1056,11 +1386,20 @@ class QBSyncTab(ctk.CTkFrame):
 
             total_tasks = 0
             for _, orig_name, cfg in expanded_stores:
-                total_tasks += self._count_sync_tasks_for_store(orig_name, cfg, dates)
+                total_tasks += len(dates) * (
+                    1
+                    + len(
+                        get_marketplace_sources_for_store(
+                            cfg,
+                            map_dir=app_path("Map"),
+                            uploaded_paths=self._get_marketplace_uploaded_paths(orig_name),
+                            require_uploaded_path=True,
+                        )
+                    )
+                )
             current_task = 0
             success_count = 0
             fail_count = 0
-            duplicate_count = 0
             validation_records = []
             ledger = SyncLedger()
 
@@ -1091,9 +1430,8 @@ class QBSyncTab(ctk.CTkFrame):
 
                         if not qbw_path or not os.path.exists(qbw_path):
                             self.log(f"  QB file not set or not found for '{first_orig_name}'")
-                            skipped_tasks = sum(self._count_sync_tasks_for_store(orig_name, cfg, dates) for _, orig_name, cfg in group_stores)
-                            current_task += skipped_tasks
-                            fail_count += skipped_tasks
+                            current_task += sum(len(dates) for _ in group_stores)
+                            fail_count += sum(len(dates) for _ in group_stores)
                             continue
 
                         file_ok, file_msg = validate_company_file_path(
@@ -1103,9 +1441,8 @@ class QBSyncTab(ctk.CTkFrame):
                         )
                         if not file_ok:
                             self.log(f"  {file_msg}")
-                            skipped_tasks = sum(self._count_sync_tasks_for_store(orig_name, cfg, dates) for _, orig_name, cfg in group_stores)
-                            current_task += skipped_tasks
-                            fail_count += skipped_tasks
+                            current_task += sum(len(dates) for _ in group_stores)
+                            fail_count += sum(len(dates) for _ in group_stores)
                             continue
                         self.log(f"  {file_msg}")
 
@@ -1132,23 +1469,32 @@ class QBSyncTab(ctk.CTkFrame):
                         try:
                             sync_id = None
                             filepath = None
-                            reader = None
-                            qb = None
                             toast_loc = store_cfg.get("toast_location", orig_name)
                             prefix = store_cfg.get("sale_no_prefix", "")
                             ref_number = f"{prefix}{date_str.replace('-', '')}"
                             override_reason = self.pending_force_reruns.get((orig_name, date_str))
 
-                            if gdrive:
-                                filename = f"SalesSummary_{date_str}_{date_str}.xlsx"
-                                local_dir = str(REPORTS_DIR / toast_loc)
-                                try:
-                                    filepath = gdrive.download_report(toast_loc, filename, local_dir)
-                                except FileNotFoundError:
-                                    self.log(f"  File not found on Drive: {toast_loc}/{filename}")
-                                    fail_count += 1
-                                    continue
+                            # Source filter: skip Toast if not selected
+                            if source_filter not in ("all", "toast"):
+                                self.log(f"  [Filter: skipping Toast (source_filter={source_filter})]")
                             else:
+                                filename = f"SalesSummary_{date_str}_{date_str}.xlsx"
+                                local_dir = str(build_local_report_dir(REPORTS_DIR, toast_loc, "sales_summary"))
+                                if gdrive:
+                                    try:
+                                        filepath = gdrive.download_report(toast_loc, filename, local_dir, report_type="sales_summary")
+                                    except FileNotFoundError:
+                                        self.log(f"  File not found on Drive: Toasttab/{toast_loc}/Sale Summary/{filename}")
+                                        fail_count += 1
+                                        continue
+                                else:
+                                    files = find_report_file(orig_name, store_cfg, date_str)
+                                    if files:
+                                        filepath = str(files[0]["filepath"])
+                                    else:
+                                        self.log(f"  Report file not found locally for {date_str}")
+                                        fail_count += 1
+                                        continue
                                 files = find_report_file(orig_name, store_cfg, date_str)
                                 if files:
                                     filepath = str(files[0]["filepath"])
@@ -1206,8 +1552,14 @@ class QBSyncTab(ctk.CTkFrame):
                             report_identity = build_report_identity(filepath)
 
                             reader = ToastExcelReader(filepath)
-                            issues = []
-                            lines = extract_receipt_lines(reader, store_cfg, issues=issues)
+                            try:
+                                issues = []
+                                lines = extract_receipt_lines(reader, store_cfg, issues=issues)
+                            finally:
+                                try:
+                                    reader.close()
+                                except Exception:
+                                    pass
 
                             if not lines:
                                 self.log(f"  No data found in report")
@@ -1215,7 +1567,7 @@ class QBSyncTab(ctk.CTkFrame):
                                 continue
 
                             total_bal = sum(l["amount"] for l in lines)
-                            self.log(f"  Lines: {len(lines)}, Balance: {total_bal:.2f}")
+                            self.log(f"  Lines: {len(lines)}, Balance: {float(total_bal):.2f}")
                             if total_bal != 0:
                                 self.log("  Warning: Sales receipt lines are not balanced; verify mapping or over/short setup")
                             if issues:
@@ -1264,7 +1616,7 @@ class QBSyncTab(ctk.CTkFrame):
                                 fail_count += 1
                                 continue
                             for l in lines:
-                                amt = l["amount"]
+                                amt = float(l["amount"])
                                 if amt != 0:
                                     self.log(f"    {l['item_name']:<30} {amt:>10.2f}")
 
@@ -1316,17 +1668,14 @@ class QBSyncTab(ctk.CTkFrame):
                                         ],
                                     }
                                 )
-                                if begin_result.status == STATUS_BLOCKED_DUPLICATE:
-                                    duplicate_count += 1
-                                else:
-                                    fail_count += 1
+                                fail_count += 1
                                 continue
 
                             if preview:
                                 self.log(f"  [PREVIEW MODE - not creating Sales Receipt]")
                                 ledger.mark_success(sync_id, preview=True)
                                 success_count += 1
-                                current_task, extra_success, extra_duplicate, extra_fail, extra_records = self._process_marketplace_receipts_for_date(
+                                current_task, extra_success, extra_fail, extra_records = self._process_marketplace_receipts_for_date(
                                     display_name=display_name,
                                     orig_name=orig_name,
                                     store_cfg=store_cfg,
@@ -1340,9 +1689,9 @@ class QBSyncTab(ctk.CTkFrame):
                                     total_tasks=total_tasks,
                                     current_task=current_task,
                                     override_reason=override_reason,
+                                    source_filter=source_filter,
                                 )
                                 success_count += extra_success
-                                duplicate_count += extra_duplicate
                                 fail_count += extra_fail
                                 validation_records.extend(extra_records)
                                 self.pending_force_reruns.pop((orig_name, date_str), None)
@@ -1359,40 +1708,49 @@ class QBSyncTab(ctk.CTkFrame):
                                 qbxml_version=global_cfg.get("qbxml_version", "13.0"),
                             )
                             qb.connect()
+                            try:
+                                customer = store_cfg.get("customer_name", "Toast")
+                                memo = f"Toast {toast_loc} {date_str}"
 
-                            customer = store_cfg.get("customer_name", "Toast")
-                            memo = f"Toast {toast_loc} {date_str}"
+                                existing_receipts = qb.find_existing_sales_receipts(ref_number)
+                                exists = any(item["txn_date"] == date_str for item in existing_receipts)
+                                if exists:
+                                    self.log(f"  Sales Receipt #{ref_number} already exists, skipping")
+                                    ledger.mark_status(
+                                        sync_id,
+                                        STATUS_BLOCKED_DUPLICATE,
+                                        error_message="Sales Receipt already exists in QuickBooks",
+                                        payload={"ref_number": ref_number},
+                                    )
+                                    success_count += 1
+                                    continue
+                                if existing_receipts:
+                                    existing_dates = ", ".join(sorted({item["txn_date"] for item in existing_receipts if item["txn_date"]}))
+                                    self.log(f"  Note: found same RefNumber on other date(s): {existing_dates}")
 
-                            existing_receipts = qb.find_existing_sales_receipts(ref_number)
-                            exists = any(item["txn_date"] == date_str for item in existing_receipts)
-                            if exists:
-                                self.log(f"  Sales Receipt #{ref_number} already exists, skipping")
-                                ledger.mark_status(
-                                    sync_id,
-                                    STATUS_BLOCKED_DUPLICATE,
-                                    error_message="Sales Receipt already exists in QuickBooks",
-                                    payload={"ref_number": ref_number},
+                                # Auto-create customer if not exists
+                                if not qb.ensure_customer(customer):
+                                    self.log(f"  Error: Could not create customer '{customer}'")
+                                    ledger.mark_failed(sync_id, f"Could not create customer '{customer}'")
+                                    fail_count += 1
+                                    continue
+
+                                result = qb.create_sales_receipt(
+                                    txn_date=date_str,
+                                    ref_number=ref_number,
+                                    customer_name=customer,
+                                    memo=memo,
+                                    lines=lines,
+                                    class_name=store_cfg.get("class_name"),
                                 )
-                                duplicate_count += 1
-                                continue
-                            if existing_receipts:
-                                existing_dates = ", ".join(sorted({item["txn_date"] for item in existing_receipts if item["txn_date"]}))
-                                self.log(f"  Note: found same RefNumber on other date(s): {existing_dates}")
-
-                            result = qb.create_sales_receipt(
-                                txn_date=date_str,
-                                ref_number=ref_number,
-                                customer_name=customer,
-                                memo=memo,
-                                lines=lines,
-                                class_name=store_cfg.get("class_name"),
-                            )
+                            finally:
+                                qb.disconnect()
 
                             if result.get("success"):
                                 self.log(f"  Sales Receipt created! TxnID: {result.get('txn_id')}")
                                 ledger.mark_success(sync_id, txn_id=result.get("txn_id"))
                                 success_count += 1
-                                current_task, extra_success, extra_duplicate, extra_fail, extra_records = self._process_marketplace_receipts_for_date(
+                                current_task, extra_success, extra_fail, extra_records = self._process_marketplace_receipts_for_date(
                                     display_name=display_name,
                                     orig_name=orig_name,
                                     store_cfg=store_cfg,
@@ -1406,9 +1764,9 @@ class QBSyncTab(ctk.CTkFrame):
                                     total_tasks=total_tasks,
                                     current_task=current_task,
                                     override_reason=override_reason,
+                                    source_filter=source_filter,
                                 )
                                 success_count += extra_success
-                                duplicate_count += extra_duplicate
                                 fail_count += extra_fail
                                 validation_records.extend(extra_records)
                                 self.pending_force_reruns.pop((orig_name, date_str), None)
@@ -1427,9 +1785,6 @@ class QBSyncTab(ctk.CTkFrame):
                             except Exception:
                                 pass
                             fail_count += 1
-                        finally:
-                            self._safe_close_reader(reader)
-                            self._safe_disconnect_qb(qb)
 
                 if not preview and qb_opened:
                     try:
@@ -1442,7 +1797,7 @@ class QBSyncTab(ctk.CTkFrame):
             self.update_progress(total_tasks, total_tasks, "Done")
             self.after(0, lambda records=validation_records: self._set_validation_records(records))
             self.after(0, self._refresh_last_sync_status)
-            self.log(f"\nAll done! Success: {success_count}, Duplicates skipped: {duplicate_count}, Failed: {fail_count}")
+            self.log(f"\nAll done! Success: {success_count}, Failed: {fail_count}")
 
         except Exception as e:
             self.log(f"Fatal error: {e}")
@@ -1451,8 +1806,9 @@ class QBSyncTab(ctk.CTkFrame):
         finally:
             self._running = False
             self.after(0, lambda: self.sync_btn.configure(state="normal", text="Sync to QuickBooks"))
-            self.after(0, self._reset_progress_ui)
             self.after(0, lambda: self.status_var.set("Ready"))
+            self.after(0, lambda: self.progress_bar.set(0))
+            self.after(0, lambda: self.progress_label.configure(text="Ready", text_color="gray"))
 
     def _process_marketplace_receipts_for_date(
         self,
@@ -1470,6 +1826,7 @@ class QBSyncTab(ctk.CTkFrame):
         total_tasks,
         current_task,
         override_reason,
+        source_filter="all",
     ):
         from marketplace_sync import extract_marketplace_receipt_lines, get_marketplace_sources_for_store
         from sync_ledger import STATUS_BLOCKED_DUPLICATE, build_report_identity
@@ -1487,17 +1844,29 @@ class QBSyncTab(ctk.CTkFrame):
             require_uploaded_path=True,
         )
         success_count = 0
-        duplicate_count = 0
         fail_count = 0
         validation_records = []
 
+        # Map source names to filter values
+        SOURCE_FILTER_MAP = {
+            "uber": "uber",
+            "doordash": "doordash",
+            "grubhub": "grubhub",
+        }
+
         for source in sources:
+            # Source filter: skip marketplace if not selected
+            source_key = source.name.lower()
+            filter_val = SOURCE_FILTER_MAP.get(source_key, "")
+            if source_filter not in ("all", "") and filter_val and source_filter != filter_val:
+                self.log(f"  [Filter: skipping {source.name} (source_filter={source_filter})]")
+                continue
+
             current_task += 1
             self.update_progress(current_task, total_tasks, f"{display_name} - {date_str} - {source.name}")
             self.log(f"--- {display_name} / {date_str} / {source.name} ---")
 
             sync_id = None
-            qb = None
             try:
                 lines, issues, row = extract_marketplace_receipt_lines(
                     report_path=source.report_path,
@@ -1567,7 +1936,7 @@ class QBSyncTab(ctk.CTkFrame):
                     continue
 
                 for line in lines:
-                    amt = line["amount"]
+                    amt = float(line["amount"])
                     if amt != 0:
                         self.log(f"    {line['item_name']:<30} {amt:>10.2f}")
 
@@ -1619,10 +1988,7 @@ class QBSyncTab(ctk.CTkFrame):
                             ],
                         }
                     )
-                    if begin_result.status == STATUS_BLOCKED_DUPLICATE:
-                        duplicate_count += 1
-                    else:
-                        fail_count += 1
+                    fail_count += 1
                     continue
 
                 if preview:
@@ -1642,28 +2008,37 @@ class QBSyncTab(ctk.CTkFrame):
                     qbxml_version=global_cfg.get("qbxml_version", "13.0"),
                 )
                 qb.connect()
+                try:
+                    existing_receipts = qb.find_existing_sales_receipts(ref_number)
+                    exists = any(item["txn_date"] == date_str for item in existing_receipts)
+                    if exists:
+                        self.log(f"  {source.name} Sales Receipt #{ref_number} already exists, skipping")
+                        ledger.mark_status(
+                            sync_id,
+                            STATUS_BLOCKED_DUPLICATE,
+                            error_message="Sales Receipt already exists in QuickBooks",
+                            payload={"ref_number": ref_number, "source": source.name},
+                        )
+                        success_count += 1
+                        continue
 
-                existing_receipts = qb.find_existing_sales_receipts(ref_number)
-                exists = any(item["txn_date"] == date_str for item in existing_receipts)
-                if exists:
-                    self.log(f"  {source.name} Sales Receipt #{ref_number} already exists, skipping")
-                    ledger.mark_status(
-                        sync_id,
-                        STATUS_BLOCKED_DUPLICATE,
-                        error_message="Sales Receipt already exists in QuickBooks",
-                        payload={"ref_number": ref_number, "source": source.name},
+                    # Auto-create customer if not exists
+                    if not qb.ensure_customer(source.customer_name):
+                        self.log(f"  Error: Could not create customer '{source.customer_name}'")
+                        ledger.mark_failed(sync_id, f"Could not create customer '{source.customer_name}'")
+                        fail_count += 1
+                        continue
+
+                    result = qb.create_sales_receipt(
+                        txn_date=date_str,
+                        ref_number=ref_number,
+                        customer_name=source.customer_name,
+                        memo=f"{source.name} {display_name} {date_str}",
+                        lines=lines,
+                        class_name=store_cfg.get("class_name"),
                     )
-                    duplicate_count += 1
-                    continue
-
-                result = qb.create_sales_receipt(
-                    txn_date=date_str,
-                    ref_number=ref_number,
-                    customer_name=source.customer_name,
-                    memo=f"{source.name} {display_name} {date_str}",
-                    lines=lines,
-                    class_name=store_cfg.get("class_name"),
-                )
+                finally:
+                    qb.disconnect()
 
                 if result.get("success"):
                     self.log(f"  {source.name} Sales Receipt created! TxnID: {result.get('txn_id')}")
@@ -1683,10 +2058,8 @@ class QBSyncTab(ctk.CTkFrame):
                 except Exception:
                     pass
                 fail_count += 1
-            finally:
-                self._safe_disconnect_qb(qb)
 
-        return current_task, success_count, duplicate_count, fail_count, validation_records
+        return current_task, success_count, fail_count, validation_records
 
     def _status_target(self):
         stores = [name for name, var in self.store_vars.items() if var.get()]
@@ -2590,7 +2963,6 @@ class RemoveTab(ctk.CTkFrame):
         self.qb = None
         self.accounts = []
         self.found_txns = []
-        self.results_truncated = False
         self._running = False
         self.delete_dry_run_var = ctk.BooleanVar(value=True)
         self._global_cfg, self._stores = load_mapping()
@@ -2644,6 +3016,7 @@ class RemoveTab(ctk.CTkFrame):
         ctk.CTkLabel(log_frame, text="Log", font=ctk.CTkFont(size=12, weight="bold")).pack(anchor="w", padx=10, pady=(5, 0))
         self.log_box = ctk.CTkTextbox(log_frame, height=100, font=ctk.CTkFont(family="Consolas", size=12))
         self.log_box.pack(fill="x", padx=10, pady=(0, 10))
+        self.log_box.configure(state="disabled")
 
     # ── Store Section ────────────────────────────────────────────────
 
@@ -2887,8 +3260,11 @@ class RemoveTab(ctk.CTkFrame):
 
     def _log(self, msg):
         ts = datetime.now().strftime("%H:%M:%S")
+        self.log_box.configure(state="normal")
         self.log_box.insert("end", f"[{ts}] {msg}\n")
         self.log_box.see("end")
+        self.log_box.configure(state="disabled")
+        _app_logger.info(msg)
 
     def _log_safe(self, msg):
         self.after(0, lambda m=msg: self._log(m))
@@ -2904,27 +3280,6 @@ class RemoveTab(ctk.CTkFrame):
     def _select_all_txns(self, value):
         for var, _, _ in self.txn_rows:
             var.set(value)
-
-    def _render_transaction_row(self, txn):
-        var = ctk.BooleanVar(value=True)
-        row = ctk.CTkFrame(self.txn_scroll, fg_color="transparent")
-        row.pack(fill="x", pady=1)
-        row.grid_columnconfigure(0, minsize=30)
-        row.grid_columnconfigure(1, weight=1, minsize=80)
-        row.grid_columnconfigure(2, weight=1, minsize=80)
-        row.grid_columnconfigure(3, weight=2, minsize=120)
-        row.grid_columnconfigure(4, weight=1, minsize=70)
-        row.grid_columnconfigure(5, weight=1, minsize=60)
-        row.grid_columnconfigure(6, weight=2, minsize=120)
-
-        ctk.CTkCheckBox(row, text="", variable=var, width=25).grid(row=0, column=0, padx=3)
-        ctk.CTkLabel(row, text=txn["TxnDate"], font=ctk.CTkFont(size=11)).grid(row=0, column=1, sticky="w", padx=3)
-        ctk.CTkLabel(row, text=txn["Label"], font=ctk.CTkFont(size=11)).grid(row=0, column=2, sticky="w", padx=3)
-        ctk.CTkLabel(row, text=txn["Account"], font=ctk.CTkFont(size=11)).grid(row=0, column=3, sticky="w", padx=3)
-        ctk.CTkLabel(row, text=txn.get("RefNumber", ""), font=ctk.CTkFont(size=11)).grid(row=0, column=4, sticky="w", padx=3)
-        ctk.CTkLabel(row, text=txn.get("Amount", ""), font=ctk.CTkFont(size=11)).grid(row=0, column=5, sticky="e", padx=3)
-        ctk.CTkLabel(row, text=txn.get("Memo", "")[:40], font=ctk.CTkFont(size=11)).grid(row=0, column=6, sticky="w", padx=3)
-        self.txn_rows.append((var, row, txn))
 
     # ── Connect ──────────────────────────────────────────────────────
 
@@ -3079,24 +3434,9 @@ class RemoveTab(ctk.CTkFrame):
     def _on_search_done(self, txns):
         self._running = False
         self.found_txns = txns
-        self.results_truncated = len(txns) > REMOVE_TAB_RENDER_LIMIT
         self.btn_search.configure(state="normal", text="Search Transactions")
-        rendered = txns[:REMOVE_TAB_RENDER_LIMIT]
-        if self.results_truncated:
-            self.result_count.configure(text=f"({len(txns)} found, showing first {len(rendered)})")
-            self._log(
-                f"Search complete: {len(txns)} transactions found. Rendering first {len(rendered)} only to keep the UI responsive."
-            )
-            full_export = export_transactions_snapshot(
-                txns,
-                DELETE_AUDIT_DIR / "search-results",
-                "search-results",
-                metadata={"action": "search_snapshot", "truncated": True, "render_limit": REMOVE_TAB_RENDER_LIMIT},
-            )
-            self._log(f"Full search results exported -> {full_export['csv_path']}")
-        else:
-            self.result_count.configure(text=f"({len(txns)} found)")
-            self._log(f"Search complete: {len(txns)} transactions found")
+        self.result_count.configure(text=f"({len(txns)} found)")
+        self._log(f"Search complete: {len(txns)} transactions found")
 
         if not txns:
             self.placeholder_label.configure(text="No transactions found")
@@ -3104,14 +3444,30 @@ class RemoveTab(ctk.CTkFrame):
             return
 
         self.placeholder_label.pack_forget()
-        for txn in rendered:
-            self._render_transaction_row(txn)
+        for txn in txns:
+            var = ctk.BooleanVar(value=True)
+            row = ctk.CTkFrame(self.txn_scroll, fg_color="transparent")
+            row.pack(fill="x", pady=1)
+            row.grid_columnconfigure(0, minsize=30)
+            row.grid_columnconfigure(1, weight=1, minsize=80)
+            row.grid_columnconfigure(2, weight=1, minsize=80)
+            row.grid_columnconfigure(3, weight=2, minsize=120)
+            row.grid_columnconfigure(4, weight=1, minsize=70)
+            row.grid_columnconfigure(5, weight=1, minsize=60)
+            row.grid_columnconfigure(6, weight=2, minsize=120)
+
+            ctk.CTkCheckBox(row, text="", variable=var, width=25).grid(row=0, column=0, padx=3)
+            ctk.CTkLabel(row, text=txn["TxnDate"], font=ctk.CTkFont(size=11)).grid(row=0, column=1, sticky="w", padx=3)
+            ctk.CTkLabel(row, text=txn["Label"], font=ctk.CTkFont(size=11)).grid(row=0, column=2, sticky="w", padx=3)
+            ctk.CTkLabel(row, text=txn["Account"], font=ctk.CTkFont(size=11)).grid(row=0, column=3, sticky="w", padx=3)
+            ctk.CTkLabel(row, text=txn.get("RefNumber", ""), font=ctk.CTkFont(size=11)).grid(row=0, column=4, sticky="w", padx=3)
+            ctk.CTkLabel(row, text=txn.get("Amount", ""), font=ctk.CTkFont(size=11)).grid(row=0, column=5, sticky="e", padx=3)
+            ctk.CTkLabel(row, text=txn.get("Memo", "")[:40], font=ctk.CTkFont(size=11)).grid(row=0, column=6, sticky="w", padx=3)
+            self.txn_rows.append((var, row, txn))
 
         if txns:
-            self.btn_delete.configure(state="disabled" if self.results_truncated else "normal")
+            self.btn_delete.configure(state="normal")
             self.btn_export.configure(state="normal")
-            if self.results_truncated:
-                self._log("Delete is disabled for truncated result sets. Narrow the search range before deleting.")
 
     def _on_search_error(self, error):
         self._running = False
@@ -3123,12 +3479,10 @@ class RemoveTab(ctk.CTkFrame):
             row.destroy()
         self.txn_rows.clear()
         self.found_txns.clear()
-        self.results_truncated = False
         self.result_count.configure(text="")
         self.placeholder_label.configure(text="Search to show transactions")
         self.placeholder_label.pack(pady=30)
         self.btn_export.configure(state="disabled")
-        self.btn_delete.configure(state="disabled")
 
     def _selected_transactions(self):
         return [txn for var, _, txn in self.txn_rows if var.get()]
@@ -3581,8 +3935,18 @@ class App(ctk.CTk):
         super().__init__()
 
         self.title("Toast POS Manager")
-        self._set_initial_window_geometry()
-        self.minsize(1000, 760)
+
+        # Clamp window size to screen dimensions for small screens
+        try:
+            screen_w = self.winfo_screenwidth()
+            screen_h = self.winfo_screenheight()
+            win_w = min(1150, screen_w - 50)
+            win_h = min(900, screen_h - 80)
+            self.geometry(f"{win_w}x{win_h}")
+            self.minsize(min(1000, screen_w - 50), min(700, screen_h - 80))
+        except Exception:
+            self.geometry("1150x900")
+            self.minsize(1000, 700)
 
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
@@ -3590,49 +3954,19 @@ class App(ctk.CTk):
         self.status_var = ctk.StringVar(value="Ready")
         self.diagnostics_report = None
         self._build_ui()
-        self.protocol("WM_DELETE_WINDOW", self._on_close_requested)
         self.run_diagnostics_async(False)
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
 
-    def _set_initial_window_geometry(self):
-        screen_w = self.winfo_screenwidth()
-        screen_h = self.winfo_screenheight()
-        width = min(1280, max(1000, screen_w - 120))
-        height = min(960, max(760, screen_h - 120))
-        x = max(40, (screen_w - width) // 2)
-        y = max(40, (screen_h - height) // 2)
-        self.geometry(f"{width}x{height}+{x}+{y}")
-
-    def _active_background_tasks(self):
-        tasks = []
-        if hasattr(self, "download_tab") and getattr(self.download_tab, "_running", False):
-            tasks.append("Download Reports")
-        if hasattr(self, "qb_tab") and getattr(self.qb_tab, "_running", False):
-            tasks.append("QB Sync")
-        if hasattr(self, "rm_tab") and getattr(self.rm_tab, "_running", False):
-            tasks.append("Remove Transactions")
-        return tasks
-
-    def _cleanup_before_close(self):
-        qb = getattr(getattr(self, "rm_tab", None), "qb", None)
-        if qb:
-            try:
-                qb.disconnect()
-            except Exception:
-                pass
-
-    def _on_close_requested(self):
-        active_tasks = self._active_background_tasks()
-        if active_tasks:
-            confirmed = messagebox.askyesno(
-                "Close While Work Is Running?",
-                "The following work is still running:\n\n"
-                f" - " + "\n - ".join(active_tasks) + "\n\n"
-                "Closing now can leave sync history stale until recovery runs again. Close anyway?",
-                icon="warning",
-            )
-            if not confirmed:
+    def _on_close(self):
+        busy = getattr(self, "qb_tab", None) and self.qb_tab._running
+        busy = busy or (getattr(self, "download_tab", None) and self.download_tab._running)
+        busy = busy or (getattr(self, "rm_tab", None) and self.rm_tab._running)
+        if busy:
+            if not messagebox.askokcancel(
+                "Operation in progress",
+                "A sync or download is still running. Are you sure you want to quit?",
+            ):
                 return
-        self._cleanup_before_close()
         self.destroy()
 
     def _build_ui(self):
@@ -3642,32 +3976,104 @@ class App(ctk.CTk):
         header.pack_propagate(False)
         ctk.CTkLabel(header, text="Toast POS Manager",
                       font=ctk.CTkFont(size=20, weight="bold")).pack(side="left", padx=20, pady=10)
-        ctk.CTkLabel(header, text="v2.1 - Hardened", text_color="gray",
+        ctk.CTkLabel(header, text="v2.2", text_color="gray",
                       font=ctk.CTkFont(size=12)).pack(side="right", padx=20)
         self.env_status_label = ctk.CTkLabel(header, text="Environment: checking...", text_color="#d97706",
                                              font=ctk.CTkFont(size=12))
         self.env_status_label.pack(side="right", padx=(0, 12))
+        self.clock_frame = ctk.CTkFrame(header, fg_color="transparent")
+        self.clock_frame.pack(side="right", padx=(0, 12))
+        self.clock_labels = {}
+        for clock in get_world_clocks():
+            label = ctk.CTkLabel(
+                self.clock_frame,
+                text="",
+                text_color="#9ca3af",
+                font=ctk.CTkFont(size=11),
+            )
+            label.pack(side="left", padx=8)
+            self.clock_labels[clock["key"]] = label
+        self._refresh_clock_labels()
 
-        # ── Tab View ──
-        self.tabview = ctk.CTkTabview(self, corner_radius=8)
-        self.tabview.pack(fill="both", expand=True, padx=10, pady=(5, 0))
+        # ── Main: Sidebar + Content ──
+        main = ctk.CTkFrame(self, fg_color="transparent")
+        main.pack(fill="both", expand=True, padx=10, pady=(5, 0))
 
-        dl_tab = self.tabview.add("Download Reports")
-        qb_tab = self.tabview.add("QB Sync")
-        rm_tab = self.tabview.add("Remove Transactions")
-        settings_tab = self.tabview.add("Settings")
+        # ── Sidebar (200px) ──
+        sidebar = ctk.CTkFrame(main, width=200, corner_radius=10)
+        sidebar.pack(side="left", fill="y", padx=(0, 10))
+        sidebar.pack_propagate(False)
 
-        self.download_tab = DownloadTab(dl_tab, self.status_var)
+        # App brand at top
+        ctk.CTkLabel(
+            sidebar, text="🍞  Toast POS",
+            font=ctk.CTkFont(size=16, weight="bold"),
+            text_color="#22d3ee",
+        ).pack(pady=(20, 4))
+        ctk.CTkLabel(
+            sidebar, text="Manager", font=ctk.CTkFont(size=13),
+            text_color=("#9ca3af" if ctk.get_appearance_mode() == "dark" else "#6b7280"),
+        ).pack(pady=(0, 20))
+
+        # Navigation buttons
+        NAV_ITEMS = [
+            ("download", "Download",    "📥", "#1e3a5f"),   # deep blue
+            ("qb",       "QB Sync",     "💼", "#1e6f5c"),   # teal/green (primary accent)
+            ("remove",   "Remove",      "🗑️", "#3d2b1f"),   # warm dark
+            ("settings", "Settings",    "⚙️", "#2a2a2a"),   # neutral dark
+        ]
+
+        self._nav_buttons = {}
+        self._tab_frames = {}
+
+        for key, label, icon, color in NAV_ITEMS:
+            btn = ctk.CTkButton(
+                sidebar, text=f"  {icon}  {label}",
+                command=lambda k=key: self._switch_tab(k),
+                font=ctk.CTkFont(size=14, weight="bold" if key == "qb" else "normal"),
+                anchor="w",
+                height=46,
+                corner_radius=8,
+                fg_color=color,
+                hover_color=color,
+                text_color=("#ffffff" if ctk.get_appearance_mode() == "dark" else "#ffffff"),
+                border_width=0,
+            )
+            btn.pack(fill="x", padx=10, pady=3)
+            self._nav_buttons[key] = btn
+
+        # Version at bottom
+        ctk.CTkLabel(
+            sidebar, text="v2.2", font=ctk.CTkFont(size=11),
+            text_color=("#4b5563" if ctk.get_appearance_mode() == "dark" else "#9ca3af"),
+        ).pack(side="bottom", pady=(0, 15))
+
+        # ── Tab Content Area ──
+        content = ctk.CTkFrame(main, fg_color="transparent")
+        content.pack(side="left", fill="both", expand=True)
+
+        for key in ["download", "qb", "remove", "settings"]:
+            frame = ctk.CTkFrame(content, fg_color="transparent")
+            frame.pack(fill="both", expand=True)
+            self._tab_frames[key] = frame
+
+        self.download_tab = DownloadTab(self._tab_frames["download"], self.status_var)
         self.download_tab.pack(fill="both", expand=True)
 
-        self.qb_tab = QBSyncTab(qb_tab, self.status_var)
+        self.qb_tab = QBSyncTab(self._tab_frames["qb"], self.status_var)
         self.qb_tab.pack(fill="both", expand=True)
 
-        self.rm_tab = RemoveTab(rm_tab, self.status_var)
+        self.rm_tab = RemoveTab(self._tab_frames["remove"], self.status_var)
         self.rm_tab.pack(fill="both", expand=True)
 
-        self.settings_tab = SettingsTab(settings_tab, run_diagnostics=self.run_diagnostics_async)
+        self.settings_tab = SettingsTab(self._tab_frames["settings"], run_diagnostics=self.run_diagnostics_async)
         self.settings_tab.pack(fill="both", expand=True)
+
+        # Default to QB Sync tab
+        self._active_tab = "qb"
+        self._nav_buttons["qb"].configure(fg_color="#0f766e", hover_color="#0f766e")
+        for key in ["download", "remove", "settings"]:
+            self._tab_frames[key].pack_forget()
 
         # ── Status Bar ──
         status_bar = ctk.CTkFrame(self, height=30, corner_radius=0)
@@ -3675,6 +4081,42 @@ class App(ctk.CTk):
         status_bar.pack_propagate(False)
         ctk.CTkLabel(status_bar, textvariable=self.status_var,
                       font=ctk.CTkFont(size=11), text_color="gray").pack(side="left", padx=10)
+
+    def _refresh_clock_labels(self):
+        for clock in get_world_clocks():
+            label = self.clock_labels.get(clock["key"])
+            if label:
+                label.configure(text=f"{clock['label']}: {clock['display']}")
+        self.after(1000, self._refresh_clock_labels)
+
+    def _switch_tab(self, key: str):
+        """Switch to the given tab, highlighting the active nav button."""
+        if key == self._active_tab:
+            return
+
+        # Hide current, show new
+        self._tab_frames[self._active_tab].pack_forget()
+        self._tab_frames[key].pack(fill="both", expand=True)
+        self._active_tab = key
+
+        # Reset all buttons to base colors
+        BASE_COLORS = {
+            "download": "#1e3a5f",
+            "qb":       "#1e6f5c",
+            "remove":   "#3d2b1f",
+            "settings": "#2a2a2a",
+        }
+        ACTIVE_COLOR = {
+            "download": "#2563eb",
+            "qb":       "#0f766e",
+            "remove":   "#92400e",
+            "settings": "#374151",
+        }
+        for k, btn in self._nav_buttons.items():
+            btn.configure(
+                fg_color=ACTIVE_COLOR[k],
+                hover_color=ACTIVE_COLOR[k],
+            )
 
     def run_diagnostics_async(self, show_popup_on_error=False):
         self.env_status_label.configure(text="Environment: checking...", text_color="#d97706")
@@ -3722,6 +4164,13 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description="Toast POS Manager")
     parser.add_argument("--doctor-cli", action="store_true", help="Run environment diagnostics and exit")
     args = parser.parse_args(argv)
+
+    # Enable DPI awareness on Windows for crisp rendering on HiDPI displays
+    try:
+        import ctypes
+        ctypes.windll.shcore.SetProcessDpiAwareness(1)
+    except Exception:
+        pass
 
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     AUDIT_LOG_DIR.mkdir(parents=True, exist_ok=True)

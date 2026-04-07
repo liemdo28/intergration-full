@@ -1,6 +1,6 @@
 """
 Toast Report Downloader - Python port of toast-download.mjs
-Uses Playwright to automate downloading Sales Summary reports from Toast website.
+Uses Playwright to automate downloading Toast reports from Toast website.
 """
 
 import json
@@ -11,6 +11,8 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
 from app_paths import runtime_path
 from report_validator import validate_toast_report_file
+from date_parser import validate_toast_date_format
+from toast_reports import build_local_report_dir, get_report_type, normalize_report_types
 
 
 REPORTS_BASE = "https://www.toasttab.com/restaurants/admin/reports"
@@ -254,7 +256,7 @@ class ToastDownloader:
 
         self.page.wait_for_timeout(2000)
         try:
-            self.page.wait_for_load_state("networkidle", timeout=10000)
+            self.page.wait_for_load_state("networkidle", timeout=30000)
         except Exception:
             pass
         self.page.wait_for_timeout(1000)
@@ -327,7 +329,21 @@ class ToastDownloader:
         7. Tab 1 time to Apply button
         8. Enter to apply
         """
-        date_raw = date_str.replace("/", "")  # "03/15/2026" → "03152026"
+        # FIX M4: Validate date components before stripping separators.
+        # Buggy: "3/5/2026".replace("/", "") → "352026" (6 digits!)
+        # Fix: parse M/D/YYYY components and zero-pad each.
+        parts = date_str.strip().split("/")
+        if len(parts) != 3:
+            raise ValueError(f"Invalid date format (expected MM/DD/YYYY): '{date_str}'")
+        month_s, day_s, year_s = parts
+        try:
+            month, day, year = int(month_s), int(day_s), int(year_s)
+        except ValueError:
+            raise ValueError(f"Date components must be integers: '{date_str}'")
+        ok, result_or_err = validate_toast_date_format(month, day, year)
+        if not ok:
+            raise ValueError(f"Invalid date '{date_str}': {result_or_err}")
+        date_raw = result_or_err  # Already formatted MMDDYYYY
 
         # Step 1: Open date picker dropdown
         if not self._open_date_picker():
@@ -356,61 +372,17 @@ class ToastDownloader:
             self.page.keyboard.press("Escape")
             return False
 
-        dialog_input_selectors = [
-            '[role="dialog"] input',
-            '[data-testid*="date" i] input',
-            'input[placeholder*="MM" i]',
-            'input[inputmode="numeric"]',
-        ]
-        input_handles = []
-        for sel in dialog_input_selectors:
-            try:
-                count = self.page.locator(sel).count()
-                if count >= 2:
-                    input_handles = [self.page.locator(sel).nth(0), self.page.locator(sel).nth(1)]
-                    break
-            except Exception:
-                continue
-
-        if len(input_handles) >= 2:
-            try:
-                for index, handle in enumerate(input_handles[:2]):
-                    handle.click()
-                    handle.press("Control+a")
-                    handle.fill(date_str)
-                    self.page.wait_for_timeout(250)
-                    self.log(f"    {'Start' if index == 0 else 'End'} date: {date_str}")
-
-                if self._click_first_visible(
-                    [
-                        'button:text-is("Apply")',
-                        'button:text-is("Update")',
-                        'text="Apply"',
-                    ],
-                    timeout=1500,
-                    log_msg=f"    Applied date: {date_str}",
-                ):
-                    self.page.wait_for_timeout(3000)
-                    try:
-                        self.page.wait_for_load_state("networkidle", timeout=15000)
-                    except Exception:
-                        pass
-                    self.page.wait_for_timeout(2000)
-                    return True
-            except Exception:
-                self.log("    Explicit date input path failed, falling back to keyboard flow")
-
         # Step 3: Tab 4 times to reach Start date input
         for _ in range(4):
             self.page.keyboard.press("Tab")
             self.page.wait_for_timeout(200)
 
-        # Step 4: Paste Start date using clipboard (more reliable than typing)
-        # Select all existing text first, then paste
+        # Step 4: Clear and type Start date digit by digit
         self.page.keyboard.press("Control+a")
         self.page.wait_for_timeout(100)
-        self.page.evaluate(f"navigator.clipboard.writeText('{date_raw}')")
-        self.page.keyboard.press("Control+v")
+        for ch in date_raw:
+            self.page.keyboard.press(ch)
+            self.page.wait_for_timeout(80)
         self.log(f"    Start date: {date_str}")
         self.page.wait_for_timeout(500)
 
@@ -418,11 +390,12 @@ class ToastDownloader:
         self.page.keyboard.press("Tab")
         self.page.wait_for_timeout(200)
 
-        # Step 6: Paste End date (same as Start)
+        # Step 6: Clear and type End date digit by digit
         self.page.keyboard.press("Control+a")
         self.page.wait_for_timeout(100)
-        self.page.evaluate(f"navigator.clipboard.writeText('{date_raw}')")
-        self.page.keyboard.press("Control+v")
+        for ch in date_raw:
+            self.page.keyboard.press(ch)
+            self.page.wait_for_timeout(80)
         self.log(f"    End date: {date_str}")
         self.page.wait_for_timeout(500)
 
@@ -437,7 +410,7 @@ class ToastDownloader:
         # Wait for report to reload
         self.page.wait_for_timeout(3000)
         try:
-            self.page.wait_for_load_state("networkidle", timeout=15000)
+            self.page.wait_for_load_state("networkidle", timeout=30000)
         except Exception:
             pass
         self.page.wait_for_timeout(2000)
@@ -457,6 +430,35 @@ class ToastDownloader:
             }""", timeout=15000)
         except Exception:
             self.page.wait_for_timeout(5000)
+
+    def _open_report_view(self, report_type):
+        report = get_report_type(report_type)
+        self.log(f"    Opening report: {report.label}")
+        self.page.goto(f"{REPORTS_BASE}/{report.landing_path}", wait_until="domcontentloaded", timeout=60000)
+        self.page.wait_for_timeout(3000)
+        self._dismiss_overlays()
+
+        if report.tab_label:
+            opened = self._click_first_visible(
+                [
+                    f'[role="tab"]:text-is("{report.tab_label}")',
+                    f'[role="menuitem"]:text-is("{report.tab_label}")',
+                    f'button:text-is("{report.tab_label}")',
+                    f'a:text-is("{report.tab_label}")',
+                    f'text="{report.tab_label}"',
+                ],
+                timeout=2500,
+                log_msg=f"    Opened tab: {report.tab_label}",
+            )
+            if not opened:
+                raise RuntimeError(f"Could not open Toast report tab '{report.tab_label}'")
+            self.page.wait_for_timeout(2000)
+            try:
+                self.page.wait_for_load_state("networkidle", timeout=30000)
+            except Exception:
+                pass
+            self.page.wait_for_timeout(1000)
+            self._dismiss_overlays()
 
     def _click_download_icon(self):
         """Click the download icon using JS click."""
@@ -478,7 +480,7 @@ class ToastDownloader:
                 pass
         return False
 
-    def _download_report(self, save_dir):
+    def _download_report(self, save_dir, report_type="sales_summary"):
         """Click download icon -> Tab -> Enter. Returns file metadata or None."""
         if not self._click_download_icon():
             self.log("    Download button not found")
@@ -506,7 +508,7 @@ class ToastDownloader:
             filename = download.suggested_filename or "report.xlsx"
             filepath = os.path.join(save_dir, filename)
             download.save_as(filepath)
-            validation = validate_toast_report_file(filepath)
+            validation = validate_toast_report_file(filepath, report_type=report_type)
             if not validation.ok:
                 self.log(f"    Downloaded file failed validation: {'; '.join(validation.errors)}")
                 return None
@@ -541,7 +543,7 @@ class ToastDownloader:
         dates = [target_date] if target_date else None
         return self.download_reports_daterange(locations=locations, dates=dates)
 
-    def download_reports_daterange(self, locations=None, dates=None):
+    def download_reports_daterange(self, locations=None, dates=None, report_types=None):
         """
         Download reports for given locations across a date range.
 
@@ -549,16 +551,18 @@ class ToastDownloader:
             locations: list of location names. None = all locations.
             dates: list of date strings (MM/DD/YYYY for Toast).
                    None = use Yesterday for all.
+            report_types: list of report type keys. None = sales_summary only.
 
         Returns:
             dict with success, fail, total counts and list of downloaded files.
         """
         locations = locations or TOAST_LOCATIONS
+        reports = normalize_report_types(report_types)
         if not dates:
             dates = [None]  # None = Yesterday
 
         results = {"success": 0, "fail": 0, "total": 0, "files": []}
-        total_tasks = len(locations) * len(dates)
+        total_tasks = len(locations) * len(dates) * len(reports)
 
         os.makedirs(self.download_dir, exist_ok=True)
 
@@ -566,107 +570,105 @@ class ToastDownloader:
             self._start_browser()
             self._login()
 
-            # Navigate to Sales Summary
-            self.log("Opening Sales Summary...")
-            self.page.goto(f"{REPORTS_BASE}/sales/sales-summary",
-                          wait_until="networkidle", timeout=30000)
-            self.page.wait_for_timeout(5000)
-            self._dismiss_overlays()
-            self.page.wait_for_timeout(2000)
-
             self.log(f"Current URL: {self.page.url}")
-            self.log(f"Downloading for {len(locations)} locations × {len(dates)} date(s)")
+            self.log(f"Downloading for {len(locations)} locations × {len(dates)} date(s) × {len(reports)} report type(s)")
 
             task_num = 0
 
             for i, loc_name in enumerate(locations):
-                loc_dir = os.path.join(self.download_dir, self._sanitize(loc_name))
-                os.makedirs(loc_dir, exist_ok=True)
-
                 self.log(f"\n[Location {i+1}/{len(locations)}] {loc_name}")
 
                 # Switch location
                 if not self._switch_location(loc_name):
                     self.log(f"  Could not switch to {loc_name}, skipping")
-                    results["fail"] += len(dates)
-                    task_num += len(dates)
+                    skipped = len(dates) * len(reports)
+                    results["fail"] += skipped
+                    task_num += skipped
                     continue
-                self._dismiss_overlays()
-
-                # Navigate to sales summary for this location
-                self.page.goto(f"{REPORTS_BASE}/sales/sales-summary",
-                              wait_until="networkidle", timeout=30000)
-                self.page.wait_for_timeout(3000)
                 self._dismiss_overlays()
 
                 # Loop through each date
                 for j, date_str in enumerate(dates):
-                    task_num += 1
-                    results["total"] += 1
-
                     date_label = date_str or "Yesterday"
-                    self.on_progress(task_num, total_tasks, f"{loc_name} - {date_label}")
                     self.log(f"  [{j+1}/{len(dates)}] Date: {date_label}")
+                    for report in reports:
+                        task_num += 1
+                        results["total"] += 1
+                        self.on_progress(task_num, total_tasks, f"{loc_name} - {date_label} - {report.label}")
+                        self.log(f"    Report: {report.label}")
 
-                    # Select date using Custom date picker
-                    # For every date: click date picker → Custom date → fill Start/End → Apply
-                    if date_str:
-                        if not self._select_custom_date(date_str):
-                            self.log(f"    Could not set date {date_str}, skipping")
-                            results["fail"] += 1
-                            continue
-                    else:
-                        # No date specified = use Yesterday
-                        if not self._open_date_picker():
-                            results["fail"] += 1
-                            continue
-                        yesterday_opt = self.page.locator('text="Yesterday"').first
                         try:
-                            if yesterday_opt.is_visible(timeout=2000):
-                                yesterday_opt.click()
-                                self.page.wait_for_timeout(3000)
-                                try:
-                                    self.page.wait_for_load_state("networkidle", timeout=10000)
-                                except Exception:
-                                    pass
-                        except Exception:
+                            self._open_report_view(report.key)
+                        except Exception as exc:
+                            self.log(f"    Could not open report view: {exc}")
                             results["fail"] += 1
                             continue
 
-                    self._dismiss_overlays()
+                        if date_str:
+                            if not self._select_custom_date(date_str):
+                                self.log(f"    Could not set date {date_str}, skipping")
+                                results["fail"] += 1
+                                continue
+                        else:
+                            if not self._open_date_picker():
+                                results["fail"] += 1
+                                continue
+                            yesterday_opt = self.page.locator('text="Yesterday"').first
+                            try:
+                                if yesterday_opt.is_visible(timeout=2000):
+                                    yesterday_opt.click()
+                                    self.page.wait_for_timeout(3000)
+                                    try:
+                                        self.page.wait_for_load_state("networkidle", timeout=30000)
+                                    except Exception:
+                                        pass
+                            except Exception:
+                                results["fail"] += 1
+                                continue
 
-                    # Wait for report data to load
-                    self._wait_for_report_ready()
-                    self._dismiss_overlays()
+                        self._dismiss_overlays()
+                        self._wait_for_report_ready()
+                        self._dismiss_overlays()
 
-                    # Download with validation + retry
-                    download_info = None
-                    last_error = None
-                    for attempt in range(1, self.max_download_attempts + 1):
-                        if attempt > 1:
-                            backoff = min(2 ** (attempt - 1), 8)
-                            self.log(f"    Retry {attempt}/{self.max_download_attempts} after {backoff}s backoff")
-                            self.page.wait_for_timeout(backoff * 1000)
-                            self._dismiss_overlays()
-                            self._wait_for_report_ready()
-                        download_info = self._download_report(loc_dir)
-                        self.run_audit.append({
-                            "location": loc_name,
-                            "date": date_label,
-                            "attempt": attempt,
-                            "success": bool(download_info),
-                        })
+                        report_dir = build_local_report_dir(self.download_dir, self._sanitize(loc_name), report.key)
+                        os.makedirs(report_dir, exist_ok=True)
+
+                        download_info = None
+                        last_error = None
+                        for attempt in range(1, self.max_download_attempts + 1):
+                            if attempt > 1:
+                                backoff = min(2 ** (attempt - 1), 8)
+                                self.log(f"    Retry {attempt}/{self.max_download_attempts} after {backoff}s backoff")
+                                self.page.wait_for_timeout(backoff * 1000)
+                                self._dismiss_overlays()
+                                self._wait_for_report_ready()
+                            download_info = self._download_report(str(report_dir), report_type=report.key)
+                            self.run_audit.append({
+                                "location": loc_name,
+                                "date": date_label,
+                                "report_type": report.key,
+                                "attempt": attempt,
+                                "success": bool(download_info),
+                            })
+                            if download_info:
+                                break
+                            last_error = "download validation failed or file was not saved"
+
                         if download_info:
-                            break
-                        last_error = "download validation failed or file was not saved"
-
-                    if download_info:
-                        results["success"] += 1
-                        results["files"].append({"location": loc_name, **download_info})
-                    else:
-                        results["fail"] += 1
-                        if last_error:
-                            self.log(f"    Final failure: {last_error}")
+                            results["success"] += 1
+                            results["files"].append(
+                                {
+                                    "location": loc_name,
+                                    "report_key": report.key,
+                                    "report_label": report.label,
+                                    "report_folder": report.folder_name,
+                                    **download_info,
+                                }
+                            )
+                        else:
+                            results["fail"] += 1
+                            if last_error:
+                                self.log(f"    Final failure: {last_error}")
 
             self.on_progress(total_tasks, total_tasks, "Done")
 

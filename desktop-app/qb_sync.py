@@ -927,11 +927,17 @@ def find_report_file(store_name, store_config, date_str):
     files = []
     for loc in locations:
         loc_dir = REPORTS_DIR / loc
-        if not loc_dir.exists():
-            continue
         pattern = f"SalesSummary_{date_str}_{date_str}.xlsx"
-        filepath = loc_dir / pattern
-        if filepath.exists():
-            files.append({"location": loc, "filepath": filepath})
+        candidates = []
+        nested_dir = loc_dir / "Sale Summary"
+        if nested_dir.exists():
+            candidates.append(nested_dir / pattern)
+        if loc_dir.exists():
+            candidates.append(loc_dir / pattern)
+
+        for filepath in candidates:
+            if filepath.exists():
+                files.append({"location": loc, "filepath": filepath})
+                break
 
     return files

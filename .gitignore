@@ -4,7 +4,8 @@ __pycache__/
 venv/
 .pytest_cache/
 .toast-session.json
-.env.qb
+desktop-app/.env
+desktop-app/.env.qb
 credentials.json
 token.json
 local-config.json

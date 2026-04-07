@@ -164,3 +164,21 @@ def test_load_csv_mapping_overrides_store_config(tmp_path, monkeypatch):
     assert updated["sales_category_map"]["Ramen"] == "Food Sales"
     assert updated["fixed_items"]["discounts"] == "Discounts"
     assert updated["fixed_items"]["tips"] == "Tips Payable"
+
+
+def test_find_report_file_supports_nested_sale_summary_folder(tmp_path, monkeypatch):
+    nested_dir = tmp_path / "Stockton" / "Sale Summary"
+    nested_dir.mkdir(parents=True)
+    report_path = nested_dir / "SalesSummary_2026-03-28_2026-03-28.xlsx"
+    report_path.write_bytes(b"placeholder")
+
+    monkeypatch.setattr(qb_sync, "REPORTS_DIR", tmp_path)
+
+    files = qb_sync.find_report_file(
+        "Stockton",
+        {"toast_location": "Stockton"},
+        "2026-03-28",
+    )
+
+    assert len(files) == 1
+    assert files[0]["filepath"] == report_path

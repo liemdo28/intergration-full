@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import hashlib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -46,7 +47,68 @@ def compute_sha256(path: str | Path) -> str:
     return digest.hexdigest()
 
 
-def validate_toast_report_file(path: str | Path) -> ReportValidationResult:
+def _validate_csv_report(report_path: Path, errors: list[str], warnings: list[str]) -> list[str]:
+    available_sheets = ["CSV"]
+    try:
+        with open(report_path, "r", encoding="utf-8-sig", newline="") as fh:
+            reader = csv.reader(fh)
+            rows = []
+            for _ in range(2):
+                try:
+                    rows.append(next(reader))
+                except StopIteration:
+                    break
+        if not rows or not rows[0]:
+            errors.append("CSV has no headers")
+        elif len(rows) < 2:
+            warnings.append("CSV has no data rows")
+    except Exception as exc:
+        errors.append(f"CSV validation failed: {exc}")
+    return available_sheets
+
+
+def _validate_workbook_report(report_path: Path, report_type: str, errors: list[str], warnings: list[str]) -> list[str]:
+    available_sheets: list[str] = []
+    workbook = openpyxl.load_workbook(report_path, read_only=True, data_only=True)
+    try:
+        available_sheets = list(workbook.sheetnames)
+        if report_type == "sales_summary":
+            missing = [sheet for sheet in REQUIRED_SHEETS if sheet not in workbook.sheetnames]
+            if missing:
+                errors.append("Missing required sheets: " + ", ".join(missing))
+            for sheet_name in REQUIRED_SHEETS:
+                if sheet_name not in workbook.sheetnames:
+                    continue
+                worksheet = workbook[sheet_name]
+                rows = list(worksheet.iter_rows(values_only=True, max_row=2))
+                if not rows or not rows[0]:
+                    errors.append(f"Sheet '{sheet_name}' has no headers")
+                elif len(rows) < 2:
+                    warnings.append(f"Sheet '{sheet_name}' has no data rows")
+            return available_sheets
+
+        if not workbook.sheetnames:
+            errors.append("Workbook has no sheets")
+            return available_sheets
+
+        first_sheet_with_headers = None
+        for sheet_name in workbook.sheetnames:
+            worksheet = workbook[sheet_name]
+            rows = list(worksheet.iter_rows(values_only=True, max_row=2))
+            if rows and rows[0]:
+                first_sheet_with_headers = sheet_name
+                if len(rows) < 2:
+                    warnings.append(f"Sheet '{sheet_name}' has no data rows")
+                break
+
+        if not first_sheet_with_headers:
+            errors.append("Workbook has no sheet with headers")
+    finally:
+        workbook.close()
+    return available_sheets
+
+
+def validate_toast_report_file(path: str | Path, report_type: str = "sales_summary") -> ReportValidationResult:
     report_path = Path(path)
     errors: list[str] = []
     warnings: list[str] = []
@@ -70,21 +132,10 @@ def validate_toast_report_file(path: str | Path) -> ReportValidationResult:
     available_sheets: list[str] = []
     if not errors:
         try:
-            workbook = openpyxl.load_workbook(report_path, read_only=True, data_only=True)
-            available_sheets = list(workbook.sheetnames)
-            missing = [sheet for sheet in REQUIRED_SHEETS if sheet not in workbook.sheetnames]
-            if missing:
-                errors.append("Missing required sheets: " + ", ".join(missing))
-            for sheet_name in REQUIRED_SHEETS:
-                if sheet_name not in workbook.sheetnames:
-                    continue
-                worksheet = workbook[sheet_name]
-                rows = list(worksheet.iter_rows(values_only=True, max_row=2))
-                if not rows or not rows[0]:
-                    errors.append(f"Sheet '{sheet_name}' has no headers")
-                elif len(rows) < 2:
-                    warnings.append(f"Sheet '{sheet_name}' has no data rows")
-            workbook.close()
+            if report_path.suffix.lower() == ".csv":
+                available_sheets = _validate_csv_report(report_path, errors, warnings)
+            else:
+                available_sheets = _validate_workbook_report(report_path, report_type, errors, warnings)
         except Exception as exc:
             errors.append(f"Workbook validation failed: {exc}")
 
