@@ -51,21 +51,21 @@ def test_validate_toast_report_file_rejects_missing_required_sheets(tmp_path):
     assert any("Missing required sheets" in error for error in result.errors)
 
 
-def test_validate_toast_report_file_accepts_item_detail_workbook(tmp_path):
+def test_validate_toast_report_file_accepts_order_items_workbook(tmp_path):
     path = tmp_path / "ItemDetails_2026-03-28.xlsx"
     _build_tabular_workbook(path, sheet_name="Item Details")
 
-    result = validate_toast_report_file(path, report_type="item_detail")
+    result = validate_toast_report_file(path, report_type="order_items")
 
     assert result.ok is True
     assert result.errors == []
 
 
-def test_validate_toast_report_file_accepts_payment_csv(tmp_path):
+def test_validate_toast_report_file_accepts_payments_csv(tmp_path):
     path = tmp_path / "Payments_2026-03-28.csv"
     path.write_text("Payment Type,Amount\nCard,125.50\n", encoding="utf-8")
 
-    result = validate_toast_report_file(path, report_type="payment")
+    result = validate_toast_report_file(path, report_type="payments")
 
     assert result.ok is True
     assert result.available_sheets == ["CSV"]

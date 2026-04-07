@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from toast_reports import REPORT_TYPES
+from toast_reports import REPORT_TYPES, get_report_type, infer_report_type, normalize_report_types
 
 
 KNOWN_TOAST_STORES = (
@@ -122,21 +122,7 @@ def _parse_iso_or_none(value: str | None) -> datetime | None:
 
 
 def _report_key_from_parts(parts: tuple[str, ...], filename: str) -> str:
-    lowered_parts = {part.strip().lower() for part in parts}
-    for key, report in REPORT_TYPES.items():
-        if report.folder_name.lower() in lowered_parts:
-            return key
-
-    stem = Path(filename).stem.lower()
-    if stem.startswith("salessummary"):
-        return "sales_summary"
-    if "item" in stem and "detail" in stem:
-        return "item_detail"
-    if "payment" in stem:
-        return "payment"
-    if "order" in stem and "detail" not in stem:
-        return "order"
-    return "sales_summary"
+    return infer_report_type(parts, filename).key
 
 
 def _record_sort_key(record: dict) -> tuple[str, str, str]:
@@ -215,8 +201,11 @@ def _collect_manifest_download_records(base_dir: Path) -> tuple[dict[tuple[str, 
             store = attempt.get("location")
             if not store:
                 continue
-            report_key = attempt.get("report_type") or "sales_summary"
-            report = REPORT_TYPES.get(report_key, REPORT_TYPES["sales_summary"])
+            raw_report_key = attempt.get("report_type") or "sales_summary"
+            try:
+                report = get_report_type(raw_report_key)
+            except ValueError:
+                report = REPORT_TYPES["sales_summary"]
             date_value = attempt.get("date")
             if isinstance(date_value, str) and "/" in date_value:
                 try:
@@ -244,8 +233,11 @@ def _collect_manifest_download_records(base_dir: Path) -> tuple[dict[tuple[str, 
             filepath = item.get("filepath")
             if not store or not filepath:
                 continue
-            report_key = item.get("report_key") or _report_key_from_parts(tuple(Path(filepath).parts), Path(filepath).name)
-            report = REPORT_TYPES.get(report_key, REPORT_TYPES["sales_summary"])
+            raw_report_key = item.get("report_key") or _report_key_from_parts(tuple(Path(filepath).parts), Path(filepath).name)
+            try:
+                report = get_report_type(raw_report_key)
+            except ValueError:
+                report = REPORT_TYPES["sales_summary"]
             candidate = {
                 "store": store,
                 "report_key": report.key,
@@ -362,11 +354,12 @@ def get_auto_download_plan(
     state = collect_download_state(resolved_base)
     latest_by_store_report = state["latest_by_store_report"]
     plan_items = []
+    normalized_reports = normalize_report_types(report_types)
 
     for store in selected_locations:
         target_end = get_safe_target_date([store], include_today=include_today, now=now)
-        for report_key in report_types:
-            last_record = latest_by_store_report.get((store, report_key))
+        for report in normalized_reports:
+            last_record = latest_by_store_report.get((store, report.key))
             if last_record and last_record.get("business_date"):
                 start_date = _next_day(last_record["business_date"])
             else:
@@ -375,8 +368,8 @@ def get_auto_download_plan(
                 plan_items.append(
                     {
                         "store": store,
-                        "report_key": report_key,
-                        "report_label": REPORT_TYPES[report_key].label,
+                        "report_key": report.key,
+                        "report_label": report.label,
                         "start_date": start_date,
                         "end_date": target_end,
                         "last_download_date": (last_record or {}).get("business_date"),

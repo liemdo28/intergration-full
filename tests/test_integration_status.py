@@ -146,3 +146,11 @@ def test_build_integration_snapshot_includes_suggestions(tmp_path):
     assert snapshot["summary"]["download_rows"] >= 1
     assert snapshot["latest_downloads"][0]["store"] == "Stockton"
     assert any(item["kind"] == "download_gap" for item in snapshot["ai_suggestions"])
+
+
+def test_build_integration_snapshot_canonicalizes_legacy_report_keys(tmp_path):
+    _write_download_manifest(tmp_path, store="Stockton", report_key="payment", business_date="2026-04-05")
+
+    snapshot = build_integration_snapshot(base_dir=tmp_path, now=datetime(2026, 4, 7, 20, 0, tzinfo=UTC))
+
+    assert snapshot["latest_downloads"][0]["report_key"] == "payments"
