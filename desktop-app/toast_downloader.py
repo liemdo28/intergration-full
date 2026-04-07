@@ -7,9 +7,11 @@ import json
 import os
 import re
 import time
+from datetime import datetime
 from pathlib import Path
 from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
 from app_paths import runtime_path
+from report_inventory import find_existing_local_report
 from report_validator import validate_toast_report_file
 from date_parser import validate_toast_date_format
 from toast_reports import build_local_report_dir, get_report_type, normalize_report_types
@@ -31,12 +33,13 @@ class ToastLoginRequiredError(RuntimeError):
 
 class ToastDownloader:
     def __init__(self, download_dir=None, headless=False, session_file=None,
-                 on_log=None, on_progress=None, max_download_attempts=3):
+                 on_log=None, on_progress=None, on_report_file=None, max_download_attempts=3):
         self.download_dir = download_dir or DEFAULT_DOWNLOAD_DIR
         self.headless = headless
         self.session_file = session_file or DEFAULT_SESSION_FILE
         self.on_log = on_log or (lambda msg: None)
         self.on_progress = on_progress or (lambda cur, total, msg: None)
+        self.on_report_file = on_report_file or (lambda item: None)
         self.max_download_attempts = max(1, int(max_download_attempts))
         self.playwright = None
         self.browser = None
@@ -46,6 +49,21 @@ class ToastDownloader:
 
     def log(self, msg):
         self.on_log(msg)
+
+    def _emit_report_file(self, payload):
+        try:
+            self.on_report_file(dict(payload))
+        except Exception as exc:
+            self.log(f"    Report file callback failed: {exc}")
+
+    @staticmethod
+    def _to_business_date(date_str):
+        if not date_str:
+            return None
+        try:
+            return datetime.strptime(date_str, "%m/%d/%Y").strftime("%Y-%m-%d")
+        except ValueError:
+            return None
 
     def _is_logged_in(self, url=None):
         target = url or self.page.url
@@ -566,7 +584,7 @@ class ToastDownloader:
         if not dates:
             dates = [None]  # None = Yesterday
 
-        results = {"success": 0, "fail": 0, "total": 0, "files": []}
+        results = {"success": 0, "fail": 0, "skipped": 0, "total": 0, "files": []}
         total_tasks = len(locations) * len(dates) * len(reports)
 
         os.makedirs(self.download_dir, exist_ok=True)
@@ -637,6 +655,42 @@ class ToastDownloader:
 
                         report_dir = build_local_report_dir(self.download_dir, self._sanitize(loc_name), report.key)
                         os.makedirs(report_dir, exist_ok=True)
+                        business_date = self._to_business_date(date_str)
+
+                        if business_date:
+                            existing_file = find_existing_local_report(
+                                self.download_dir,
+                                store_name=self._sanitize(loc_name),
+                                report_type=report.key,
+                                business_date=business_date,
+                            )
+                            if existing_file:
+                                self.log(f"    Already exists locally for {business_date}: {existing_file['filename']}")
+                                results["success"] += 1
+                                results["skipped"] += 1
+                                results["files"].append(
+                                    {
+                                        "location": loc_name,
+                                        "report_key": report.key,
+                                        "report_label": report.label,
+                                        "report_folder": report.folder_name,
+                                        "business_date": business_date,
+                                        **existing_file,
+                                    }
+                                )
+                                self._emit_report_file(results["files"][-1])
+                                self.run_audit.append(
+                                    {
+                                        "location": loc_name,
+                                        "date": date_label,
+                                        "report_type": report.key,
+                                        "attempt": 0,
+                                        "success": True,
+                                        "skipped": True,
+                                        "business_date": business_date,
+                                    }
+                                )
+                                continue
 
                         download_info = None
                         last_error = None
@@ -654,6 +708,7 @@ class ToastDownloader:
                                 "report_type": report.key,
                                 "attempt": attempt,
                                 "success": bool(download_info),
+                                "business_date": business_date,
                             })
                             if download_info:
                                 break
@@ -667,9 +722,12 @@ class ToastDownloader:
                                     "report_key": report.key,
                                     "report_label": report.label,
                                     "report_folder": report.folder_name,
+                                    "business_date": business_date,
+                                    "status": "downloaded",
                                     **download_info,
                                 }
                             )
+                            self._emit_report_file(results["files"][-1])
                         else:
                             results["fail"] += 1
                             if last_error:

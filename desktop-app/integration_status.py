@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from report_inventory import group_missing_report_records, refresh_report_inventory
 from toast_reports import REPORT_TYPES, get_report_type, infer_report_type, normalize_report_types
 from worker_runtime import build_runtime_snapshot
 
@@ -254,10 +255,16 @@ def _collect_manifest_download_records(base_dir: Path) -> tuple[dict[tuple[str, 
     return success_latest, attempt_latest
 
 
-def collect_download_state(base_dir: str | Path | None = None) -> dict:
+def collect_download_state(
+    base_dir: str | Path | None = None,
+    *,
+    include_today: bool = False,
+    now: datetime | None = None,
+) -> dict:
     resolved_base = Path(base_dir) if base_dir else Path(__file__).resolve().parent
     local_latest = _collect_local_download_records(resolved_base)
     manifest_success, manifest_attempts = _collect_manifest_download_records(resolved_base)
+    inventory_snapshot = refresh_report_inventory(resolved_base, include_today=include_today, now=now)
 
     combined = dict(manifest_success)
     for key, record in local_latest.items():
@@ -278,6 +285,9 @@ def collect_download_state(base_dir: str | Path | None = None) -> dict:
         "latest_by_store_report": combined,
         "latest_downloads": latest_downloads,
         "latest_attempts_by_store_report": manifest_attempts,
+        "inventory_rows": inventory_snapshot["inventory_rows"],
+        "missing_records": inventory_snapshot["missing_rows"],
+        "missing_groups": group_missing_report_records(inventory_snapshot["missing_rows"]),
     }
 
 
@@ -352,30 +362,26 @@ def get_auto_download_plan(
     now: datetime | None = None,
 ) -> dict:
     resolved_base = Path(base_dir) if base_dir else Path(__file__).resolve().parent
-    state = collect_download_state(resolved_base)
-    latest_by_store_report = state["latest_by_store_report"]
+    state = collect_download_state(resolved_base, include_today=include_today, now=now)
+    missing_groups = state["missing_groups"]
     plan_items = []
     normalized_reports = normalize_report_types(report_types)
+    selected_keys = {report.key for report in normalized_reports}
 
     for store in selected_locations:
-        target_end = get_safe_target_date([store], include_today=include_today, now=now)
-        for report in normalized_reports:
-            last_record = latest_by_store_report.get((store, report.key))
-            if last_record and last_record.get("business_date"):
-                start_date = _next_day(last_record["business_date"])
-            else:
-                start_date = target_end
-            if start_date and start_date <= target_end:
-                plan_items.append(
-                    {
-                        "store": store,
-                        "report_key": report.key,
-                        "report_label": report.label,
-                        "start_date": start_date,
-                        "end_date": target_end,
-                        "last_download_date": (last_record or {}).get("business_date"),
-                    }
-                )
+        for group in missing_groups:
+            if group["store"] != store or group["report_key"] not in selected_keys:
+                continue
+            plan_items.append(
+                {
+                    "store": store,
+                    "report_key": group["report_key"],
+                    "report_label": group["report_label"],
+                    "start_date": group["start_date"],
+                    "end_date": group["end_date"],
+                    "missing_days": group["count"],
+                }
+            )
 
     if not plan_items:
         target = get_safe_target_date(selected_locations, include_today=include_today, now=now)
@@ -404,7 +410,7 @@ def get_auto_qb_sync_plan(
     now: datetime | None = None,
 ) -> dict:
     resolved_base = Path(base_dir) if base_dir else Path(__file__).resolve().parent
-    download_state = collect_download_state(resolved_base)
+    download_state = collect_download_state(resolved_base, include_today=include_today, now=now)
     qb_state = collect_qb_sync_state(resolved_base)
     latest_downloads = download_state["latest_by_store_report"]
     latest_qb_success = qb_state["latest_success_by_store_source"]
@@ -467,46 +473,38 @@ def _build_ai_suggestions(
     latest_attempts = download_state["latest_attempts_by_store_report"]
     latest_qb_success = qb_state["latest_success_by_store_source"]
     latest_qb_attempts = qb_state["latest_attempts_by_store_source"]
+    missing_groups = download_state.get("missing_groups", [])
 
-    for store in KNOWN_TOAST_STORES:
-        target_end = get_safe_target_date([store], include_today=include_today, now=now)
-        missing_reports = []
-        earliest_start = None
-        for report_key, report in REPORT_TYPES.items():
-            last_download = latest_downloads.get((store, report_key))
-            if last_download and last_download.get("business_date"):
-                start_date = _next_day(last_download["business_date"])
-            else:
-                start_date = target_end
-            if start_date and start_date <= target_end:
-                missing_reports.append(report.label)
-                earliest_start = start_date if earliest_start is None else min(earliest_start, start_date)
-
-        if missing_reports and earliest_start:
+    for group in missing_groups:
+        report = get_report_type(group["report_key"])
+        if report.download_supported:
             suggestions.append(
                 {
-                    "id": f"download-gap-{store.lower().replace(' ', '-')}",
+                    "id": (
+                        f"download-gap-{group['store'].lower().replace(' ', '-')}-"
+                        f"{group['report_key']}-{group['start_date']}"
+                    ),
                     "kind": "download_gap",
                     "priority": 3,
-                    "store": store,
+                    "store": group["store"],
                     "action_label": "Download missing reports",
-                    "title": f"{store}: fill missing Toast reports",
-                    "description": f"Download {', '.join(missing_reports)} from {earliest_start} to {target_end}.",
-                    "start_date": earliest_start,
-                    "end_date": target_end,
-                    "report_types": [
-                        report.key
-                        for report_key, report in REPORT_TYPES.items()
-                        if report.label in missing_reports
-                    ],
+                    "title": f"{group['store']}: missing {group['report_label']}",
+                    "description": (
+                        f"{group['report_label']} is missing for {group['count']} day(s) "
+                        f"from {group['start_date']} to {group['end_date']}."
+                    ),
+                    "start_date": group["start_date"],
+                    "end_date": group["end_date"],
+                    "report_types": [group["report_key"]],
                     "prompt": (
-                        f"Review Toast POS integration for {store} and download missing "
-                        f"{', '.join(missing_reports)} reports from {earliest_start} to {target_end} "
+                        f"Review Toast POS integration for {group['store']} and download missing "
+                        f"{group['report_label']} from {group['start_date']} to {group['end_date']} "
                         f"using the store's US business date."
                     ),
                 }
             )
 
+    for store in KNOWN_TOAST_STORES:
         sales_download = latest_downloads.get((store, "sales_summary"))
         qb_success = latest_qb_success.get((store, "Toasttab"))
         if sales_download and sales_download.get("business_date"):
@@ -594,7 +592,7 @@ def build_integration_snapshot(
     now: datetime | None = None,
 ) -> dict:
     resolved_base = Path(base_dir) if base_dir else Path(__file__).resolve().parent
-    download_state = collect_download_state(resolved_base)
+    download_state = collect_download_state(resolved_base, include_today=include_today_for_suggestions, now=now)
     qb_state = collect_qb_sync_state(resolved_base)
     clocks = get_world_clocks(now)
     suggestions = _build_ai_suggestions(
@@ -606,12 +604,14 @@ def build_integration_snapshot(
 
     latest_downloads = download_state["latest_downloads"][:max_items]
     latest_qb_sync = qb_state["latest_success"][:max_items]
+    missing_records = download_state["missing_records"][:max_items]
     summary = {
         "stores_tracked": len({item["store"] for item in download_state["latest_downloads"]} | {item["store"] for item in qb_state["latest_success"]}),
         "download_rows": len(download_state["latest_downloads"]),
         "qb_sync_rows": len(qb_state["latest_success"]),
         "last_download_at": next((item.get("saved_at") for item in latest_downloads if item.get("saved_at")), None),
         "last_qb_sync_at": next((item.get("completed_at") for item in latest_qb_sync if item.get("completed_at")), None),
+        "missing_download_record_count": len(download_state["missing_records"]),
         "download_gap_count": sum(1 for item in suggestions if item["kind"] == "download_gap"),
         "qb_gap_count": sum(1 for item in suggestions if item["kind"] == "qb_gap"),
         "failed_qb_count": sum(1 for item in suggestions if item["kind"] == "qb_failed"),
@@ -624,6 +624,7 @@ def build_integration_snapshot(
         "runtime": build_runtime_snapshot(),
         "summary": summary,
         "latest_downloads": latest_downloads,
+        "missing_download_records": missing_records,
         "latest_qb_sync": latest_qb_sync,
         "latest_qb_attempts": qb_state["latest_attempts"][:max_items],
         "ai_suggestions": suggestions[:max_items],

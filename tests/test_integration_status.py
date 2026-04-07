@@ -137,6 +137,25 @@ def test_auto_download_and_qb_plans_follow_latest_history(tmp_path):
     assert qb_plan["end_date"] == "2026-04-04"
 
 
+def test_auto_download_plan_detects_internal_missing_day(tmp_path):
+    report_dir = tmp_path / "toast-reports" / "Stockton" / "Order Details"
+    report_dir.mkdir(parents=True, exist_ok=True)
+    (report_dir / "2026-02-24_OrderDetails_Stockton.csv").write_text("demo", encoding="utf-8")
+    (report_dir / "2026-02-26_OrderDetails_Stockton.csv").write_text("demo", encoding="utf-8")
+
+    plan = get_auto_download_plan(
+        ["Stockton"],
+        ["orders"],
+        include_today=False,
+        base_dir=tmp_path,
+        now=datetime(2026, 2, 27, 20, 0, tzinfo=UTC),
+    )
+
+    assert plan["has_gap"] is True
+    assert plan["start_date"] == "2026-02-25"
+    assert plan["end_date"] == "2026-02-25"
+
+
 def test_build_integration_snapshot_includes_suggestions(tmp_path):
     _write_download_manifest(tmp_path, store="Stockton", report_key="sales_summary", business_date="2026-04-05")
     _write_sync_ledger(tmp_path, store="Stockton", business_date="2026-04-04", status="failed")

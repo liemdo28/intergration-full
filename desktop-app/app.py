@@ -41,6 +41,7 @@ from audit_utils import (
 from delete_policy import load_delete_policy
 from diagnostics import format_report_lines, run_environment_checks
 from report_validator import validate_toast_report_file
+from report_inventory import refresh_report_inventory
 from date_parser import get_date_range_from_inputs
 from recovery_center import (
     backup_and_remove,
@@ -867,6 +868,8 @@ class DownloadTab(ctk.CTkFrame):
             "total": 0,
         }
         silent_mode = False
+        gdrive = None
+        gdrive_ready = False
         try:
             from toast_downloader import ToastDownloader, ToastLoginRequiredError
             app_root = self.winfo_toplevel()
@@ -879,11 +882,52 @@ class DownloadTab(ctk.CTkFrame):
                 f"{len(report_types)} report type(s): {', '.join(selected_report_names)}"
             )
 
+            if self.upload_gdrive_var.get():
+                try:
+                    from gdrive_service import GDriveService
+                    gdrive = GDriveService(on_log=self.log)
+                    gdrive_ready = gdrive.authenticate()
+                    if gdrive_ready:
+                        self.log("Google Drive ready. Each report will upload immediately after it is available.")
+                    else:
+                        self.log("Google Drive authentication failed - uploads will be skipped.")
+                except Exception as e:
+                    self.log(f"Google Drive error: {e}")
+                    gdrive = None
+                    gdrive_ready = False
+
+            def _handle_report_file(file_info):
+                if not file_info:
+                    return
+                if not gdrive_ready or not gdrive:
+                    return
+                filepath = file_info.get("filepath")
+                if not filepath or not Path(filepath).exists():
+                    return
+                store_name = file_info.get("location") or file_info.get("store")
+                report_key = file_info.get("report_key", "sales_summary")
+                status = file_info.get("status") or file_info.get("source") or ""
+                try:
+                    if status == "existing_local":
+                        existing_drive = gdrive.report_exists(store_name, Path(filepath).name, report_key)
+                        if existing_drive:
+                            self.log(
+                                f"  Drive already has {store_name} / {file_info.get('report_label', report_key)} / "
+                                f"{Path(filepath).name}"
+                            )
+                            return
+                    gdrive.upload_report(filepath, store_name, report_type=report_key)
+                except Exception as upload_error:
+                    self.log(
+                        f"  Upload error for {store_name} / {file_info.get('report_label', report_key)}: {upload_error}"
+                    )
+
             downloader = ToastDownloader(
                 download_dir=str(REPORTS_DIR),
                 headless=headless_downloads,
                 on_log=self.log,
                 on_progress=self.update_progress,
+                on_report_file=_handle_report_file,
             )
 
             toast_dates = []
@@ -894,34 +938,18 @@ class DownloadTab(ctk.CTkFrame):
             results = downloader.download_reports_daterange(locations=locations, dates=toast_dates, report_types=report_types)
             completion_payload = {
                 "ok": results["success"] == results["total"],
-                "message": f"Downloaded {results['success']} of {results['total']} files.",
+                "message": f"Prepared {results['success']} of {results['total']} files.",
                 "success": results["success"],
                 "failed": max(results["total"] - results["success"], 0),
                 "total": results["total"],
             }
+            if results.get("skipped"):
+                completion_payload["message"] += f" Skipped {results['skipped']} existing file(s)."
 
-            if self.upload_gdrive_var.get() and results["files"]:
-                self.log("Uploading to Google Drive...")
-                try:
-                    from gdrive_service import GDriveService
-                    gdrive = GDriveService(on_log=self.log)
-                    if gdrive.authenticate():
-                        for f in results["files"]:
-                            try:
-                                gdrive.upload_report(
-                                    f["filepath"],
-                                    f["location"],
-                                    report_type=f.get("report_key", "sales_summary"),
-                                )
-                            except Exception as e:
-                                self.log(f"  Upload error for {f['location']} / {f.get('report_label', 'Sale Summary')}: {e}")
-                        self.log("Google Drive upload complete")
-                    else:
-                        self.log("Google Drive authentication failed - skipping upload")
-                except Exception as e:
-                    self.log(f"Google Drive error: {e}")
-
-            self.log(f"All done! {results['success']}/{results['total']} downloaded")
+            self.log(
+                f"All done! {results['success']}/{results['total']} prepared "
+                f"({results.get('skipped', 0)} skipped existing)"
+            )
 
         except ToastLoginRequiredError as e:
             self.log(f"Error: {e}")
@@ -934,6 +962,7 @@ class DownloadTab(ctk.CTkFrame):
             self.log(traceback.format_exc())
             completion_payload = {"ok": False, "message": str(e), "success": 0, "failed": len(locations) * len(dates), "total": len(locations) * len(dates)}
         finally:
+            refresh_report_inventory(APP_DIR)
             publish_agentai_snapshot_if_configured(on_log=self.log)
             completion_callback = self._run_completion_callback
             self._run_completion_callback = None

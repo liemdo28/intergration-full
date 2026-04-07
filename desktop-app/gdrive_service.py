@@ -272,6 +272,17 @@ class GDriveService:
                 return files[0], root_name, relative_parts
         return None, None, None
 
+    def report_exists(self, store_name, filename, report_type="sales_summary"):
+        file_info, root_name, relative_parts = self._find_report_file_across_roots(store_name, filename, report_type)
+        if not file_info:
+            return None
+        return {
+            "file_id": file_info["id"],
+            "file_name": file_info["name"],
+            "root_name": root_name,
+            "relative_parts": relative_parts or [store_name],
+        }
+
     def setup_folders(self, store_names, report_types=None):
         reports = normalize_report_types(report_types or DEFAULT_REPORT_TYPE_KEYS)
         self.log("Setting up Google Drive folder structure...")
