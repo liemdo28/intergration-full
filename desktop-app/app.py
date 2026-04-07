@@ -3999,54 +3999,167 @@ class App(ctk.CTk):
         main = ctk.CTkFrame(self, fg_color="transparent")
         main.pack(fill="both", expand=True, padx=10, pady=(5, 0))
 
-        # ── Sidebar (200px) ──
-        sidebar = ctk.CTkFrame(main, width=200, corner_radius=10)
+        self._nav_theme = {
+            "download": {
+                "title": "Download",
+                "description": "Pull Toast reports and save them cleanly.",
+                "icon": "↓",
+                "active_bg": "#2563eb",
+                "active_border": "#60a5fa",
+            },
+            "qb": {
+                "title": "QB Sync",
+                "description": "Review and post sales into QuickBooks.",
+                "icon": "⇄",
+                "active_bg": "#0f766e",
+                "active_border": "#34d399",
+            },
+            "remove": {
+                "title": "Remove",
+                "description": "Find and clean up posted transactions.",
+                "icon": "⌫",
+                "active_bg": "#b45309",
+                "active_border": "#f59e0b",
+            },
+            "settings": {
+                "title": "Settings",
+                "description": "Control Drive, Toast, and app health.",
+                "icon": "⚙",
+                "active_bg": "#475569",
+                "active_border": "#94a3b8",
+            },
+        }
+        self._nav_inactive_bg = "#1f2937"
+        self._nav_inactive_hover = "#273449"
+        self._nav_inactive_border = "#334155"
+        self._nav_sidebar_bg = "#161d29"
+
+        # ── Sidebar ──
+        sidebar = ctk.CTkFrame(main, width=228, corner_radius=16, fg_color=self._nav_sidebar_bg, border_width=1, border_color="#273244")
         sidebar.pack(side="left", fill="y", padx=(0, 10))
         sidebar.pack_propagate(False)
+        self.sidebar = sidebar
 
-        # App brand at top
+        brand_card = ctk.CTkFrame(sidebar, fg_color="#1b2433", corner_radius=14, border_width=1, border_color="#263246")
+        brand_card.pack(fill="x", padx=14, pady=(16, 10))
         ctk.CTkLabel(
-            sidebar, text="🍞  Toast POS",
-            font=ctk.CTkFont(size=16, weight="bold"),
-            text_color="#22d3ee",
-        ).pack(pady=(20, 4))
+            brand_card,
+            text="Toast POS",
+            font=ctk.CTkFont(size=20, weight="bold"),
+            text_color="#f8fafc",
+        ).pack(anchor="w", padx=14, pady=(14, 2))
         ctk.CTkLabel(
-            sidebar, text="Manager", font=ctk.CTkFont(size=13),
-            text_color=("#9ca3af" if ctk.get_appearance_mode() == "dark" else "#6b7280"),
-        ).pack(pady=(0, 20))
+            brand_card,
+            text="Manager",
+            font=ctk.CTkFont(size=13),
+            text_color="#7dd3fc",
+        ).pack(anchor="w", padx=14, pady=(0, 2))
+        ctk.CTkLabel(
+            brand_card,
+            text="Download, sync, and monitor store operations in one place.",
+            font=ctk.CTkFont(size=11),
+            text_color="#94a3b8",
+            justify="left",
+            wraplength=170,
+        ).pack(anchor="w", padx=14, pady=(0, 14))
 
-        # Navigation buttons
-        NAV_ITEMS = [
-            ("download", "Download",    "📥", "#1e3a5f"),   # deep blue
-            ("qb",       "QB Sync",     "💼", "#1e6f5c"),   # teal/green (primary accent)
-            ("remove",   "Remove",      "🗑️", "#3d2b1f"),   # warm dark
-            ("settings", "Settings",    "⚙️", "#2a2a2a"),   # neutral dark
-        ]
+        ctk.CTkLabel(
+            sidebar,
+            text="WORKSPACE",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color="#64748b",
+        ).pack(anchor="w", padx=18, pady=(6, 8))
+
+        nav_stack = ctk.CTkFrame(sidebar, fg_color="transparent")
+        nav_stack.pack(fill="x", padx=14, pady=(0, 0))
 
         self._nav_buttons = {}
         self._tab_frames = {}
+        nav_order = ["download", "qb", "remove", "settings"]
 
-        for key, label, icon, color in NAV_ITEMS:
-            btn = ctk.CTkButton(
-                sidebar, text=f"  {icon}  {label}",
-                command=lambda k=key: self._switch_tab(k),
-                font=ctk.CTkFont(size=14, weight="bold" if key == "qb" else "normal"),
-                anchor="w",
-                height=46,
-                corner_radius=8,
-                fg_color=color,
-                hover_color=color,
-                text_color=("#ffffff" if ctk.get_appearance_mode() == "dark" else "#ffffff"),
-                border_width=0,
+        for key in nav_order:
+            theme = self._nav_theme[key]
+            card = ctk.CTkFrame(
+                nav_stack,
+                fg_color=self._nav_inactive_bg,
+                corner_radius=12,
+                border_width=1,
+                border_color=self._nav_inactive_border,
             )
-            btn.pack(fill="x", padx=10, pady=3)
-            self._nav_buttons[key] = btn
+            card.pack(fill="x", pady=5)
+
+            row = ctk.CTkFrame(card, fg_color="transparent")
+            row.pack(fill="x", padx=12, pady=10)
+
+            indicator = ctk.CTkFrame(row, width=5, height=48, fg_color="transparent", corner_radius=6)
+            indicator.pack(side="left", padx=(0, 10))
+            indicator.pack_propagate(False)
+
+            icon_wrap = ctk.CTkFrame(row, width=34, height=34, corner_radius=10, fg_color="#0f172a")
+            icon_wrap.pack(side="left", padx=(0, 10))
+            icon_wrap.pack_propagate(False)
+            icon_label = ctk.CTkLabel(
+                icon_wrap,
+                text=theme["icon"],
+                font=ctk.CTkFont(size=16, weight="bold"),
+                text_color="#e2e8f0",
+            )
+            icon_label.place(relx=0.5, rely=0.5, anchor="center")
+
+            text_col = ctk.CTkFrame(row, fg_color="transparent")
+            text_col.pack(side="left", fill="x", expand=True)
+
+            title_label = ctk.CTkLabel(
+                text_col,
+                text=theme["title"],
+                anchor="w",
+                font=ctk.CTkFont(size=14, weight="bold"),
+                text_color="#f8fafc",
+            )
+            title_label.pack(anchor="w")
+            desc_label = ctk.CTkLabel(
+                text_col,
+                text=theme["description"],
+                anchor="w",
+                justify="left",
+                font=ctk.CTkFont(size=11),
+                text_color="#94a3b8",
+                wraplength=130,
+            )
+            desc_label.pack(anchor="w", pady=(2, 0))
+
+            self._nav_buttons[key] = {
+                "card": card,
+                "indicator": indicator,
+                "icon_wrap": icon_wrap,
+                "icon_label": icon_label,
+                "title_label": title_label,
+                "desc_label": desc_label,
+            }
+            self._bind_nav_click(card, key)
+            self._bind_nav_click(row, key)
+            self._bind_nav_click(indicator, key)
+            self._bind_nav_click(icon_wrap, key)
+            self._bind_nav_click(icon_label, key)
+            self._bind_nav_click(text_col, key)
+            self._bind_nav_click(title_label, key)
+            self._bind_nav_click(desc_label, key)
 
         # Version at bottom
+        footer = ctk.CTkFrame(sidebar, fg_color="transparent")
+        footer.pack(side="bottom", fill="x", padx=14, pady=(8, 14))
         ctk.CTkLabel(
-            sidebar, text="v2.2", font=ctk.CTkFont(size=11),
-            text_color=("#4b5563" if ctk.get_appearance_mode() == "dark" else "#9ca3af"),
-        ).pack(side="bottom", pady=(0, 15))
+            footer,
+            text="Toast POS Manager v2.2",
+            font=ctk.CTkFont(size=11),
+            text_color="#64748b",
+        ).pack(anchor="w")
+        ctk.CTkLabel(
+            footer,
+            text="Keep finance and store reporting in sync.",
+            font=ctk.CTkFont(size=10),
+            text_color="#475569",
+        ).pack(anchor="w", pady=(2, 0))
 
         # ── Tab Content Area ──
         content = ctk.CTkFrame(main, fg_color="transparent")
@@ -4071,9 +4184,9 @@ class App(ctk.CTk):
 
         # Default to QB Sync tab
         self._active_tab = "qb"
-        self._nav_buttons["qb"].configure(fg_color="#0f766e", hover_color="#0f766e")
         for key in ["download", "remove", "settings"]:
             self._tab_frames[key].pack_forget()
+        self._apply_nav_styles()
 
         # ── Status Bar ──
         status_bar = ctk.CTkFrame(self, height=30, corner_radius=0)
@@ -4089,6 +4202,9 @@ class App(ctk.CTk):
                 label.configure(text=f"{clock['label']}: {clock['display']}")
         self.after(1000, self._refresh_clock_labels)
 
+    def _bind_nav_click(self, widget, key: str):
+        widget.bind("<Button-1>", lambda _event, target=key: self._switch_tab(target))
+
     def _switch_tab(self, key: str):
         """Switch to the given tab, highlighting the active nav button."""
         if key == self._active_tab:
@@ -4098,24 +4214,30 @@ class App(ctk.CTk):
         self._tab_frames[self._active_tab].pack_forget()
         self._tab_frames[key].pack(fill="both", expand=True)
         self._active_tab = key
+        self._apply_nav_styles()
 
-        # Reset all buttons to base colors
-        BASE_COLORS = {
-            "download": "#1e3a5f",
-            "qb":       "#1e6f5c",
-            "remove":   "#3d2b1f",
-            "settings": "#2a2a2a",
-        }
-        ACTIVE_COLOR = {
-            "download": "#2563eb",
-            "qb":       "#0f766e",
-            "remove":   "#92400e",
-            "settings": "#374151",
-        }
-        for k, btn in self._nav_buttons.items():
-            btn.configure(
-                fg_color=ACTIVE_COLOR[k],
-                hover_color=ACTIVE_COLOR[k],
+    def _apply_nav_styles(self):
+        for key, widgets in self._nav_buttons.items():
+            theme = self._nav_theme[key]
+            is_active = key == self._active_tab
+            widgets["card"].configure(
+                fg_color=theme["active_bg"] if is_active else self._nav_inactive_bg,
+                border_color=theme["active_border"] if is_active else self._nav_inactive_border,
+            )
+            widgets["indicator"].configure(
+                fg_color=theme["active_border"] if is_active else "transparent",
+            )
+            widgets["icon_wrap"].configure(
+                fg_color="#eff6ff" if is_active else "#0f172a",
+            )
+            widgets["icon_label"].configure(
+                text_color=theme["active_bg"] if is_active else "#e2e8f0",
+            )
+            widgets["title_label"].configure(
+                text_color="#ffffff" if is_active else "#f8fafc",
+            )
+            widgets["desc_label"].configure(
+                text_color="#dbeafe" if is_active else "#94a3b8",
             )
 
     def run_diagnostics_async(self, show_popup_on_error=False):
