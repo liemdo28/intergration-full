@@ -268,20 +268,23 @@ def make_hero_banner(parent, title, subtitle, right_label=None, *, accent="#1d4e
     hero_top.pack(fill="x", padx=18, pady=(16, 12))
     title_col = ctk.CTkFrame(hero_top, fg_color="transparent")
     title_col.pack(side="left", fill="x", expand=True)
-    ctk.CTkLabel(
+    title_label = ctk.CTkLabel(
         title_col,
         text=title,
         font=ctk.CTkFont(size=22, weight="bold"),
         text_color="#f8fafc",
-    ).pack(anchor="w")
-    ctk.CTkLabel(
+    )
+    title_label.pack(anchor="w")
+    subtitle_label = ctk.CTkLabel(
         title_col,
         text=subtitle,
         font=ctk.CTkFont(size=11),
         text_color="#93c5fd",
         wraplength=650,
         justify="left",
-    ).pack(anchor="w", pady=(4, 0))
+    )
+    subtitle_label.pack(anchor="w", pady=(4, 0))
+    chip = None
     if right_label:
         chip = ctk.CTkFrame(hero_top, fg_color="#172554", corner_radius=14, border_width=1, border_color=accent)
         chip.pack(side="right", padx=(12, 0))
@@ -291,7 +294,12 @@ def make_hero_banner(parent, title, subtitle, right_label=None, *, accent="#1d4e
             font=ctk.CTkFont(size=11, weight="bold"),
             text_color="#dbeafe",
         ).pack(padx=12, pady=10)
-    return hero
+    return {
+        "frame": hero,
+        "title_label": title_label,
+        "subtitle_label": subtitle_label,
+        "badge": chip,
+    }
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -4278,6 +4286,9 @@ class App(ctk.CTk):
 
         self.status_var = ctk.StringVar(value="Ready")
         self.diagnostics_report = None
+        self._compact_header_mode = False
+        self._compact_nav_mode = False
+        self._resize_after_id = None
         self._build_ui()
         self.run_diagnostics_async(False)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -4310,12 +4321,13 @@ class App(ctk.CTk):
             font=ctk.CTkFont(size=24, weight="bold"),
             text_color="#f8fafc",
         ).pack(anchor="w")
-        ctk.CTkLabel(
+        self.header_subtitle_label = ctk.CTkLabel(
             header_left,
             text="Operational control center for Toast downloads, QuickBooks sync, and recovery workflows.",
             font=ctk.CTkFont(size=11),
             text_color="#94a3b8",
-        ).pack(anchor="w", pady=(4, 0))
+        )
+        self.header_subtitle_label.pack(anchor="w", pady=(4, 0))
 
         header_right = ctk.CTkFrame(header_inner, fg_color="transparent")
         header_right.pack(side="right", anchor="e")
@@ -4381,28 +4393,28 @@ class App(ctk.CTk):
             "download": {
                 "title": "Download",
                 "description": "Pull Toast reports and save them cleanly.",
-                "icon": "↓",
+                "icon": "DL",
                 "active_bg": "#2563eb",
                 "active_border": "#60a5fa",
             },
             "qb": {
                 "title": "QB Sync",
                 "description": "Review and post sales into QuickBooks.",
-                "icon": "⇄",
+                "icon": "QB",
                 "active_bg": "#0f766e",
                 "active_border": "#34d399",
             },
             "remove": {
                 "title": "Remove",
                 "description": "Find and clean up posted transactions.",
-                "icon": "⌫",
+                "icon": "RM",
                 "active_bg": "#b45309",
                 "active_border": "#f59e0b",
             },
             "settings": {
                 "title": "Settings",
                 "description": "Control Drive, Toast, and app health.",
-                "icon": "⚙",
+                "icon": "ST",
                 "active_bg": "#475569",
                 "active_border": "#94a3b8",
             },
@@ -4432,14 +4444,15 @@ class App(ctk.CTk):
             font=ctk.CTkFont(size=13),
             text_color="#7dd3fc",
         ).pack(anchor="w", padx=14, pady=(0, 2))
-        ctk.CTkLabel(
+        self.brand_description_label = ctk.CTkLabel(
             brand_card,
             text="Download, sync, and monitor store operations in one place.",
             font=ctk.CTkFont(size=11),
             text_color="#94a3b8",
             justify="left",
             wraplength=170,
-        ).pack(anchor="w", padx=14, pady=(0, 14))
+        )
+        self.brand_description_label.pack(anchor="w", padx=14, pady=(0, 14))
 
         ctk.CTkLabel(
             sidebar,
@@ -4565,6 +4578,8 @@ class App(ctk.CTk):
         for key in ["download", "remove", "settings"]:
             self._tab_frames[key].pack_forget()
         self._apply_nav_styles()
+        self.bind("<Configure>", self._queue_responsive_layout)
+        self.after(50, self._apply_responsive_layout)
 
         # ── Status Bar ──
         status_bar = ctk.CTkFrame(self, height=32, corner_radius=0, fg_color="#0b1220")
@@ -4577,8 +4592,56 @@ class App(ctk.CTk):
         for clock in get_world_clocks():
             label = self.clock_labels.get(clock["key"])
             if label:
-                label.configure(text=f"{clock['label']} · {clock['date'][5:].replace('-', '/')} {clock['time']}")
+                if self._compact_header_mode:
+                    label.configure(text=f"{clock['label']} {clock['time']}")
+                else:
+                    label.configure(text=f"{clock['label']} · {clock['date'][5:].replace('-', '/')} {clock['time']}")
         self.after(1000, self._refresh_clock_labels)
+
+    def _queue_responsive_layout(self, _event=None):
+        if self._resize_after_id:
+            self.after_cancel(self._resize_after_id)
+        self._resize_after_id = self.after(80, self._apply_responsive_layout)
+
+    def _apply_responsive_layout(self):
+        self._resize_after_id = None
+        width = max(self.winfo_width(), self.winfo_reqwidth())
+        compact_header = width < 1260
+        compact_nav = width < 1120
+        self._compact_header_mode = compact_header
+        self._compact_nav_mode = compact_nav
+
+        self.sidebar.configure(width=208 if compact_nav else 228)
+        self.header_subtitle_label.configure(
+            wraplength=420 if compact_header else 560,
+            text=(
+                "Toast downloads, QuickBooks sync, and recovery workflows."
+                if compact_header
+                else "Operational control center for Toast downloads, QuickBooks sync, and recovery workflows."
+            ),
+        )
+        self.brand_description_label.configure(
+            wraplength=142 if compact_nav else 170,
+            text=(
+                "Download, sync, and monitor operations."
+                if compact_nav
+                else "Download, sync, and monitor store operations in one place."
+            ),
+        )
+
+        for key, widgets in self._nav_buttons.items():
+            widgets["desc_label"].configure(
+                text="" if compact_nav else self._nav_theme[key]["description"],
+                wraplength=108 if compact_nav else 130,
+            )
+            widgets["icon_label"].configure(
+                font=ctk.CTkFont(size=12 if compact_nav else 13, weight="bold"),
+            )
+            widgets["title_label"].configure(
+                font=ctk.CTkFont(size=13 if compact_nav else 14, weight="bold"),
+            )
+
+        self._refresh_clock_labels()
 
     def _bind_nav_click(self, widget, key: str):
         widget.bind("<Button-1>", lambda _event, target=key: self._switch_tab(target))
@@ -4620,7 +4683,10 @@ class App(ctk.CTk):
 
     def run_diagnostics_async(self, show_popup_on_error=False):
         self.env_status_badge.configure(fg_color="#2f2530", border_color="#a855f7")
-        self.env_status_label.configure(text="Environment: checking...", text_color="#e9d5ff")
+        self.env_status_label.configure(
+            text="Checking environment..." if self._compact_header_mode else "Environment: checking...",
+            text_color="#e9d5ff",
+        )
         threading.Thread(
             target=self._run_diagnostics_worker,
             args=(show_popup_on_error,),
@@ -4652,6 +4718,8 @@ class App(ctk.CTk):
             badge_border = "#059669"
             self.status_var.set("Ready")
 
+        if self._compact_header_mode:
+            text = text.replace("Environment: ", "")
         self.env_status_badge.configure(fg_color=badge_fg, border_color=badge_border)
         self.env_status_label.configure(text=text, text_color=text_color)
         if hasattr(self, "settings_tab"):
