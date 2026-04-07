@@ -215,6 +215,21 @@ class ToastDownloader:
             pass
         self.page.wait_for_timeout(1000)
 
+    def _current_location_matches(self, search_term):
+        try:
+            visible_text = self.page.evaluate(
+                """() => {
+                    const text = (document.body?.innerText || '').replace(/\\s+/g, ' ').trim();
+                    return text.slice(0, 4000);
+                }"""
+            )
+        except Exception:
+            return False
+        if not visible_text:
+            return False
+        lowered = visible_text.lower()
+        return search_term.lower() in lowered
+
     def _open_location_dropdown(self):
         """Open the restaurant location dropdown."""
         # Wait for page shell/navigation to finish hydrating.
@@ -276,6 +291,17 @@ class ToastDownloader:
                         iconCandidate.click();
                         return text || '__location_icon__';
                     }
+
+                    const anyElements = Array.from(document.querySelectorAll('body *'));
+                    for (const el of anyElements) {
+                        const text = (el.innerText || el.textContent || '').replace(/\\s+/g, ' ').trim();
+                        if (!text || text.length > 120) continue;
+                        if (!normalizedStores.some((store) => text.toLowerCase().includes(store))) continue;
+                        const target = el.closest('button, [role="button"], [role="combobox"], [aria-haspopup], a, div, span');
+                        if (!target) continue;
+                        target.click();
+                        return text;
+                    }
                     return null;
                 }""",
                 TOAST_LOCATIONS,
@@ -307,7 +333,14 @@ class ToastDownloader:
 
     def _switch_location(self, search_term):
         """Switch to a specific restaurant location."""
+        if self._current_location_matches(search_term):
+            self.log(f"  Already on location: {search_term}")
+            return True
+
         if not self._open_location_dropdown():
+            if self._current_location_matches(search_term):
+                self.log(f"  Already on location: {search_term}")
+                return True
             return False
 
         self.page.wait_for_timeout(1000)

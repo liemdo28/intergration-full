@@ -88,8 +88,18 @@ class _RoutePage:
 class _FallbackLocationPage(_RoutePage):
     def evaluate(self, script, arg=None):
         self.function_calls.append({"script": script, "arg": arg, "timeout": None})
+        if "document.body?.innerText" in script:
+            return ""
         if "normalizedStores" in script:
             return "Stockton, CA Raw Sushi Bistro"
+        return None
+
+
+class _CurrentLocationPage(_RoutePage):
+    def evaluate(self, script, arg=None):
+        self.function_calls.append({"script": script, "arg": arg, "timeout": None})
+        if "document.body?.innerText" in script:
+            return "Reports Stockton, CA Raw Sushi Bistro Sales Summary"
         return None
 
 
@@ -173,3 +183,14 @@ def test_open_location_dropdown_uses_store_name_fallback_match():
 
     assert ok is True
     assert any("fallback match" in line for line in logs)
+
+
+def test_switch_location_short_circuits_when_store_already_visible():
+    logs = []
+    downloader = toast_downloader.ToastDownloader(on_log=logs.append)
+    downloader.page = _CurrentLocationPage()
+
+    ok = downloader._switch_location("Stockton")
+
+    assert ok is True
+    assert any("Already on location: Stockton" in line for line in logs)
