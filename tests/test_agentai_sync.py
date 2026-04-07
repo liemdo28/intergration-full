@@ -57,6 +57,11 @@ def test_publish_integration_snapshot_posts_snapshot(monkeypatch, tmp_path):
             "world_clocks": [],
         },
     )
+    monkeypatch.setattr(
+        agentai_sync,
+        "build_runtime_snapshot",
+        lambda config=None: {"mode": "headless_worker", "worker_status": "idle"},
+    )
     monkeypatch.setattr(agentai_sync.request, "urlopen", fake_urlopen)
 
     result = agentai_sync.publish_integration_snapshot(
@@ -76,6 +81,7 @@ def test_publish_integration_snapshot_posts_snapshot(monkeypatch, tmp_path):
     assert captured["url"] == "https://agentai.example.com/edge/projects/integration-full/snapshot"
     assert captured["body"]["machine_id"] == "stockton-frontdesk-01"
     assert captured["body"]["snapshot"]["summary"]["download_gap_count"] == 1
+    assert captured["body"]["snapshot"]["runtime"]["mode"] == "headless_worker"
     assert captured["headers"]["X-agentai-token"] == "secret-token"
 
 

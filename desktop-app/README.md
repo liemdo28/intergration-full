@@ -59,6 +59,19 @@ Hoac chay:
 launch.bat
 ```
 
+Neu muon may nay chay nen, khong show giao dien, va de AgentAI dieu phoi command tu xa:
+
+```powershell
+python app.py --headless-worker
+```
+
+Mode nay se:
+
+- khoi dong app o hidden window mode
+- poll command tu AgentAI theo `background_worker.command_poll_seconds`
+- publish runtime snapshot dinh ky theo `background_worker.snapshot_interval_seconds`
+- dung headless browser cho Toast download neu `headless_downloads=true`
+
 ## Startup diagnostics
 
 App tu chay environment diagnostics luc khoi dong va hien ket qua trong tab Settings.

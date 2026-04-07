@@ -66,6 +66,7 @@ from agentai_sync import (
     publish_integration_snapshot,
     report_agentai_command_result,
 )
+from worker_runtime import get_background_worker_settings, update_runtime_state, utc_now_iso
 
 import logging
 from logging.handlers import RotatingFileHandler
@@ -865,8 +866,12 @@ class DownloadTab(ctk.CTkFrame):
             "failed": 0,
             "total": 0,
         }
+        silent_mode = False
         try:
             from toast_downloader import ToastDownloader, ToastLoginRequiredError
+            app_root = self.winfo_toplevel()
+            headless_downloads = bool(getattr(app_root, "headless_downloads", False))
+            silent_mode = bool(getattr(app_root, "silent_mode", False))
 
             selected_report_names = [REPORT_TYPES[key].label for key in report_types]
             self.log(
@@ -876,7 +881,7 @@ class DownloadTab(ctk.CTkFrame):
 
             downloader = ToastDownloader(
                 download_dir=str(REPORTS_DIR),
-                headless=False,
+                headless=headless_downloads,
                 on_log=self.log,
                 on_progress=self.update_progress,
             )
@@ -921,7 +926,8 @@ class DownloadTab(ctk.CTkFrame):
         except ToastLoginRequiredError as e:
             self.log(f"Error: {e}")
             completion_payload = {"ok": False, "message": str(e), "success": 0, "failed": len(locations) * len(dates), "total": len(locations) * len(dates)}
-            self.after(0, lambda msg=str(e): messagebox.showwarning("Toast Login Required", msg))
+            if not silent_mode:
+                self.after(0, lambda msg=str(e): messagebox.showwarning("Toast Login Required", msg))
         except Exception as e:
             self.log(f"Error: {e}")
             import traceback
@@ -4484,8 +4490,21 @@ class SettingsTab(ctk.CTkFrame):
 #  Main Application
 # ══════════════════════════════════════════════════════════════════════
 class App(ctk.CTk):
-    def __init__(self):
+    def __init__(self, *, runtime_mode="gui", start_hidden=False, headless_downloads=None):
         super().__init__()
+        self.runtime_mode = runtime_mode
+        self.start_hidden = bool(start_hidden)
+        self.silent_mode = bool(start_hidden)
+        worker_settings = get_background_worker_settings(load_local_config())
+        default_headless_downloads = bool(worker_settings["headless_downloads"])
+        if runtime_mode == "headless_worker" and headless_downloads is None:
+            default_headless_downloads = True
+        self.headless_downloads = default_headless_downloads if headless_downloads is None else bool(headless_downloads)
+        self.command_poll_seconds = int(worker_settings["command_poll_seconds"])
+        self.snapshot_interval_seconds = int(worker_settings["snapshot_interval_seconds"])
+        self._agentai_snapshot_after_id = None
+        if self.start_hidden:
+            self.withdraw()
 
         self.title("Toast POS Manager")
 
@@ -4514,15 +4533,29 @@ class App(ctk.CTk):
         self._active_agentai_command_config = None
         self._agentai_command_heartbeat_stop = None
         self._build_ui()
+        self._sync_runtime_state(started_at=utc_now_iso(), worker_status="idle", last_error="")
         self.run_diagnostics_async(False)
         self.after(5000, lambda: self._schedule_agentai_poll(5000))
+        self.after(7000, lambda: self._schedule_agentai_snapshot_publish(5000))
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    def _sync_runtime_state(self, **extra):
+        state = {
+            "mode": self.runtime_mode,
+            "headless_window": self.start_hidden,
+            "headless_downloads": self.headless_downloads,
+            "command_poll_seconds": self.command_poll_seconds,
+            "snapshot_interval_seconds": self.snapshot_interval_seconds,
+            "process_id": os.getpid(),
+        }
+        state.update(extra)
+        update_runtime_state(**state)
 
     def _on_close(self):
         busy = getattr(self, "qb_tab", None) and self.qb_tab._running
         busy = busy or (getattr(self, "download_tab", None) and self.download_tab._running)
         busy = busy or (getattr(self, "rm_tab", None) and self.rm_tab._running)
-        if busy:
+        if busy and not self.silent_mode:
             if not messagebox.askokcancel(
                 "Operation in progress",
                 "A sync or download is still running. Are you sure you want to quit?",
@@ -4533,8 +4566,19 @@ class App(ctk.CTk):
                 self.after_cancel(self._agentai_poll_after_id)
             except Exception:
                 pass
+        if self._agentai_snapshot_after_id:
+            try:
+                self.after_cancel(self._agentai_snapshot_after_id)
+            except Exception:
+                pass
         if self._agentai_command_heartbeat_stop:
             self._agentai_command_heartbeat_stop.set()
+        self._sync_runtime_state(
+            worker_status="stopped",
+            active_command_id="",
+            active_command_type="",
+            last_command_finished_at=utc_now_iso(),
+        )
         self.destroy()
 
     def _build_ui(self):
@@ -4921,12 +4965,43 @@ class App(ctk.CTk):
             self._agentai_command_heartbeat_stop.set()
         self._agentai_command_heartbeat_stop = None
 
-    def _schedule_agentai_poll(self, delay_ms=60000):
+    def _schedule_agentai_snapshot_publish(self, delay_ms=None):
+        if self._agentai_snapshot_after_id:
+            try:
+                self.after_cancel(self._agentai_snapshot_after_id)
+            except Exception:
+                pass
+        if delay_ms is None:
+            delay_ms = max(30000, self.snapshot_interval_seconds * 1000)
+        self._agentai_snapshot_after_id = self.after(delay_ms, self._publish_periodic_agentai_snapshot)
+
+    def _publish_periodic_agentai_snapshot(self):
+        self._agentai_snapshot_after_id = None
+        config = self._current_agentai_config()
+        ready, _ = is_agentai_sync_ready(config)
+        if not ready:
+            self._schedule_agentai_snapshot_publish()
+            return
+
+        def _worker():
+            result = publish_agentai_snapshot_if_configured(
+                config=config,
+                on_log=lambda message: _app_logger.info(message),
+            )
+            if not result.get("ok") and not result.get("skipped"):
+                _app_logger.warning(result.get("message", "AgentAI periodic snapshot failed."))
+            self.after(0, self._schedule_agentai_snapshot_publish)
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _schedule_agentai_poll(self, delay_ms=None):
         if self._agentai_poll_after_id:
             try:
                 self.after_cancel(self._agentai_poll_after_id)
             except Exception:
                 pass
+        if delay_ms is None:
+            delay_ms = max(10000, self.command_poll_seconds * 1000)
         self._agentai_poll_after_id = self.after(delay_ms, self._poll_agentai_commands)
 
     def _poll_agentai_commands(self):
@@ -4941,7 +5016,7 @@ class App(ctk.CTk):
         config = self._current_agentai_config()
         ready, _ = is_agentai_sync_ready(config)
         if not ready:
-            self._schedule_agentai_poll(60000)
+            self._schedule_agentai_poll()
             return
 
         threading.Thread(target=self._poll_agentai_commands_worker, args=(config,), daemon=True).start()
@@ -4953,12 +5028,12 @@ class App(ctk.CTk):
     def _handle_polled_agentai_command(self, poll_result, config):
         if not poll_result.get("ok"):
             self.status_var.set("AgentAI command poll failed")
-            self._schedule_agentai_poll(60000)
+            self._schedule_agentai_poll()
             return
 
         command = poll_result.get("command")
         if not command:
-            self._schedule_agentai_poll(60000)
+            self._schedule_agentai_poll()
             return
         self._execute_agentai_command(command, config)
 
@@ -4967,6 +5042,13 @@ class App(ctk.CTk):
         self._active_agentai_command_config = config
         payload = dict(command.get("payload") or {})
         command_type = command.get("command_type")
+        self._sync_runtime_state(
+            worker_status="running",
+            active_command_id=command.get("id") or "",
+            active_command_type=command_type or "",
+            last_command_started_at=utc_now_iso(),
+            last_error="",
+        )
         self.status_var.set(f"AgentAI command: {command_type}")
         ack_result = acknowledge_agentai_command(command.get("id"), heartbeat_seconds=120, config=config)
         if not ack_result.get("ok"):
@@ -5019,12 +5101,36 @@ class App(ctk.CTk):
                 self._finish_agentai_command(command, {"ok": False, "message": message})
             return
 
+        if command_type == "publish_snapshot_now":
+            threading.Thread(
+                target=self._publish_snapshot_command_worker,
+                args=(command, config),
+                daemon=True,
+            ).start()
+            return
+
+        if command_type == "run_environment_diagnostics":
+            threading.Thread(
+                target=self._run_self_check_command_worker,
+                args=(command, config),
+                daemon=True,
+            ).start()
+            return
+
         self._finish_agentai_command(command, {"ok": False, "message": f"Unsupported AgentAI command type: {command_type}"})
 
     def _finish_agentai_command(self, command, result):
         self._stop_agentai_command_heartbeat()
         self._active_agentai_command = None
         status = "success" if result.get("ok") else "failed"
+        self._sync_runtime_state(
+            worker_status="idle",
+            active_command_id="",
+            active_command_type="",
+            last_command_finished_at=utc_now_iso(),
+            last_command_status=status,
+            last_error="" if status == "success" else result.get("message", ""),
+        )
         self.status_var.set("Ready")
         threading.Thread(
             target=self._report_agentai_command_result_worker,
@@ -5033,6 +5139,7 @@ class App(ctk.CTk):
         ).start()
         self._active_agentai_command_config = None
         self._schedule_agentai_poll(10000)
+        self._schedule_agentai_snapshot_publish(3000)
 
     def _report_agentai_command_result_worker(self, command, result, status, config):
         report_agentai_command_result(
@@ -5042,6 +5149,36 @@ class App(ctk.CTk):
             error_message="" if status == "success" else result.get("message", ""),
             config=config,
         )
+
+    def _publish_snapshot_command_worker(self, command, config):
+        result = publish_agentai_snapshot_if_configured(
+            config=config,
+            on_log=lambda message: _app_logger.info(message),
+        )
+        payload = {
+            "ok": bool(result.get("ok")),
+            "message": result.get("message", "Snapshot command finished."),
+            "skipped": bool(result.get("skipped")),
+        }
+        self.after(0, lambda res=payload, cmd=command: self._finish_agentai_command(cmd, res))
+
+    def _run_self_check_command_worker(self, command, config):
+        report = run_environment_checks(load_local_config())
+        publish_agentai_snapshot_if_configured(
+            config=config,
+            on_log=lambda message: _app_logger.info(message),
+        )
+        result = {
+            "ok": report.error_count == 0,
+            "message": (
+                f"Diagnostics finished with {report.error_count} error(s) and "
+                f"{report.warning_count} warning(s)."
+            ),
+            "error_count": report.error_count,
+            "warning_count": report.warning_count,
+            "lines": format_report_lines(report)[:12],
+        }
+        self.after(0, lambda res=result, cmd=command: self._finish_agentai_command(cmd, res))
 
     def _apply_nav_styles(self):
         for key, widgets in self._nav_buttons.items():
@@ -5125,6 +5262,11 @@ def run_cli_doctor():
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Toast POS Manager")
     parser.add_argument("--doctor-cli", action="store_true", help="Run environment diagnostics and exit")
+    parser.add_argument(
+        "--headless-worker",
+        action="store_true",
+        help="Run the integration app in hidden background worker mode for AgentAI command polling.",
+    )
     args = parser.parse_args(argv)
 
     # Enable DPI awareness on Windows for crisp rendering on HiDPI displays
@@ -5141,7 +5283,12 @@ def main(argv=None):
     if args.doctor_cli:
         return run_cli_doctor()
 
-    app = App()
+    app = App(
+        runtime_mode="headless_worker" if args.headless_worker else "gui",
+        start_hidden=args.headless_worker,
+        headless_downloads=True if args.headless_worker else None,
+    )
+    _app_logger.info("Toast POS Manager started in %s mode", "headless_worker" if args.headless_worker else "gui")
     app.mainloop()
     return 0
 

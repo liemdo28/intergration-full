@@ -8,6 +8,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from toast_reports import REPORT_TYPES, get_report_type, infer_report_type, normalize_report_types
+from worker_runtime import build_runtime_snapshot
 
 
 KNOWN_TOAST_STORES = (
@@ -620,6 +621,7 @@ def build_integration_snapshot(
         "generated_at": _format_iso_local(_coerce_now(now)),
         "base_dir": str(resolved_base),
         "world_clocks": clocks,
+        "runtime": build_runtime_snapshot(),
         "summary": summary,
         "latest_downloads": latest_downloads,
         "latest_qb_sync": latest_qb_sync,

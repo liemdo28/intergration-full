@@ -25,5 +25,10 @@
     "app_version": "v2.2",
     "machine_id": "stockton-frontdesk-01",
     "machine_name": "Stockton Frontdesk"
+  },
+  "background_worker": {
+    "command_poll_seconds": 30,
+    "snapshot_interval_seconds": 120,
+    "headless_downloads": true
   }
 }

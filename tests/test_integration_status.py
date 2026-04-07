@@ -144,6 +144,7 @@ def test_build_integration_snapshot_includes_suggestions(tmp_path):
     snapshot = build_integration_snapshot(base_dir=tmp_path, now=datetime(2026, 4, 7, 20, 0, tzinfo=UTC))
 
     assert snapshot["summary"]["download_rows"] >= 1
+    assert snapshot["runtime"]["mode"] in {"gui", "headless_worker"}
     assert snapshot["latest_downloads"][0]["store"] == "Stockton"
     assert any(item["kind"] == "download_gap" for item in snapshot["ai_suggestions"])
 

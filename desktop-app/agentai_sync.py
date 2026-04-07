@@ -10,6 +10,7 @@ from urllib import error, request
 
 from app_paths import runtime_path
 from integration_status import build_integration_snapshot
+from worker_runtime import build_runtime_snapshot, update_runtime_state, utc_now_iso
 
 LOCAL_CONFIG_FILE = runtime_path("local-config.json")
 DEFAULT_PROJECT_ID = "integration-full"
@@ -102,6 +103,7 @@ def publish_integration_snapshot(
 
     resolved_base = Path(base_dir) if base_dir else Path(__file__).resolve().parent
     snapshot = build_integration_snapshot(base_dir=resolved_base, include_today_for_suggestions=False)
+    snapshot["runtime"] = build_runtime_snapshot(config)
     payload = {
         "machine_id": settings["machine_id"],
         "machine_name": settings["machine_name"],
@@ -124,6 +126,7 @@ def publish_integration_snapshot(
                 "AgentAI snapshot published "
                 f"({settings['machine_name']} -> {settings['project_id']} at {datetime.now(timezone.utc).isoformat()})"
             )
+        update_runtime_state(last_snapshot_published_at=utc_now_iso(), last_error="")
         return {
             "ok": True,
             "skipped": False,
@@ -133,6 +136,7 @@ def publish_integration_snapshot(
         }
     except error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
+        update_runtime_state(last_error=f"snapshot_http_{exc.code}")
         return {
             "ok": False,
             "skipped": False,
@@ -140,6 +144,7 @@ def publish_integration_snapshot(
             "status_code": exc.code,
         }
     except Exception as exc:
+        update_runtime_state(last_error=str(exc))
         return {
             "ok": False,
             "skipped": False,
