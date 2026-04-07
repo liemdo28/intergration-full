@@ -475,29 +475,54 @@ class ToastDownloader:
             "Last 7 days", "This month", "Last month", "Custom",
         ]
 
-        # Strategy: Use JS to find the correct button by checking innerText
-        # The date picker button typically contains one of the date labels
-        # and a date range like "Mar 19, 2026 - Mar 19, 2026"
         found = self.page.evaluate("""(labels) => {
-            // Find all buttons on the page
-            const buttons = document.querySelectorAll('button');
-            for (const btn of buttons) {
-                const text = btn.innerText || '';
-                // Skip "Custom hours" button
+            const selectors = [
+                'button',
+                '[role="button"]',
+                '[role="combobox"]',
+                '[aria-haspopup="listbox"]',
+                '[aria-haspopup="menu"]',
+                '[data-testid*="date" i]',
+                '[class*="date" i]',
+            ];
+            const seen = new Set();
+            const nodes = [];
+            selectors.forEach((selector) => {
+                document.querySelectorAll(selector).forEach((node) => {
+                    if (seen.has(node)) return;
+                    seen.add(node);
+                    nodes.push(node);
+                });
+            });
+
+            const hasDatePattern = (text) =>
+                /\\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\\b/.test(text) ||
+                /\\d{1,2}\\/\\d{1,2}\\/\\d{4}/.test(text);
+
+            for (const node of nodes) {
+                const text = (node.innerText || node.textContent || '').trim();
+                if (!text) continue;
                 if (text.includes('Custom hours')) continue;
-                // Skip very long text (not a date picker)
-                if (text.length > 100) continue;
-                // Check if button text contains any date label
+                if (text.length > 140) continue;
                 for (const label of labels) {
-                    if (text.includes(label)) {
-                        // Verify it also has a date range pattern (Mon DD, YYYY)
-                        if (/\\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\\b/.test(text) || label === 'Custom') {
-                            btn.click();
-                            return text.trim().replace(/\\n/g, ' | ');
-                        }
+                    if (text.includes(label) && (hasDatePattern(text) || label === 'Custom')) {
+                        node.click();
+                        return text.replace(/\\n/g, ' | ');
                     }
                 }
             }
+
+            const calendarTargets = Array.from(document.querySelectorAll('[data-icon*="calendar" i], [aria-label*="calendar" i], [class*="calendar" i]'))
+                .map((node) => node.closest('button, [role="button"], [role="combobox"], [aria-haspopup], div'))
+                .filter(Boolean);
+            for (const target of calendarTargets) {
+                const text = (target.innerText || target.textContent || '').trim();
+                if (!text || text.includes('Custom hours')) continue;
+                if (!hasDatePattern(text) && !labels.some((label) => text.includes(label))) continue;
+                target.click();
+                return text.replace(/\\n/g, ' | ');
+            }
+
             return null;
         }""", date_labels)
 

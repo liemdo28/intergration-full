@@ -105,6 +105,14 @@ class _CurrentLocationPage(_RoutePage):
         return None
 
 
+class _DatePickerPage(_RoutePage):
+    def evaluate(self, script, arg=None):
+        self.function_calls.append({"script": script, "arg": arg, "timeout": None})
+        if "const selectors =" in script:
+            return "Custom | Mar 22, 2026 - Mar 22, 2026"
+        return None
+
+
 def test_wait_for_manual_login_logs_progress_and_succeeds():
     logs = []
     progress = []
@@ -225,6 +233,17 @@ def test_build_saved_filename_normalizes_download_name():
     )
 
     assert filename == "2026-04-07_OrderDetails_Stone Oak.xlsx"
+
+
+def test_open_date_picker_supports_legacy_style_picker_targets():
+    logs = []
+    downloader = toast_downloader.ToastDownloader(on_log=logs.append)
+    downloader.page = _DatePickerPage()
+
+    ok = downloader._open_date_picker()
+
+    assert ok is True
+    assert any("Opened date picker" in line for line in logs)
 
 
 def test_dismiss_overlays_clicks_cookie_popup_actions_when_visible():
