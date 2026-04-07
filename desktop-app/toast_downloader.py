@@ -438,16 +438,56 @@ class ToastDownloader:
     def _wait_for_report_ready(self):
         """Wait for report data and download button."""
         try:
-            self.page.wait_for_selector('[aria-label="Download report"]', timeout=20000)
             self.page.wait_for_function("""() => {
-                const icon = document.querySelector('[aria-label="Download report"]');
-                if (!icon) return false;
-                const btn = icon.closest('button') || icon.closest('a') || icon.parentElement;
-                if (!btn) return true;
-                return !btn.disabled && !btn.hasAttribute('disabled') && !btn.classList.contains('disabled');
-            }""", timeout=15000)
+                const candidates = [
+                    '[aria-label="Download report"]',
+                    'button[aria-label*="Download" i]',
+                    'button[title*="Download" i]',
+                    '[data-testid*="download" i]',
+                    'button:has-text("Download")',
+                    'button:has-text("Export")',
+                ];
+                for (const selector of candidates) {
+                    const nodes = Array.from(document.querySelectorAll(selector));
+                    for (const node of nodes) {
+                        const btn = node.closest('button') || node.closest('a') || node;
+                        if (!btn) continue;
+                        const disabled = btn.disabled || btn.hasAttribute('disabled') || btn.classList.contains('disabled');
+                        if (!disabled) return true;
+                    }
+                }
+                return false;
+            }""", timeout=20000)
         except Exception:
             self.page.wait_for_timeout(5000)
+
+    def _wait_for_report_context(self, report):
+        expected_path = report.report_path or ""
+        expected_fragment = expected_path.split("#", 1)[1] if "#" in expected_path else ""
+        markers = tuple(marker for marker in report.ready_markers if marker)
+
+        try:
+            self.page.wait_for_function(
+                """({ pathPart, fragment }) => {
+                    const href = window.location.href || "";
+                    if (fragment && href.includes(`#${fragment}`)) return true;
+                    if (pathPart && href.includes(pathPart)) return true;
+                    return false;
+                }""",
+                {"pathPart": expected_path, "fragment": expected_fragment},
+                timeout=15000,
+            )
+        except Exception:
+            pass
+
+        for marker in markers:
+            try:
+                if self.page.locator(f'text="{marker}"').first.is_visible(timeout=2500):
+                    return
+            except Exception:
+                continue
+
+        self.page.wait_for_timeout(1500)
 
     def _open_report_view(self, report_type):
         report = get_report_type(report_type)
@@ -460,6 +500,7 @@ class ToastDownloader:
         self.page.goto(f"{REPORTS_BASE}/{report.report_path}", wait_until="domcontentloaded", timeout=60000)
         self.page.wait_for_timeout(3000)
         self._dismiss_overlays()
+        self._wait_for_report_context(report)
 
         if report.tab_label:
             opened = self._click_first_visible(
@@ -487,8 +528,11 @@ class ToastDownloader:
         """Click the download icon using JS click."""
         selectors = [
             '[aria-label="Download report"]',
+            'button[aria-label*="Download" i]',
+            'button[title*="Download" i]',
             'i[aria-label*="Download" i]',
             '[aria-label*="download" i]',
+            '[data-testid*="download" i]',
         ]
         for sel in selectors:
             el = self.page.locator(sel).first
@@ -516,9 +560,10 @@ class ToastDownloader:
             with self.page.expect_download(timeout=30000) as download_info:
                 explicit_clicked = self._click_first_visible(
                     [
-                        '[role="menuitem"]:text-matches("Excel|Export|Download", "i")',
-                        'button:text-matches("Excel|Export|Download", "i")',
-                        'text=/Excel|Export|Download/i',
+                        '[role="menuitem"]:text-matches("Excel|CSV|XLSX|Export|Download", "i")',
+                        'button:text-matches("Excel|CSV|XLSX|Export|Download", "i")',
+                        '[role="option"]:text-matches("Excel|CSV|XLSX|Export|Download", "i")',
+                        'text=/Excel|CSV|XLSX|Export|Download/i',
                     ],
                     timeout=1200,
                 )
