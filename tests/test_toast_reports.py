@@ -8,6 +8,8 @@ def test_get_report_type_supports_legacy_aliases():
     assert get_report_type("modifier_selection_details").key == "modifier_selections"
     assert get_report_type("product_mix_all_items").key == "product_mix"
     assert get_report_type("labor_summary").key == "time_entries"
+    assert get_report_type("voids").key == "voided_orders"
+    assert get_report_type("salesorders").key == "sales_orders"
 
 
 def test_normalize_report_types_deduplicates_canonical_and_legacy_keys():
@@ -41,3 +43,20 @@ def test_default_download_report_keys_exclude_ingest_only_exports():
     assert set(DEFAULT_REPORT_TYPE_KEYS) == download_keys
     assert "time_entries" not in download_keys
     assert "accounting" not in download_keys
+    assert "modifier_selections" not in download_keys
+    assert "product_mix" not in download_keys
+    assert "menu_items" not in download_keys
+    assert "cash_activity_audit" in download_keys
+    assert "voided_orders" in download_keys
+    assert "sales_orders" in download_keys
+
+
+def test_direct_toast_report_paths_match_verified_routes():
+    assert get_report_type("sales_summary").report_path == "sales/sales-summary"
+    assert get_report_type("orders").report_path == "home#sales-order-details"
+    assert get_report_type("order_items").report_path == "home#selection-details"
+    assert get_report_type("payments").report_path == "home#sales-payments"
+    assert get_report_type("discounts").report_path == "home#discounts"
+    assert get_report_type("cash_activity_audit").report_path == "home#cash-mgmt"
+    assert get_report_type("voided_orders").report_path == "home#voids"
+    assert get_report_type("sales_orders").report_path == "home#sales-orders"
