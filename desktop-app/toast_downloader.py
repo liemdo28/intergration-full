@@ -664,6 +664,31 @@ class ToastDownloader:
 
         self.page.wait_for_timeout(1500)
 
+    def _maybe_open_legacy_sales_summary(self, report):
+        if report.key != "sales_summary":
+            return
+
+        legacy_selectors = [
+            'a:text-matches("legacy\\s+Sales\\s+summary", "i")',
+            'button:text-matches("legacy\\s+Sales\\s+summary", "i")',
+            'text=/legacy\\s+Sales\\s+summary/i',
+        ]
+        opened = self._click_first_visible(
+            legacy_selectors,
+            timeout=2000,
+            log_msg="    Switching to legacy Sales Summary",
+        )
+        if not opened:
+            return
+
+        self.page.wait_for_timeout(2000)
+        try:
+            self.page.wait_for_load_state("networkidle", timeout=30000)
+        except Exception:
+            pass
+        self.page.wait_for_timeout(1000)
+        self._dismiss_overlays()
+
     def _open_report_view(self, report_type):
         report = get_report_type(report_type)
         if not report.download_supported or not report.report_path:
@@ -676,6 +701,7 @@ class ToastDownloader:
         self.page.wait_for_timeout(3000)
         self._dismiss_overlays()
         self._wait_for_report_context(report)
+        self._maybe_open_legacy_sales_summary(report)
 
         if report.tab_label:
             opened = self._click_first_visible(

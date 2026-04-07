@@ -174,6 +174,22 @@ def test_open_report_view_uses_direct_route_for_sales_orders():
     assert page.goto_urls[0][0] == "https://www.toasttab.com/restaurants/admin/reports/home#sales-orders"
 
 
+def test_open_report_view_switches_sales_summary_to_legacy_when_link_visible():
+    logs = []
+    downloader = toast_downloader.ToastDownloader(on_log=logs.append)
+    page = _RoutePage()
+    page.selector_visibility['a:text-matches("legacy\\s+Sales\\s+summary", "i")'] = True
+    downloader.page = page
+    dismiss_calls = []
+    downloader._dismiss_overlays = lambda: dismiss_calls.append(True)
+
+    downloader._open_report_view("sales_summary")
+
+    assert page.goto_urls[0][0] == "https://www.toasttab.com/restaurants/admin/reports/sales/sales-summary"
+    assert 'a:text-matches("legacy\\s+Sales\\s+summary", "i")' in page.clicked_selectors
+    assert any("Switching to legacy Sales Summary" in line for line in logs)
+
+
 def test_open_location_dropdown_uses_store_name_fallback_match():
     logs = []
     downloader = toast_downloader.ToastDownloader(on_log=logs.append)
