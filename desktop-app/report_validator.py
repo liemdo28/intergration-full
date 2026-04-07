@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -14,6 +15,83 @@ REQUIRED_SHEETS = [
     "Sales category summary",
     "Payments summary",
 ]
+
+
+COLUMN_PROFILES: dict[str, tuple[tuple[str, tuple[str, ...]], ...]] = {
+    "orders": (
+        ("location", ("location", "store", "restaurant")),
+        ("order_id", ("order id", "orderid", "check guid", "check id")),
+        ("order_number", ("order #", "order number", "ordernumber", "check #", "check number")),
+        ("datetime", ("sent date", "business date", "closed date", "opened", "opened date", "date")),
+        ("gross_sales", ("gross sales", "gross amount", "gross", "amount")),
+        ("net_sales", ("net sales", "net amount", "net")),
+    ),
+    "payments": (
+        ("order_id", ("order id", "orderid", "check guid", "check id")),
+        ("payment_type", ("payment type", "tender type", "payment method")),
+        ("amount", ("amount", "payment amount", "paid amount")),
+        ("payment_date", ("close date", "paid date", "payment date", "business date")),
+    ),
+    "discounts": (
+        ("location", ("location", "store", "restaurant")),
+        ("discount_name", ("discount", "discount name", "promotion")),
+        ("amount", ("amount", "discount amount", "net discount")),
+        ("business_date", ("business date", "sent date", "date")),
+    ),
+    "order_items": (
+        ("location", ("location", "store", "restaurant")),
+        ("order_id", ("order id", "orderid", "check guid", "check id")),
+        ("item_name", ("menu item", "item", "item name")),
+        ("qty", ("qty", "quantity")),
+        ("sent_date", ("sent date", "business date", "date")),
+    ),
+    "modifier_selections": (
+        ("location", ("location", "store", "restaurant")),
+        ("order_id", ("order id", "orderid", "check guid", "check id")),
+        ("modifier_name", ("modifier", "modifier name", "selection")),
+        ("qty", ("qty", "quantity")),
+        ("sent_date", ("sent date", "business date", "date")),
+    ),
+    "product_mix": (
+        ("location", ("location", "store", "restaurant")),
+        ("item_name", ("menu item", "item", "item name")),
+        ("qty", ("qty", "quantity")),
+        ("gross_sales", ("gross sales", "gross amount", "sales")),
+    ),
+    "menu_items": (
+        ("item_name", ("menu item", "item", "item name")),
+        ("qty", ("qty", "quantity")),
+        ("gross_sales", ("gross sales", "gross amount", "sales")),
+    ),
+    "time_entries": (
+        ("employee", ("employee", "employee name", "team member")),
+        ("role", ("role", "job", "position")),
+        ("business_date", ("business date", "date")),
+        ("hours", ("regular hours", "hours", "total hours", "overtime hours")),
+    ),
+    "accounting": (
+        ("date", ("date", "business date")),
+        ("location", ("location", "store", "restaurant")),
+        ("account", ("account", "account code", "gl account")),
+        ("amount", ("amount", "net amount")),
+    ),
+    "menu": (
+        ("item_id", ("item id", "guid", "menu item id")),
+        ("item_name", ("item", "item name", "menu item")),
+        ("category", ("category", "sales category", "group")),
+        ("price", ("price", "base price", "menu price")),
+    ),
+    "kitchen_details": (
+        ("location", ("location", "store", "restaurant")),
+        ("order_id", ("order id", "orderid", "check guid")),
+        ("sent_date", ("sent date", "business date", "date")),
+    ),
+    "cash_management": (
+        ("location", ("location", "store", "restaurant")),
+        ("date", ("date", "business date")),
+        ("amount", ("amount", "cash amount")),
+    ),
+}
 
 
 @dataclass
@@ -47,20 +125,55 @@ def compute_sha256(path: str | Path) -> str:
     return digest.hexdigest()
 
 
-def _validate_csv_report(report_path: Path, errors: list[str], warnings: list[str]) -> list[str]:
+def _normalize_header(value) -> str:
+    text = str(value or "").strip().lower()
+    text = text.replace("&", " and ")
+    return re.sub(r"[^a-z0-9]+", " ", text).strip()
+
+
+def _match_required_columns(headers: list[str], report_type: str) -> list[str]:
+    profile = COLUMN_PROFILES.get(report_type)
+    if not profile:
+        return []
+    normalized_headers = {_normalize_header(item) for item in headers if str(item or "").strip()}
+    missing: list[str] = []
+    for label, aliases in profile:
+        normalized_aliases = {_normalize_header(alias) for alias in aliases}
+        if not normalized_headers.intersection(normalized_aliases):
+            missing.append(label)
+    return missing
+
+
+def _extract_tabular_header_row(rows: list[tuple]) -> list[str]:
+    best_row: list[str] = []
+    best_score = -1
+    for row in rows:
+        header_values = [str(value).strip() for value in row if str(value or "").strip()]
+        if len(header_values) > best_score:
+            best_score = len(header_values)
+            best_row = header_values
+    return best_row
+
+
+def _validate_csv_report(report_path: Path, report_type: str, errors: list[str], warnings: list[str]) -> list[str]:
     available_sheets = ["CSV"]
     try:
         with open(report_path, "r", encoding="utf-8-sig", newline="") as fh:
             reader = csv.reader(fh)
             rows = []
-            for _ in range(2):
+            for _ in range(10):
                 try:
                     rows.append(next(reader))
                 except StopIteration:
                     break
-        if not rows or not rows[0]:
+        headers = _extract_tabular_header_row(rows)
+        if not rows or not headers:
             errors.append("CSV has no headers")
-        elif len(rows) < 2:
+        else:
+            missing = _match_required_columns(headers, report_type)
+            if missing:
+                errors.append("Missing required columns: " + ", ".join(missing))
+        if len(rows) < 2:
             warnings.append("CSV has no data rows")
     except Exception as exc:
         errors.append(f"CSV validation failed: {exc}")
@@ -94,9 +207,13 @@ def _validate_workbook_report(report_path: Path, report_type: str, errors: list[
         first_sheet_with_headers = None
         for sheet_name in workbook.sheetnames:
             worksheet = workbook[sheet_name]
-            rows = list(worksheet.iter_rows(values_only=True, max_row=2))
-            if rows and rows[0]:
+            rows = list(worksheet.iter_rows(values_only=True, max_row=10))
+            headers = _extract_tabular_header_row(rows)
+            if rows and headers:
                 first_sheet_with_headers = sheet_name
+                missing = _match_required_columns(headers, report_type)
+                if missing:
+                    errors.append(f"Sheet '{sheet_name}' is missing required columns: " + ", ".join(missing))
                 if len(rows) < 2:
                     warnings.append(f"Sheet '{sheet_name}' has no data rows")
                 break
@@ -133,7 +250,7 @@ def validate_toast_report_file(path: str | Path, report_type: str = "sales_summa
     if not errors:
         try:
             if report_path.suffix.lower() == ".csv":
-                available_sheets = _validate_csv_report(report_path, errors, warnings)
+                available_sheets = _validate_csv_report(report_path, report_type, errors, warnings)
             else:
                 available_sheets = _validate_workbook_report(report_path, report_type, errors, warnings)
         except Exception as exc:

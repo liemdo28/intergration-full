@@ -19,6 +19,7 @@ Ung dung desktop hop nhat cho quy trinh Toast -> QuickBooks:
 
 - `app.py`: giao dien desktop hop nhat
 - `toast_downloader.py`: Toast web scraper
+- `toast_reports.py`: report registry, aliases, folder naming, and download-capability metadata
 - `qb_sync.py`: tao Sales Receipt tu Excel Toast
 - `qb_client.py`: query/xoa transaction trong QB Desktop
 - `qb_automate.py`: mo QB file va tu dong login
@@ -114,6 +115,7 @@ Neu may build co Inno Setup (`ISCC.exe`), script se build them installer `.exe` 
 - P0/P1/P2 checklist: [docs/RELEASE_READINESS_CHECKLIST.md](E:/Project/Toasttab Quickbook/New folder/integration-toasttab-qb/docs/RELEASE_READINESS_CHECKLIST.md)
 - Secret cleanup plan: [docs/SECRET_REMEDIATION.md](E:/Project/Toasttab Quickbook/New folder/integration-toasttab-qb/docs/SECRET_REMEDIATION.md)
 - Current state review: [docs/CURRENT_STATE_REVIEW.md](E:/Project/Toasttab Quickbook/New folder/integration-toasttab-qb/docs/CURRENT_STATE_REVIEW.md)
+- Toast ingest review: [docs/TOAST_INGEST_REVIEW.md](E:\Project\Master\integration-full\docs\TOAST_INGEST_REVIEW.md)
 - Operator guide: [docs/OPERATOR_GUIDE.md](E:/Project/Toasttab Quickbook/New folder/integration-toasttab-qb/docs/OPERATOR_GUIDE.md)
 - Final app requirements: [docs/FINAL_APP_REQUIREMENTS.md](E:/Project/Toasttab Quickbook/New folder/integration-toasttab-qb/docs/FINAL_APP_REQUIREMENTS.md)
 - Five-year self-recovery runbook: [docs/FIVE_YEAR_SELF_RECOVERY_RUNBOOK.md](E:/Project/Toasttab Quickbook/New folder/integration-toasttab-qb/docs/FIVE_YEAR_SELF_RECOVERY_RUNBOOK.md)

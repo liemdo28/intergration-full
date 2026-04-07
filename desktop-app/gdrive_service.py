@@ -3,6 +3,7 @@ Google Drive Service - Upload/Download Toast reports
 """
 
 import os
+import re
 import time
 from pathlib import Path
 from googleapiclient.discovery import build
@@ -24,6 +25,9 @@ SCOPES = ["https://www.googleapis.com/auth/drive.file"]
 
 def _drive_query_literal(value):
     return str(value or "").replace("\\", "\\\\").replace("'", "\\'")
+
+
+DATE_FOLDER_RE = re.compile(r"(20\d{2})[-_]?(\d{2})")
 
 
 class GDriveService:
@@ -141,6 +145,95 @@ class GDriveService:
             return folder_id
         return self._create_folder(name, parent_id)
 
+    def _list_folders(self, parent_id):
+        q = (
+            "mimeType='application/vnd.google-apps.folder' and trashed=false "
+            f"and '{parent_id}' in parents"
+        )
+        results = self._execute_with_retry(
+            lambda: self.service.files().list(q=q, spaces="drive", fields="files(id, name)").execute(),
+            operation="List Drive subfolders",
+        )
+        return results.get("files", [])
+
+    def _extract_year_month(self, filename):
+        match = DATE_FOLDER_RE.search(str(filename or ""))
+        if not match:
+            return None, None
+        return match.group(1), match.group(2)
+
+    def _iter_store_folder_candidates(self, store_name):
+        candidates = []
+        seen = set()
+        for root_name, root_id in self._find_existing_root_folders():
+            direct_store_id = self._find_folder(store_name, root_id)
+            if direct_store_id and direct_store_id not in seen:
+                candidates.append(
+                    {
+                        "root_name": root_name,
+                        "store_id": direct_store_id,
+                        "relative_parts": [store_name],
+                    }
+                )
+                seen.add(direct_store_id)
+
+            for child in self._list_folders(root_id):
+                brand_store_id = self._find_folder(store_name, child["id"])
+                if brand_store_id and brand_store_id not in seen:
+                    candidates.append(
+                        {
+                            "root_name": root_name,
+                            "store_id": brand_store_id,
+                            "relative_parts": [child["name"], store_name],
+                        }
+                    )
+                    seen.add(brand_store_id)
+        return candidates
+
+    def _iter_report_folder_candidates(self, store_name, filename, report_type="sales_summary"):
+        report_types = [get_report_type(report_type)] if report_type else normalize_report_types(list(DEFAULT_REPORT_TYPE_KEYS) + ["time_entries", "accounting", "menu", "kitchen_details", "cash_management", "modifier_selections", "product_mix", "discounts", "menu_items"])
+        year, month = self._extract_year_month(filename)
+        candidates = []
+        seen = set()
+
+        for store_info in self._iter_store_folder_candidates(store_name):
+            store_id = store_info["store_id"]
+            root_name = store_info["root_name"]
+            relative_parts = list(store_info["relative_parts"])
+
+            if report_type is None and store_id not in seen:
+                candidates.append((store_id, root_name, relative_parts))
+                seen.add(store_id)
+
+            for report in report_types:
+                folder_names = [report.folder_name, *report.folder_aliases]
+                for folder_name in folder_names:
+                    report_folder_id = self._find_folder(folder_name, store_id)
+                    if report_folder_id and report_folder_id not in seen:
+                        candidates.append((report_folder_id, root_name, [*relative_parts, folder_name]))
+                        seen.add(report_folder_id)
+
+            if year and month:
+                year_id = self._find_folder(year, store_id)
+                month_id = self._find_folder(month, year_id) if year_id else None
+                if month_id:
+                    for report in report_types:
+                        folder_names = [report.folder_name, *report.folder_aliases]
+                        for folder_name in folder_names:
+                            nested_report_id = self._find_folder(folder_name, month_id)
+                            if nested_report_id and nested_report_id not in seen:
+                                candidates.append((nested_report_id, root_name, [*relative_parts, year, month, folder_name]))
+                                seen.add(nested_report_id)
+                    if month_id not in seen:
+                        candidates.append((month_id, root_name, [*relative_parts, year, month]))
+                        seen.add(month_id)
+
+            if root_name != ROOT_FOLDER_NAME and store_id not in seen:
+                candidates.append((store_id, root_name, relative_parts))
+                seen.add(store_id)
+
+        return candidates
+
     def _get_primary_root_folder(self):
         return self._get_or_create_folder(ROOT_FOLDER_NAME)
 
@@ -173,22 +266,10 @@ class GDriveService:
         )
 
     def _find_report_file_across_roots(self, store_name, filename, report_type="sales_summary"):
-        report = get_report_type(report_type)
-        search_paths = []
-        for root_name, root_id in self._find_existing_root_folders():
-            store_id = self._find_folder(store_name, root_id)
-            if not store_id:
-                continue
-            if root_name == ROOT_FOLDER_NAME:
-                report_folder_id = self._find_folder(report.folder_name, store_id)
-                if report_folder_id:
-                    search_paths.append((root_name, store_name, report.folder_name, report_folder_id))
-            search_paths.append((root_name, store_name, None, store_id))
-
-        for root_name, _store_name, report_folder_name, folder_id in search_paths:
+        for folder_id, root_name, relative_parts in self._iter_report_folder_candidates(store_name, filename, report_type):
             files = self._find_matching_files(folder_id, filename)
             if files:
-                return files[0], root_name, report_folder_name
+                return files[0], root_name, relative_parts
         return None, None, None
 
     def setup_folders(self, store_names, report_types=None):
@@ -236,7 +317,7 @@ class GDriveService:
         if not self.service:
             raise RuntimeError("Not authenticated")
 
-        file_info, root_name, report_folder_name = self._find_report_file_across_roots(store_name, filename, report_type)
+        file_info, root_name, relative_parts = self._find_report_file_across_roots(store_name, filename, report_type)
         if not file_info:
             report = get_report_type(report_type)
             raise FileNotFoundError(f"File not found: {ROOT_FOLDER_NAME}/{store_name}/{report.folder_name}/{filename}")
@@ -255,10 +336,7 @@ class GDriveService:
                     operation=f"Download Drive report '{filename}'",
                 )
 
-        if report_folder_name:
-            source_path = f"{root_name}/{store_name}/{report_folder_name}/{filename}"
-        else:
-            source_path = f"{root_name}/{store_name}/{filename}"
+        source_path = "/".join([root_name, *(relative_parts or [store_name]), filename])
         self.log(f"  Downloaded: {source_path} -> {local_path}")
         return local_path
 
@@ -269,17 +347,8 @@ class GDriveService:
         if store_name:
             aggregated = []
             seen_ids = set()
-            report_folder_name = get_report_type(report_type).folder_name if report_type else None
-            for root_name, root_id in self._find_existing_root_folders():
-                store_id = self._find_folder(store_name, root_id)
-                if not store_id:
-                    continue
-                folder_id = store_id
-                if report_folder_name and root_name == ROOT_FOLDER_NAME:
-                    nested_folder_id = self._find_folder(report_folder_name, store_id)
-                    if not nested_folder_id:
-                        continue
-                    folder_id = nested_folder_id
+            candidates = self._iter_report_folder_candidates(store_name, "", report_type or "sales_summary")
+            for folder_id, _root_name, _relative_parts in candidates:
                 results = self.service.files().list(
                     q=f"'{folder_id}' in parents and trashed=false",
                     fields="files(id, name, size, modifiedTime, parents)",

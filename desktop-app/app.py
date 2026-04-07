@@ -50,7 +50,7 @@ from recovery_center import (
     get_playbook_by_title,
     get_recovery_playbooks,
 )
-from toast_reports import DEFAULT_REPORT_TYPE_KEYS, REPORT_TYPES, build_local_report_dir
+from toast_reports import DEFAULT_REPORT_TYPE_KEYS, REPORT_TYPES, build_local_report_dir, get_download_report_types
 from integration_status import (
     get_auto_download_plan,
     get_auto_qb_sync_plan,
@@ -568,7 +568,7 @@ class DownloadTab(ctk.CTkFrame):
         report_checks = ctk.CTkFrame(report_frame, fg_color="transparent")
         report_checks.pack(fill="x", pady=(0, 8))
         self.report_type_vars = {}
-        for idx, report in enumerate(REPORT_TYPES.values()):
+        for idx, report in enumerate(get_download_report_types()):
             var = ctk.BooleanVar(value=report.key in DEFAULT_REPORT_TYPE_KEYS)
             self.report_type_vars[report.key] = var
             chip = self._make_subcard(report_checks)

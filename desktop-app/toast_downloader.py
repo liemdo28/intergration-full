@@ -433,6 +433,11 @@ class ToastDownloader:
 
     def _open_report_view(self, report_type):
         report = get_report_type(report_type)
+        if not report.download_supported or not report.landing_path:
+            raise RuntimeError(
+                f"Toast downloader does not have a verified navigation flow for '{report.label}' yet. "
+                "Use manual export + Google Drive upload for this report type."
+            )
         self.log(f"    Opening report: {report.label}")
         self.page.goto(f"{REPORTS_BASE}/{report.landing_path}", wait_until="domcontentloaded", timeout=60000)
         self.page.wait_for_timeout(3000)
