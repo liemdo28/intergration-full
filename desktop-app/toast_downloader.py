@@ -144,6 +144,12 @@ class ToastDownloader:
         url = self.page.url
         had_saved_session = os.path.exists(self.session_file)
         if not self._is_logged_in(url):
+            if self.headless:
+                raise ToastLoginRequiredError(
+                    "Toast session is not ready for headless downloads. The app stayed background-safe and did not open "
+                    "a browser window. Refresh the Toast session once in an interactive run, then switch back to "
+                    "headless downloads."
+                )
             # Not logged in
             if had_saved_session:
                 self.log("Saved Toast session appears expired or invalid. A fresh login is required.")

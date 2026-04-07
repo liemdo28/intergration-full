@@ -8,7 +8,7 @@ def test_background_worker_settings_apply_defaults():
 
     assert settings["command_poll_seconds"] == 30
     assert settings["snapshot_interval_seconds"] == 120
-    assert settings["headless_downloads"] is False
+    assert settings["headless_downloads"] is True
 
 
 def test_build_runtime_snapshot_reflects_saved_state(monkeypatch, tmp_path):

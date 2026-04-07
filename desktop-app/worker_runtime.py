@@ -27,7 +27,7 @@ def get_background_worker_settings(config: dict | None = None) -> dict:
     return {
         "command_poll_seconds": _to_int(worker_cfg.get("command_poll_seconds"), 30, 10),
         "snapshot_interval_seconds": _to_int(worker_cfg.get("snapshot_interval_seconds"), 120, 30),
-        "headless_downloads": bool(worker_cfg.get("headless_downloads", False)),
+        "headless_downloads": bool(worker_cfg.get("headless_downloads", True)),
     }
 
 

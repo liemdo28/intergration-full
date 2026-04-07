@@ -5,6 +5,7 @@ class _FakePage:
     def __init__(self, urls):
         self._urls = list(urls)
         self.wait_calls = []
+        self.goto_calls = []
 
     @property
     def url(self):
@@ -12,8 +13,19 @@ class _FakePage:
             return self._urls.pop(0)
         return "https://www.toasttab.com/login"
 
+    def goto(self, url, **kwargs):
+        self.goto_calls.append((url, kwargs))
+
     def wait_for_timeout(self, timeout_ms):
         self.wait_calls.append(timeout_ms)
+
+
+class _FakeContext:
+    def __init__(self):
+        self.saved_paths = []
+
+    def storage_state(self, path=None):
+        self.saved_paths.append(path)
 
 
 class _FakeLocator:
@@ -87,6 +99,20 @@ def test_wait_for_manual_login_times_out_cleanly():
     ok = downloader._wait_for_manual_login(timeout_seconds=2, poll_seconds=1)
 
     assert ok is False
+
+
+def test_login_in_headless_mode_fails_without_opening_interactive_browser(monkeypatch):
+    downloader = toast_downloader.ToastDownloader(headless=True)
+    downloader.page = _FakePage(["https://www.toasttab.com/login"])
+    downloader.context = _FakeContext()
+    monkeypatch.setattr(toast_downloader.os.path, "exists", lambda path: False)
+
+    try:
+        downloader._login()
+    except toast_downloader.ToastLoginRequiredError as exc:
+        assert "did not open a browser window" in str(exc)
+    else:
+        raise AssertionError("Expected headless login to require a saved session")
 
 
 def test_open_report_view_uses_direct_route_without_tab_click():
