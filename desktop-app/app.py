@@ -58,8 +58,10 @@ from integration_status import (
     get_world_clocks,
 )
 from agentai_sync import (
+    acknowledge_agentai_command,
     fetch_next_agentai_command,
     get_agentai_sync_settings,
+    heartbeat_agentai_command,
     is_agentai_sync_ready,
     publish_integration_snapshot,
     report_agentai_command_result,
@@ -4509,6 +4511,8 @@ class App(ctk.CTk):
         self._resize_after_id = None
         self._agentai_poll_after_id = None
         self._active_agentai_command = None
+        self._active_agentai_command_config = None
+        self._agentai_command_heartbeat_stop = None
         self._build_ui()
         self.run_diagnostics_async(False)
         self.after(5000, lambda: self._schedule_agentai_poll(5000))
@@ -4529,6 +4533,8 @@ class App(ctk.CTk):
                 self.after_cancel(self._agentai_poll_after_id)
             except Exception:
                 pass
+        if self._agentai_command_heartbeat_stop:
+            self._agentai_command_heartbeat_stop.set()
         self.destroy()
 
     def _build_ui(self):
@@ -4892,6 +4898,29 @@ class App(ctk.CTk):
             return dict(self.settings_tab._local_cfg)
         return load_local_config()
 
+    def _start_agentai_command_heartbeat(self, command, config, *, heartbeat_seconds=120):
+        self._stop_agentai_command_heartbeat()
+        stop_event = threading.Event()
+        self._agentai_command_heartbeat_stop = stop_event
+        self._active_agentai_command_config = config
+
+        def _worker():
+            while not stop_event.wait(max(heartbeat_seconds // 3, 15)):
+                result = heartbeat_agentai_command(
+                    command.get("id"),
+                    heartbeat_seconds=heartbeat_seconds,
+                    config=config,
+                )
+                if not result.get("ok"):
+                    break
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _stop_agentai_command_heartbeat(self):
+        if self._agentai_command_heartbeat_stop:
+            self._agentai_command_heartbeat_stop.set()
+        self._agentai_command_heartbeat_stop = None
+
     def _schedule_agentai_poll(self, delay_ms=60000):
         if self._agentai_poll_after_id:
             try:
@@ -4935,9 +4964,15 @@ class App(ctk.CTk):
 
     def _execute_agentai_command(self, command, config):
         self._active_agentai_command = command
+        self._active_agentai_command_config = config
         payload = dict(command.get("payload") or {})
         command_type = command.get("command_type")
         self.status_var.set(f"AgentAI command: {command_type}")
+        ack_result = acknowledge_agentai_command(command.get("id"), heartbeat_seconds=120, config=config)
+        if not ack_result.get("ok"):
+            self._finish_agentai_command(command, {"ok": False, "message": ack_result.get("message", "Could not acknowledge command.")})
+            return
+        self._start_agentai_command_heartbeat(command, config, heartbeat_seconds=120)
 
         if command_type == "download_missing_reports":
             stores = payload.get("stores") or [payload.get("store")]
@@ -4987,14 +5022,16 @@ class App(ctk.CTk):
         self._finish_agentai_command(command, {"ok": False, "message": f"Unsupported AgentAI command type: {command_type}"})
 
     def _finish_agentai_command(self, command, result):
+        self._stop_agentai_command_heartbeat()
         self._active_agentai_command = None
         status = "success" if result.get("ok") else "failed"
         self.status_var.set("Ready")
         threading.Thread(
             target=self._report_agentai_command_result_worker,
-            args=(command, result, status, self._current_agentai_config()),
+            args=(command, result, status, self._active_agentai_command_config or self._current_agentai_config()),
             daemon=True,
         ).start()
+        self._active_agentai_command_config = None
         self._schedule_agentai_poll(10000)
 
     def _report_agentai_command_result_worker(self, command, result, status, config):

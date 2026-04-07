@@ -171,6 +171,74 @@ def fetch_next_agentai_command(*, config: dict | None = None, timeout_seconds: i
         return {"ok": False, "skipped": False, "message": f"AgentAI command poll failed: {exc}", "command": None}
 
 
+def acknowledge_agentai_command(
+    command_id: str,
+    *,
+    heartbeat_seconds: int = 120,
+    config: dict | None = None,
+    timeout_seconds: int = 20,
+) -> dict:
+    ready, reason = is_agentai_sync_ready(config)
+    if not ready:
+        return {"ok": False, "skipped": True, "message": reason}
+    try:
+        response_payload = _agentai_request(
+            f"/edge/commands/{command_id}/ack",
+            method="POST",
+            payload={"heartbeat_seconds": heartbeat_seconds},
+            config=config,
+            timeout_seconds=timeout_seconds,
+        )
+        return {"ok": True, "skipped": False, "message": "Command acknowledged.", "response": response_payload}
+    except error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        return {
+            "ok": False,
+            "skipped": False,
+            "message": f"AgentAI command ack failed ({exc.code}): {detail or exc.reason}",
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "skipped": False,
+            "message": f"AgentAI command ack failed: {exc}",
+        }
+
+
+def heartbeat_agentai_command(
+    command_id: str,
+    *,
+    heartbeat_seconds: int = 120,
+    config: dict | None = None,
+    timeout_seconds: int = 20,
+) -> dict:
+    ready, reason = is_agentai_sync_ready(config)
+    if not ready:
+        return {"ok": False, "skipped": True, "message": reason}
+    try:
+        response_payload = _agentai_request(
+            f"/edge/commands/{command_id}/heartbeat",
+            method="POST",
+            payload={"heartbeat_seconds": heartbeat_seconds},
+            config=config,
+            timeout_seconds=timeout_seconds,
+        )
+        return {"ok": True, "skipped": False, "message": "Heartbeat sent.", "response": response_payload}
+    except error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        return {
+            "ok": False,
+            "skipped": False,
+            "message": f"AgentAI heartbeat failed ({exc.code}): {detail or exc.reason}",
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "skipped": False,
+            "message": f"AgentAI heartbeat failed: {exc}",
+        }
+
+
 def report_agentai_command_result(
     command_id: str,
     *,

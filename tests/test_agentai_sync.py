@@ -83,6 +83,8 @@ def test_fetch_and_report_agentai_command(monkeypatch):
     responses = [
         {"command": {"id": "cmd-1", "command_type": "download_missing_reports", "payload": {"store": "Stockton"}}},
         {"status": "ok"},
+        {"status": "ok"},
+        {"status": "ok"},
     ]
     captured = []
 
@@ -103,6 +105,8 @@ def test_fetch_and_report_agentai_command(monkeypatch):
     }
 
     polled = agentai_sync.fetch_next_agentai_command(config=config)
+    acknowledged = agentai_sync.acknowledge_agentai_command("cmd-1", config=config)
+    heartbeated = agentai_sync.heartbeat_agentai_command("cmd-1", config=config)
     reported = agentai_sync.report_agentai_command_result(
         "cmd-1",
         status="success",
@@ -112,8 +116,12 @@ def test_fetch_and_report_agentai_command(monkeypatch):
 
     assert polled["ok"] is True
     assert polled["command"]["id"] == "cmd-1"
+    assert acknowledged["ok"] is True
+    assert heartbeated["ok"] is True
     assert reported["ok"] is True
     assert captured[0][0] == "https://agentai.example.com/edge/projects/integration-full/commands/stockton-frontdesk-01"
     assert captured[0][1] == "GET"
-    assert captured[1][0] == "https://agentai.example.com/edge/commands/cmd-1/result"
-    assert captured[1][2]["status"] == "success"
+    assert captured[1][0] == "https://agentai.example.com/edge/commands/cmd-1/ack"
+    assert captured[2][0] == "https://agentai.example.com/edge/commands/cmd-1/heartbeat"
+    assert captured[3][0] == "https://agentai.example.com/edge/commands/cmd-1/result"
+    assert captured[3][2]["status"] == "success"
