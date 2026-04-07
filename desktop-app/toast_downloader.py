@@ -33,7 +33,8 @@ class ToastLoginRequiredError(RuntimeError):
 
 class ToastDownloader:
     def __init__(self, download_dir=None, headless=False, session_file=None,
-                 on_log=None, on_progress=None, on_report_file=None, max_download_attempts=3):
+                 on_log=None, on_progress=None, on_report_file=None, max_download_attempts=3,
+                 keep_browser_open_on_failure=None):
         self.download_dir = download_dir or DEFAULT_DOWNLOAD_DIR
         self.headless = headless
         self.session_file = session_file or DEFAULT_SESSION_FILE
@@ -41,6 +42,7 @@ class ToastDownloader:
         self.on_progress = on_progress or (lambda cur, total, msg: None)
         self.on_report_file = on_report_file or (lambda item: None)
         self.max_download_attempts = max(1, int(max_download_attempts))
+        self.keep_browser_open_on_failure = (not self.headless) if keep_browser_open_on_failure is None else bool(keep_browser_open_on_failure)
         self.playwright = None
         self.browser = None
         self.context = None
@@ -810,6 +812,17 @@ class ToastDownloader:
         self.log(f"Download audit saved -> {manifest_path}")
         return manifest_path
 
+    def _should_close_browser(self, results, had_unhandled_error):
+        if self.headless:
+            return True
+        if not self.keep_browser_open_on_failure:
+            return True
+        if had_unhandled_error:
+            return False
+        if results.get("fail", 0) > 0:
+            return False
+        return True
+
     def download_reports(self, locations=None, target_date=None):
         """
         Download reports for given locations for a single date.
@@ -838,6 +851,7 @@ class ToastDownloader:
 
         results = {"success": 0, "fail": 0, "skipped": 0, "total": 0, "files": []}
         total_tasks = len(locations) * len(dates) * len(reports)
+        had_unhandled_error = False
 
         os.makedirs(self.download_dir, exist_ok=True)
 
@@ -1000,13 +1014,17 @@ class ToastDownloader:
 
         except Exception as e:
             self.log(f"Error: {e}")
+            had_unhandled_error = True
             raise
         finally:
             try:
                 self._write_audit_manifest(results)
             except Exception as exc:
                 self.log(f"Could not write download audit manifest: {exc}")
-            self.close()
+            if self._should_close_browser(results, had_unhandled_error):
+                self.close()
+            else:
+                self.log("Browser left open for inspection because the download run failed.")
 
         self.log(f"\nDone! {results['success']}/{results['total']} successful, {results['fail']} failed")
         return results

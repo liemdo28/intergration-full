@@ -238,3 +238,17 @@ def test_dismiss_overlays_clicks_cookie_popup_actions_when_visible():
 
     assert 'button:text-is("Opt out of all")' in page.clicked_selectors
     assert any("Dismissed consent popup" in line for line in logs)
+
+
+def test_should_close_browser_keeps_gui_window_open_on_failure():
+    downloader = toast_downloader.ToastDownloader(headless=False)
+
+    assert downloader._should_close_browser({"fail": 1}, had_unhandled_error=False) is False
+    assert downloader._should_close_browser({"fail": 0}, had_unhandled_error=True) is False
+    assert downloader._should_close_browser({"fail": 0}, had_unhandled_error=False) is True
+
+
+def test_should_close_browser_always_closes_in_headless_mode():
+    downloader = toast_downloader.ToastDownloader(headless=True)
+
+    assert downloader._should_close_browser({"fail": 3}, had_unhandled_error=True) is True
