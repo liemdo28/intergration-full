@@ -77,3 +77,43 @@ def test_publish_integration_snapshot_posts_snapshot(monkeypatch, tmp_path):
     assert captured["body"]["machine_id"] == "stockton-frontdesk-01"
     assert captured["body"]["snapshot"]["summary"]["download_gap_count"] == 1
     assert captured["headers"]["X-agentai-token"] == "secret-token"
+
+
+def test_fetch_and_report_agentai_command(monkeypatch):
+    responses = [
+        {"command": {"id": "cmd-1", "command_type": "download_missing_reports", "payload": {"store": "Stockton"}}},
+        {"status": "ok"},
+    ]
+    captured = []
+
+    def fake_urlopen(req, timeout=0):
+        captured.append((req.full_url, req.get_method(), json.loads(req.data.decode("utf-8")) if req.data else None))
+        return _FakeResponse(responses[len(captured) - 1])
+
+    monkeypatch.setattr(agentai_sync.request, "urlopen", fake_urlopen)
+
+    config = {
+        "agentai_sync": {
+            "enabled": True,
+            "api_url": "https://agentai.example.com",
+            "token": "secret-token",
+            "machine_id": "stockton-frontdesk-01",
+            "machine_name": "Stockton Frontdesk",
+        }
+    }
+
+    polled = agentai_sync.fetch_next_agentai_command(config=config)
+    reported = agentai_sync.report_agentai_command_result(
+        "cmd-1",
+        status="success",
+        result={"success": 2},
+        config=config,
+    )
+
+    assert polled["ok"] is True
+    assert polled["command"]["id"] == "cmd-1"
+    assert reported["ok"] is True
+    assert captured[0][0] == "https://agentai.example.com/edge/projects/integration-full/commands/stockton-frontdesk-01"
+    assert captured[0][1] == "GET"
+    assert captured[1][0] == "https://agentai.example.com/edge/commands/cmd-1/result"
+    assert captured[1][2]["status"] == "success"

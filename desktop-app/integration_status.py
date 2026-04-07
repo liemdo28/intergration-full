@@ -493,6 +493,11 @@ def _build_ai_suggestions(
                     "description": f"Download {', '.join(missing_reports)} from {earliest_start} to {target_end}.",
                     "start_date": earliest_start,
                     "end_date": target_end,
+                    "report_types": [
+                        report.key
+                        for report_key, report in REPORT_TYPES.items()
+                        if report.label in missing_reports
+                    ],
                     "prompt": (
                         f"Review Toast POS integration for {store} and download missing "
                         f"{', '.join(missing_reports)} reports from {earliest_start} to {target_end} "
@@ -518,6 +523,7 @@ def _build_ai_suggestions(
                         "description": f"Sync Toasttab sales from {qb_start} to {qb_end}.",
                         "start_date": qb_start,
                         "end_date": qb_end,
+                        "source_filter": "toast",
                         "prompt": (
                             f"Prepare a catch-up QuickBooks sync plan for {store} using Toasttab sales summaries "
                             f"from {qb_start} to {qb_end}."
@@ -535,14 +541,15 @@ def _build_ai_suggestions(
                     "store": store,
                     "action_label": "Review failed QB sync",
                     "title": f"{store}: QB sync failed",
-                    "description": qb_attempt.get("error_message") or "The latest Toasttab QB sync failed.",
-                    "start_date": qb_attempt.get("date"),
-                    "end_date": qb_attempt.get("date"),
-                    "prompt": (
-                        f"Investigate the failed Toasttab to QuickBooks sync for {store} on {qb_attempt.get('date')} "
-                        f"and propose the next recovery step."
-                    ),
-                }
+                        "description": qb_attempt.get("error_message") or "The latest Toasttab QB sync failed.",
+                        "start_date": qb_attempt.get("date"),
+                        "end_date": qb_attempt.get("date"),
+                        "source_filter": "toast",
+                        "prompt": (
+                            f"Investigate the failed Toasttab to QuickBooks sync for {store} on {qb_attempt.get('date')} "
+                            f"and propose the next recovery step."
+                        ),
+                    }
             )
 
         for report_key, report in REPORT_TYPES.items():
@@ -559,6 +566,7 @@ def _build_ai_suggestions(
                         "description": f"The latest {report.label} download attempt did not complete successfully.",
                         "start_date": attempt.get("business_date"),
                         "end_date": attempt.get("business_date"),
+                        "report_types": [report.key],
                         "prompt": (
                             f"Retry the latest {report.label} Toast download for {store} and verify why the previous "
                             f"attempt around {attempt.get('business_date')} failed."

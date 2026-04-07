@@ -63,6 +63,31 @@ def is_agentai_sync_ready(config: dict | None = None) -> tuple[bool, str]:
     return True, "AgentAI sync is ready."
 
 
+def _agentai_request(
+    path: str,
+    *,
+    method: str = "GET",
+    payload: dict | None = None,
+    config: dict | None = None,
+    timeout_seconds: int = 20,
+) -> dict:
+    settings = get_agentai_sync_settings(config)
+    url = f"{settings['api_url']}{path}"
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8") if payload is not None else None
+    req = request.Request(
+        url,
+        data=body,
+        headers={
+            "Content-Type": "application/json",
+            "X-AgentAI-Token": settings["token"],
+        },
+        method=method,
+    )
+    with request.urlopen(req, timeout=timeout_seconds) as response:
+        response_text = response.read().decode("utf-8")
+    return json.loads(response_text) if response_text else {}
+
+
 def publish_integration_snapshot(
     *,
     base_dir: str | Path | None = None,
@@ -85,20 +110,15 @@ def publish_integration_snapshot(
         "snapshot": snapshot,
     }
     url = f"{settings['api_url']}/edge/projects/{settings['project_id']}/snapshot"
-    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    headers = {
-        "Content-Type": "application/json",
-        "X-AgentAI-Token": settings["token"],
-    }
-    req = request.Request(url, data=body, headers=headers, method="POST")
 
     try:
-        with request.urlopen(req, timeout=timeout_seconds) as response:
-            response_text = response.read().decode("utf-8")
-        try:
-            response_payload = json.loads(response_text) if response_text else {}
-        except json.JSONDecodeError:
-            response_payload = {"raw": response_text}
+        response_payload = _agentai_request(
+            f"/edge/projects/{settings['project_id']}/snapshot",
+            method="POST",
+            payload=payload,
+            config=config,
+            timeout_seconds=timeout_seconds,
+        )
         if callable(on_log):
             on_log(
                 "AgentAI snapshot published "
@@ -124,4 +144,68 @@ def publish_integration_snapshot(
             "ok": False,
             "skipped": False,
             "message": f"AgentAI sync failed: {exc}",
+        }
+
+
+def fetch_next_agentai_command(*, config: dict | None = None, timeout_seconds: int = 20) -> dict:
+    ready, reason = is_agentai_sync_ready(config)
+    if not ready:
+        return {"ok": False, "skipped": True, "message": reason, "command": None}
+    settings = get_agentai_sync_settings(config)
+    try:
+        payload = _agentai_request(
+            f"/edge/projects/{settings['project_id']}/commands/{settings['machine_id']}",
+            config=config,
+            timeout_seconds=timeout_seconds,
+        )
+        return {"ok": True, "skipped": False, "message": "Command poll completed.", "command": payload.get("command")}
+    except error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        return {
+            "ok": False,
+            "skipped": False,
+            "message": f"AgentAI command poll failed ({exc.code}): {detail or exc.reason}",
+            "command": None,
+        }
+    except Exception as exc:
+        return {"ok": False, "skipped": False, "message": f"AgentAI command poll failed: {exc}", "command": None}
+
+
+def report_agentai_command_result(
+    command_id: str,
+    *,
+    status: str,
+    result: dict | None = None,
+    error_message: str = "",
+    config: dict | None = None,
+    timeout_seconds: int = 20,
+) -> dict:
+    ready, reason = is_agentai_sync_ready(config)
+    if not ready:
+        return {"ok": False, "skipped": True, "message": reason}
+    try:
+        response_payload = _agentai_request(
+            f"/edge/commands/{command_id}/result",
+            method="POST",
+            payload={
+                "status": status,
+                "result": result or {},
+                "error_message": error_message,
+            },
+            config=config,
+            timeout_seconds=timeout_seconds,
+        )
+        return {"ok": True, "skipped": False, "message": "Command result sent.", "response": response_payload}
+    except error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        return {
+            "ok": False,
+            "skipped": False,
+            "message": f"AgentAI command result failed ({exc.code}): {detail or exc.reason}",
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "skipped": False,
+            "message": f"AgentAI command result failed: {exc}",
         }

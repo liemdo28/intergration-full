@@ -58,9 +58,11 @@ from integration_status import (
     get_world_clocks,
 )
 from agentai_sync import (
+    fetch_next_agentai_command,
     get_agentai_sync_settings,
     is_agentai_sync_ready,
     publish_integration_snapshot,
+    report_agentai_command_result,
 )
 
 import logging
@@ -322,6 +324,7 @@ class DownloadTab(ctk.CTkFrame):
         super().__init__(master, **kwargs)
         self.status_var = status_var
         self._running = False
+        self._run_completion_callback = None
         self._card_fg = "#111827"
         self._card_border = "#1f2a3b"
         self._subcard_fg = "#0f172a"
@@ -784,6 +787,32 @@ class DownloadTab(ctk.CTkFrame):
         locations = self._selected_locations() or TOAST_LOCATIONS
         return get_safe_target_date(locations, include_today=include_today)
 
+    def queue_download_run(
+        self,
+        *,
+        locations,
+        report_types,
+        start_date,
+        end_date,
+        upload_to_gdrive=True,
+        completion_callback=None,
+    ):
+        if self._running:
+            return False, "Download is already running."
+        self._run_completion_callback = completion_callback
+        for loc, var in self.loc_vars.items():
+            var.set(loc in set(locations))
+        for key, var in self.report_type_vars.items():
+            var.set(key in set(report_types))
+        self.upload_gdrive_var.set(bool(upload_to_gdrive))
+        self.start_date_var.set(start_date)
+        self.end_date_var.set(end_date)
+        self.start_cal.selection_set(datetime.strptime(start_date, "%Y-%m-%d"))
+        self.end_cal.selection_set(datetime.strptime(end_date, "%Y-%m-%d"))
+        self._update_date_info()
+        self.start_download()
+        return True, "Download command started."
+
     def _apply_auto_download_plan(self, include_today=False):
         locations = self._selected_locations()
         if not locations:
@@ -827,6 +856,13 @@ class DownloadTab(ctk.CTkFrame):
         threading.Thread(target=self._download_worker, args=(locations, dates, report_types), daemon=True).start()
 
     def _download_worker(self, locations, dates, report_types):
+        completion_payload = {
+            "ok": False,
+            "message": "Download did not complete.",
+            "success": 0,
+            "failed": 0,
+            "total": 0,
+        }
         try:
             from toast_downloader import ToastDownloader, ToastLoginRequiredError
 
@@ -849,6 +885,13 @@ class DownloadTab(ctk.CTkFrame):
                 toast_dates.append(dt.strftime("%m/%d/%Y"))
 
             results = downloader.download_reports_daterange(locations=locations, dates=toast_dates, report_types=report_types)
+            completion_payload = {
+                "ok": results["success"] == results["total"],
+                "message": f"Downloaded {results['success']} of {results['total']} files.",
+                "success": results["success"],
+                "failed": max(results["total"] - results["success"], 0),
+                "total": results["total"],
+            }
 
             if self.upload_gdrive_var.get() and results["files"]:
                 self.log("Uploading to Google Drive...")
@@ -875,13 +918,19 @@ class DownloadTab(ctk.CTkFrame):
 
         except ToastLoginRequiredError as e:
             self.log(f"Error: {e}")
+            completion_payload = {"ok": False, "message": str(e), "success": 0, "failed": len(locations) * len(dates), "total": len(locations) * len(dates)}
             self.after(0, lambda msg=str(e): messagebox.showwarning("Toast Login Required", msg))
         except Exception as e:
             self.log(f"Error: {e}")
             import traceback
             self.log(traceback.format_exc())
+            completion_payload = {"ok": False, "message": str(e), "success": 0, "failed": len(locations) * len(dates), "total": len(locations) * len(dates)}
         finally:
             publish_agentai_snapshot_if_configured(on_log=self.log)
+            completion_callback = self._run_completion_callback
+            self._run_completion_callback = None
+            if completion_callback:
+                self.after(0, lambda payload=completion_payload, cb=completion_callback: cb(payload))
             self._running = False
             self.after(0, lambda: self.download_btn.configure(state="normal", text="Download Reports"))
             self.after(0, lambda: self.status_var.set("Ready"))
@@ -897,6 +946,7 @@ class QBSyncTab(ctk.CTkFrame):
         super().__init__(master, **kwargs)
         self.status_var = status_var
         self._running = False
+        self._run_completion_callback = None
         self._global_cfg, self._stores = load_mapping()
         self.validation_records = []
         self.mapping_candidates = []
@@ -1361,6 +1411,36 @@ class QBSyncTab(ctk.CTkFrame):
         stores = self._selected_qb_stores() or list(self._stores.keys())
         return get_safe_target_date(stores, include_today=include_today)
 
+    def queue_qb_sync_run(
+        self,
+        *,
+        stores,
+        start_date,
+        end_date,
+        source="gdrive",
+        source_filter="toast",
+        preview=False,
+        strict_mode=True,
+        completion_callback=None,
+    ):
+        if self._running:
+            return False, "QB sync is already running."
+        self._run_completion_callback = completion_callback
+        selected = set(stores)
+        for name, var in self.store_vars.items():
+            var.set(name in selected)
+        self.date_from_var.set(start_date)
+        self.date_to_var.set(end_date)
+        self.start_cal.selection_set(datetime.strptime(start_date, "%Y-%m-%d"))
+        self.end_cal.selection_set(datetime.strptime(end_date, "%Y-%m-%d"))
+        self.source_var.set(source)
+        self.source_filter_var.set(source_filter)
+        self.preview_var.set(bool(preview))
+        self.strict_sync_var.set(bool(strict_mode))
+        self._update_date_range_info()
+        self.start_sync()
+        return True, "QB sync command started."
+
     def _apply_auto_qb_plan(self, include_today=False):
         stores = self._selected_qb_stores()
         if not stores:
@@ -1661,6 +1741,13 @@ class QBSyncTab(ctk.CTkFrame):
         return dates
 
     def _sync_worker(self, stores, dates, source, preview, strict_mode, source_filter="all"):
+        completion_payload = {
+            "ok": False,
+            "message": "QB sync did not complete.",
+            "success": 0,
+            "failed": 0,
+            "total": 0,
+        }
         try:
             global_cfg, all_stores = load_mapping()
             sys.path.insert(0, str(APP_DIR))
@@ -2116,13 +2203,25 @@ class QBSyncTab(ctk.CTkFrame):
             self.after(0, lambda records=validation_records: self._set_validation_records(records))
             self.after(0, self._refresh_last_sync_status)
             self.log(f"\nAll done! Success: {success_count}, Failed: {fail_count}")
+            completion_payload = {
+                "ok": fail_count == 0,
+                "message": f"QB sync finished with {success_count} success and {fail_count} failed.",
+                "success": success_count,
+                "failed": fail_count,
+                "total": success_count + fail_count,
+            }
 
         except Exception as e:
             self.log(f"Fatal error: {e}")
             import traceback
             self.log(traceback.format_exc())
+            completion_payload = {"ok": False, "message": str(e), "success": 0, "failed": len(stores) * len(dates), "total": len(stores) * len(dates)}
         finally:
             publish_agentai_snapshot_if_configured(on_log=self.log)
+            completion_callback = self._run_completion_callback
+            self._run_completion_callback = None
+            if completion_callback:
+                self.after(0, lambda payload=completion_payload, cb=completion_callback: cb(payload))
             self._running = False
             self.after(0, lambda: self.sync_btn.configure(state="normal", text="Sync to QuickBooks"))
             self.after(0, lambda: self.status_var.set("Ready"))
@@ -4408,8 +4507,11 @@ class App(ctk.CTk):
         self._compact_header_mode = False
         self._compact_nav_mode = False
         self._resize_after_id = None
+        self._agentai_poll_after_id = None
+        self._active_agentai_command = None
         self._build_ui()
         self.run_diagnostics_async(False)
+        self.after(5000, lambda: self._schedule_agentai_poll(5000))
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def _on_close(self):
@@ -4422,6 +4524,11 @@ class App(ctk.CTk):
                 "A sync or download is still running. Are you sure you want to quit?",
             ):
                 return
+        if self._agentai_poll_after_id:
+            try:
+                self.after_cancel(self._agentai_poll_after_id)
+            except Exception:
+                pass
         self.destroy()
 
     def _build_ui(self):
@@ -4779,6 +4886,125 @@ class App(ctk.CTk):
         self._tab_frames[key].pack(fill="both", expand=True)
         self._active_tab = key
         self._apply_nav_styles()
+
+    def _current_agentai_config(self):
+        if getattr(self, "settings_tab", None) is not None:
+            return dict(self.settings_tab._local_cfg)
+        return load_local_config()
+
+    def _schedule_agentai_poll(self, delay_ms=60000):
+        if self._agentai_poll_after_id:
+            try:
+                self.after_cancel(self._agentai_poll_after_id)
+            except Exception:
+                pass
+        self._agentai_poll_after_id = self.after(delay_ms, self._poll_agentai_commands)
+
+    def _poll_agentai_commands(self):
+        self._agentai_poll_after_id = None
+        if self._active_agentai_command:
+            self._schedule_agentai_poll(15000)
+            return
+        if (getattr(self, "download_tab", None) and self.download_tab._running) or (getattr(self, "qb_tab", None) and self.qb_tab._running):
+            self._schedule_agentai_poll(15000)
+            return
+
+        config = self._current_agentai_config()
+        ready, _ = is_agentai_sync_ready(config)
+        if not ready:
+            self._schedule_agentai_poll(60000)
+            return
+
+        threading.Thread(target=self._poll_agentai_commands_worker, args=(config,), daemon=True).start()
+
+    def _poll_agentai_commands_worker(self, config):
+        result = fetch_next_agentai_command(config=config)
+        self.after(0, lambda res=result, cfg=config: self._handle_polled_agentai_command(res, cfg))
+
+    def _handle_polled_agentai_command(self, poll_result, config):
+        if not poll_result.get("ok"):
+            self.status_var.set("AgentAI command poll failed")
+            self._schedule_agentai_poll(60000)
+            return
+
+        command = poll_result.get("command")
+        if not command:
+            self._schedule_agentai_poll(60000)
+            return
+        self._execute_agentai_command(command, config)
+
+    def _execute_agentai_command(self, command, config):
+        self._active_agentai_command = command
+        payload = dict(command.get("payload") or {})
+        command_type = command.get("command_type")
+        self.status_var.set(f"AgentAI command: {command_type}")
+
+        if command_type == "download_missing_reports":
+            stores = payload.get("stores") or [payload.get("store")]
+            stores = [item for item in stores if item]
+            report_types = payload.get("report_types") or list(DEFAULT_REPORT_TYPE_KEYS)
+            start_date = payload.get("start_date")
+            end_date = payload.get("end_date") or start_date
+            if not stores or not start_date or not end_date:
+                self._finish_agentai_command(command, {"ok": False, "message": "Missing store or date range for download command."})
+                return
+            self._switch_tab("download")
+            ok, message = self.download_tab.queue_download_run(
+                locations=stores,
+                report_types=report_types,
+                start_date=start_date,
+                end_date=end_date,
+                upload_to_gdrive=payload.get("upload_to_gdrive", True),
+                completion_callback=lambda result, cmd=command: self._finish_agentai_command(cmd, result),
+            )
+            if not ok:
+                self._finish_agentai_command(command, {"ok": False, "message": message})
+            return
+
+        if command_type == "catch_up_qb_sync":
+            stores = payload.get("stores") or [payload.get("store")]
+            stores = [item for item in stores if item]
+            start_date = payload.get("start_date")
+            end_date = payload.get("end_date") or start_date
+            if not stores or not start_date or not end_date:
+                self._finish_agentai_command(command, {"ok": False, "message": "Missing store or date range for QB sync command."})
+                return
+            self._switch_tab("qb")
+            ok, message = self.qb_tab.queue_qb_sync_run(
+                stores=stores,
+                start_date=start_date,
+                end_date=end_date,
+                source=payload.get("source", "gdrive"),
+                source_filter=payload.get("source_filter", "toast"),
+                preview=payload.get("preview", False),
+                strict_mode=payload.get("strict_mode", True),
+                completion_callback=lambda result, cmd=command: self._finish_agentai_command(cmd, result),
+            )
+            if not ok:
+                self._finish_agentai_command(command, {"ok": False, "message": message})
+            return
+
+        self._finish_agentai_command(command, {"ok": False, "message": f"Unsupported AgentAI command type: {command_type}"})
+
+    def _finish_agentai_command(self, command, result):
+        self._active_agentai_command = None
+        status = "success" if result.get("ok") else "failed"
+        self.status_var.set("Ready")
+        threading.Thread(
+            target=self._report_agentai_command_result_worker,
+            args=(command, result, status, self._current_agentai_config()),
+            daemon=True,
+        ).start()
+        self._schedule_agentai_poll(10000)
+
+    def _report_agentai_command_result_worker(self, command, result, status, config):
+        report_agentai_command_result(
+            command.get("id"),
+            status=status,
+            result=result,
+            error_message="" if status == "success" else result.get("message", ""),
+            config=config,
+        )
 
     def _apply_nav_styles(self):
         for key, widgets in self._nav_buttons.items():
