@@ -1,0 +1,127 @@
+from __future__ import annotations
+
+import json
+import os
+import platform
+import re
+from datetime import datetime, timezone
+from pathlib import Path
+from urllib import error, request
+
+from app_paths import runtime_path
+from integration_status import build_integration_snapshot
+
+LOCAL_CONFIG_FILE = runtime_path("local-config.json")
+DEFAULT_PROJECT_ID = "integration-full"
+DEFAULT_SOURCE_TYPE = "integration-full"
+DEFAULT_APP_VERSION = "v2.2"
+
+
+def _load_local_config() -> dict:
+    if not LOCAL_CONFIG_FILE.exists():
+        return {}
+    try:
+        return json.loads(LOCAL_CONFIG_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _slugify(value: str) -> str:
+    cleaned = re.sub(r"[^a-zA-Z0-9]+", "-", value.strip().lower()).strip("-")
+    return cleaned or "integration-node"
+
+
+def _machine_defaults() -> tuple[str, str]:
+    machine_name = os.environ.get("COMPUTERNAME") or platform.node() or "Integration Machine"
+    return _slugify(machine_name), machine_name
+
+
+def get_agentai_sync_settings(config: dict | None = None) -> dict:
+    config = config or _load_local_config()
+    sync_cfg = dict((config.get("agentai_sync") or {}))
+    default_machine_id, default_machine_name = _machine_defaults()
+    return {
+        "enabled": bool(sync_cfg.get("enabled")),
+        "api_url": str(sync_cfg.get("api_url") or "").strip().rstrip("/"),
+        "token": str(sync_cfg.get("token") or "").strip(),
+        "project_id": str(sync_cfg.get("project_id") or DEFAULT_PROJECT_ID).strip() or DEFAULT_PROJECT_ID,
+        "source_type": str(sync_cfg.get("source_type") or DEFAULT_SOURCE_TYPE).strip() or DEFAULT_SOURCE_TYPE,
+        "app_version": str(sync_cfg.get("app_version") or DEFAULT_APP_VERSION).strip() or DEFAULT_APP_VERSION,
+        "machine_id": str(sync_cfg.get("machine_id") or default_machine_id).strip() or default_machine_id,
+        "machine_name": str(sync_cfg.get("machine_name") or default_machine_name).strip() or default_machine_name,
+    }
+
+
+def is_agentai_sync_ready(config: dict | None = None) -> tuple[bool, str]:
+    settings = get_agentai_sync_settings(config)
+    if not settings["enabled"]:
+        return False, "AgentAI sync is disabled."
+    if not settings["api_url"]:
+        return False, "Missing AgentAI API URL."
+    if not settings["token"]:
+        return False, "Missing AgentAI edge token."
+    return True, "AgentAI sync is ready."
+
+
+def publish_integration_snapshot(
+    *,
+    base_dir: str | Path | None = None,
+    config: dict | None = None,
+    on_log=None,
+    timeout_seconds: int = 20,
+) -> dict:
+    settings = get_agentai_sync_settings(config)
+    ready, reason = is_agentai_sync_ready(config)
+    if not ready:
+        return {"ok": False, "skipped": True, "message": reason}
+
+    resolved_base = Path(base_dir) if base_dir else Path(__file__).resolve().parent
+    snapshot = build_integration_snapshot(base_dir=resolved_base, include_today_for_suggestions=False)
+    payload = {
+        "machine_id": settings["machine_id"],
+        "machine_name": settings["machine_name"],
+        "source_type": settings["source_type"],
+        "app_version": settings["app_version"],
+        "snapshot": snapshot,
+    }
+    url = f"{settings['api_url']}/edge/projects/{settings['project_id']}/snapshot"
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    headers = {
+        "Content-Type": "application/json",
+        "X-AgentAI-Token": settings["token"],
+    }
+    req = request.Request(url, data=body, headers=headers, method="POST")
+
+    try:
+        with request.urlopen(req, timeout=timeout_seconds) as response:
+            response_text = response.read().decode("utf-8")
+        try:
+            response_payload = json.loads(response_text) if response_text else {}
+        except json.JSONDecodeError:
+            response_payload = {"raw": response_text}
+        if callable(on_log):
+            on_log(
+                "AgentAI snapshot published "
+                f"({settings['machine_name']} -> {settings['project_id']} at {datetime.now(timezone.utc).isoformat()})"
+            )
+        return {
+            "ok": True,
+            "skipped": False,
+            "message": "Snapshot published to AgentAI.",
+            "url": url,
+            "response": response_payload,
+        }
+    except error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        return {
+            "ok": False,
+            "skipped": False,
+            "message": f"AgentAI sync failed ({exc.code}): {detail or exc.reason}",
+            "status_code": exc.code,
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "skipped": False,
+            "message": f"AgentAI sync failed: {exc}",
+        }

@@ -15,5 +15,15 @@
   "delete_policy": {
     "allow_live_delete": false,
     "approver": "Accounting lead"
+  },
+  "agentai_sync": {
+    "enabled": false,
+    "api_url": "https://agentai.yourdomain.com",
+    "token": "set-this-to-the-same-value-as-AGENTAI_EDGE_TOKEN",
+    "project_id": "integration-full",
+    "source_type": "integration-full",
+    "app_version": "v2.2",
+    "machine_id": "stockton-frontdesk-01",
+    "machine_name": "Stockton Frontdesk"
   }
 }

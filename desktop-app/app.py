@@ -57,6 +57,11 @@ from integration_status import (
     get_safe_target_date,
     get_world_clocks,
 )
+from agentai_sync import (
+    get_agentai_sync_settings,
+    is_agentai_sync_ready,
+    publish_integration_snapshot,
+)
 
 import logging
 from logging.handlers import RotatingFileHandler
@@ -111,6 +116,13 @@ def save_local_config(config):
 def get_marketplace_paths(config: dict | None, store_name: str) -> dict[str, str]:
     config = config or {}
     return dict(((config.get("marketplace_paths") or {}).get(store_name) or {}))
+
+
+def publish_agentai_snapshot_if_configured(*, config: dict | None = None, on_log=None) -> dict:
+    result = publish_integration_snapshot(base_dir=APP_DIR, config=config, on_log=on_log)
+    if callable(on_log) and not result.get("ok") and not result.get("skipped"):
+        on_log(result.get("message", "AgentAI sync failed."))
+    return result
 
 
 # ── Shared UI helpers ────────────────────────────────────────────────
@@ -869,6 +881,7 @@ class DownloadTab(ctk.CTkFrame):
             import traceback
             self.log(traceback.format_exc())
         finally:
+            publish_agentai_snapshot_if_configured(on_log=self.log)
             self._running = False
             self.after(0, lambda: self.download_btn.configure(state="normal", text="Download Reports"))
             self.after(0, lambda: self.status_var.set("Ready"))
@@ -2109,6 +2122,7 @@ class QBSyncTab(ctk.CTkFrame):
             import traceback
             self.log(traceback.format_exc())
         finally:
+            publish_agentai_snapshot_if_configured(on_log=self.log)
             self._running = False
             self.after(0, lambda: self.sync_btn.configure(state="normal", text="Sync to QuickBooks"))
             self.after(0, lambda: self.status_var.set("Ready"))
@@ -3949,10 +3963,12 @@ class RemoveTab(ctk.CTkFrame):
 #  Tab 4: Settings
 # ══════════════════════════════════════════════════════════════════════
 class SettingsTab(ctk.CTkFrame):
-    def __init__(self, master, run_diagnostics=None, **kwargs):
+    def __init__(self, master, run_diagnostics=None, status_var=None, **kwargs):
         super().__init__(master, **kwargs)
         self.run_diagnostics = run_diagnostics
+        self.status_var = status_var
         self.recovery_playbooks = get_recovery_playbooks()
+        self._local_cfg = load_local_config()
         self._build_ui()
 
     def _build_ui(self):
@@ -4092,6 +4108,55 @@ class SettingsTab(ctk.CTkFrame):
         self.recovery_box.configure(state="disabled")
         self._show_playbook(self.playbook_var.get())
         self._refresh_recovery_status()
+
+        # ── AgentAI Sync ──
+        _agentai_card, agentai_frame = make_section_card(
+            content,
+            "AgentAI Sync",
+            "Publish this machine's integration snapshot to the central AgentAI brain so remote operations show up even outside the local network.",
+        )
+        self.agentai_status = ctk.CTkLabel(
+            agentai_frame,
+            text="AgentAI sync not configured",
+            text_color=UI_MUTED_TEXT,
+            font=ctk.CTkFont(size=12, weight="bold"),
+        )
+        self.agentai_status.pack(anchor="w", pady=2)
+
+        sync_cfg = get_agentai_sync_settings(self._local_cfg)
+        self.agentai_enabled_var = ctk.BooleanVar(value=sync_cfg["enabled"])
+        self.agentai_api_url_var = ctk.StringVar(value=sync_cfg["api_url"])
+        self.agentai_token_var = ctk.StringVar(value=sync_cfg["token"])
+        self.agentai_machine_id_var = ctk.StringVar(value=sync_cfg["machine_id"])
+        self.agentai_machine_name_var = ctk.StringVar(value=sync_cfg["machine_name"])
+
+        ctk.CTkCheckBox(
+            agentai_frame,
+            text="Enable remote AgentAI sync for this machine",
+            variable=self.agentai_enabled_var,
+        ).pack(anchor="w", pady=(4, 8))
+
+        agentai_grid = ctk.CTkFrame(agentai_frame, fg_color="transparent")
+        agentai_grid.pack(fill="x")
+        agentai_grid.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(agentai_grid, text="AgentAI API URL").grid(row=0, column=0, sticky="w", padx=(0, 12), pady=4)
+        ctk.CTkEntry(agentai_grid, textvariable=self.agentai_api_url_var, placeholder_text="https://agentai.yourdomain.com").grid(row=0, column=1, sticky="ew", pady=4)
+
+        ctk.CTkLabel(agentai_grid, text="Edge token").grid(row=1, column=0, sticky="w", padx=(0, 12), pady=4)
+        ctk.CTkEntry(agentai_grid, textvariable=self.agentai_token_var, show="*", placeholder_text="Same value as AGENTAI_EDGE_TOKEN").grid(row=1, column=1, sticky="ew", pady=4)
+
+        ctk.CTkLabel(agentai_grid, text="Machine ID").grid(row=2, column=0, sticky="w", padx=(0, 12), pady=4)
+        ctk.CTkEntry(agentai_grid, textvariable=self.agentai_machine_id_var, placeholder_text="stockton-frontdesk-01").grid(row=2, column=1, sticky="ew", pady=4)
+
+        ctk.CTkLabel(agentai_grid, text="Machine name").grid(row=3, column=0, sticky="w", padx=(0, 12), pady=4)
+        ctk.CTkEntry(agentai_grid, textvariable=self.agentai_machine_name_var, placeholder_text="Stockton Frontdesk").grid(row=3, column=1, sticky="ew", pady=4)
+
+        agentai_btn_row = ctk.CTkFrame(agentai_frame, fg_color="transparent")
+        agentai_btn_row.pack(fill="x", pady=(8, 0))
+        make_action_button(agentai_btn_row, "Save AgentAI Sync", self._save_agentai_sync_settings, tone="primary", width=150).pack(side="left", padx=(0, 8))
+        make_action_button(agentai_btn_row, "Publish Snapshot Now", self._publish_agentai_snapshot_now, tone="neutral", width=165).pack(side="left")
+        self._refresh_agentai_status()
 
         # ── Appearance ──
         _theme_card, theme_frame = make_section_card(
@@ -4258,6 +4323,60 @@ class SettingsTab(ctk.CTkFrame):
             self._set_toast_status(f"Session saved ({size_kb:.0f} KB, updated {mtime})", "#059669")
         elif self.toast_status.cget("text") in {"No saved session", "Session cleared. Next download will require login.", "Session reset. Next download will require login."}:
             self._set_toast_status("No saved session. Next download will require login.", "gray")
+
+    def _build_agentai_sync_config(self) -> dict:
+        cfg = dict(self._local_cfg)
+        cfg["agentai_sync"] = {
+            "enabled": bool(self.agentai_enabled_var.get()),
+            "api_url": self.agentai_api_url_var.get().strip(),
+            "token": self.agentai_token_var.get().strip(),
+            "project_id": "integration-full",
+            "source_type": "integration-full",
+            "app_version": "v2.2",
+            "machine_id": self.agentai_machine_id_var.get().strip(),
+            "machine_name": self.agentai_machine_name_var.get().strip(),
+        }
+        return cfg
+
+    def _refresh_agentai_status(self):
+        ready, message = is_agentai_sync_ready(self._local_cfg)
+        sync_cfg = get_agentai_sync_settings(self._local_cfg)
+        if ready:
+            text = f"Ready: {sync_cfg['machine_name']} -> {sync_cfg['api_url']}"
+            color = "#059669"
+        elif sync_cfg["enabled"]:
+            text = message
+            color = "#d97706"
+        else:
+            text = "AgentAI sync disabled for this machine."
+            color = "gray"
+        self.agentai_status.configure(text=text, text_color=color)
+
+    def _save_agentai_sync_settings(self):
+        self._local_cfg = self._build_agentai_sync_config()
+        save_local_config(self._local_cfg)
+        self._refresh_agentai_status()
+        if self.status_var is not None:
+            self.status_var.set("AgentAI sync settings saved")
+        messagebox.showinfo("Saved", "AgentAI sync settings saved for this machine.")
+
+    def _publish_agentai_snapshot_now(self):
+        self._local_cfg = self._build_agentai_sync_config()
+        save_local_config(self._local_cfg)
+        self._refresh_agentai_status()
+
+        def _worker():
+            result = publish_agentai_snapshot_if_configured(config=self._local_cfg)
+            if self.status_var is not None:
+                self.after(0, lambda: self.status_var.set("Ready"))
+            if result.get("ok"):
+                self.after(0, lambda: messagebox.showinfo("AgentAI Sync", result.get("message", "Snapshot published.")))
+            else:
+                self.after(0, lambda: messagebox.showwarning("AgentAI Sync", result.get("message", "AgentAI sync could not run.")))
+
+        if self.status_var is not None:
+            self.status_var.set("Publishing AgentAI snapshot...")
+        threading.Thread(target=_worker, daemon=True).start()
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -4570,7 +4689,11 @@ class App(ctk.CTk):
         self.rm_tab = RemoveTab(self._tab_frames["remove"], self.status_var)
         self.rm_tab.pack(fill="both", expand=True)
 
-        self.settings_tab = SettingsTab(self._tab_frames["settings"], run_diagnostics=self.run_diagnostics_async)
+        self.settings_tab = SettingsTab(
+            self._tab_frames["settings"],
+            run_diagnostics=self.run_diagnostics_async,
+            status_var=self.status_var,
+        )
         self.settings_tab.pack(fill="both", expand=True)
 
         # Default to QB Sync tab
