@@ -174,6 +174,126 @@ def make_calendar(parent, initial_date=None):
     return frame, cal
 
 
+UI_CARD_FG = "#111827"
+UI_CARD_BORDER = "#1f2a3b"
+UI_SUBCARD_FG = "#0f172a"
+UI_SUBCARD_BORDER = "#1e293b"
+UI_MUTED_TEXT = "#94a3b8"
+UI_HEADING_TEXT = "#e2e8f0"
+UI_ACCENT_BLUE = "#2563eb"
+UI_ACCENT_TEAL = "#0f766e"
+UI_ACCENT_AMBER = "#b45309"
+
+
+def style_scrollable_frame(scrollable_frame):
+    try:
+        scrollable_frame._scrollbar.configure(button_color="#334155", button_hover_color="#475569")
+    except Exception:
+        pass
+
+
+def make_section_card(parent, title, subtitle=None):
+    card = ctk.CTkFrame(
+        parent,
+        fg_color=UI_CARD_FG,
+        corner_radius=18,
+        border_width=1,
+        border_color=UI_CARD_BORDER,
+    )
+    card.pack(fill="x", padx=15, pady=7)
+    header = ctk.CTkFrame(card, fg_color="transparent")
+    header.pack(fill="x", padx=16, pady=(14, 6))
+    ctk.CTkLabel(
+        header,
+        text=title,
+        font=ctk.CTkFont(size=16, weight="bold"),
+        text_color="#f8fafc",
+    ).pack(anchor="w")
+    if subtitle:
+        ctk.CTkLabel(
+            header,
+            text=subtitle,
+            font=ctk.CTkFont(size=11),
+            text_color=UI_MUTED_TEXT,
+            justify="left",
+            wraplength=900,
+        ).pack(anchor="w", pady=(3, 0))
+    body = ctk.CTkFrame(card, fg_color="transparent")
+    body.pack(fill="x", padx=16, pady=(0, 16))
+    return card, body
+
+
+def make_subcard(parent):
+    return ctk.CTkFrame(
+        parent,
+        fg_color=UI_SUBCARD_FG,
+        corner_radius=14,
+        border_width=1,
+        border_color=UI_SUBCARD_BORDER,
+    )
+
+
+def make_action_button(parent, text, command, *, tone="neutral", width=120, height=34):
+    palette = {
+        "neutral": ("#334155", "#475569"),
+        "primary": (UI_ACCENT_BLUE, "#1d4ed8"),
+        "teal": (UI_ACCENT_TEAL, "#0f5f59"),
+        "amber": (UI_ACCENT_AMBER, "#92400e"),
+        "danger": ("#b91c1c", "#991b1b"),
+    }
+    fg_color, hover_color = palette[tone]
+    return ctk.CTkButton(
+        parent,
+        text=text,
+        command=command,
+        width=width,
+        height=height,
+        corner_radius=10,
+        fg_color=fg_color,
+        hover_color=hover_color,
+        font=ctk.CTkFont(size=12, weight="bold"),
+    )
+
+
+def make_hero_banner(parent, title, subtitle, right_label=None, *, accent="#1d4ed8"):
+    hero = ctk.CTkFrame(
+        parent,
+        fg_color="#0f172a",
+        corner_radius=20,
+        border_width=1,
+        border_color=accent,
+    )
+    hero.pack(fill="x", padx=15, pady=(15, 8))
+    hero_top = ctk.CTkFrame(hero, fg_color="transparent")
+    hero_top.pack(fill="x", padx=18, pady=(16, 12))
+    title_col = ctk.CTkFrame(hero_top, fg_color="transparent")
+    title_col.pack(side="left", fill="x", expand=True)
+    ctk.CTkLabel(
+        title_col,
+        text=title,
+        font=ctk.CTkFont(size=22, weight="bold"),
+        text_color="#f8fafc",
+    ).pack(anchor="w")
+    ctk.CTkLabel(
+        title_col,
+        text=subtitle,
+        font=ctk.CTkFont(size=11),
+        text_color="#93c5fd",
+        wraplength=650,
+        justify="left",
+    ).pack(anchor="w", pady=(4, 0))
+    if right_label:
+        chip = ctk.CTkFrame(hero_top, fg_color="#172554", corner_radius=14, border_width=1, border_color=accent)
+        chip.pack(side="right", padx=(12, 0))
+        ctk.CTkLabel(
+            chip,
+            text=right_label,
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color="#dbeafe",
+        ).pack(padx=12, pady=10)
+    return hero
+
+
 # ══════════════════════════════════════════════════════════════════════
 #  Tab 1: Download Reports
 # ══════════════════════════════════════════════════════════════════════
@@ -773,12 +893,22 @@ class QBSyncTab(ctk.CTkFrame):
         # ── Scrollable container for entire tab ──
         self._scroll_container = ctk.CTkScrollableFrame(self, fg_color="transparent")
         self._scroll_container.pack(fill="both", expand=True)
+        style_scrollable_frame(self._scroll_container)
         _parent = self._scroll_container
+        make_hero_banner(
+            _parent,
+            "QuickBooks Sync Center",
+            "Review date range, store files, and source filters before posting sales receipts or running a safe preview.",
+            "Posting workflow",
+            accent="#059669",
+        )
 
         # ── Date Range Section ──
-        date_frame = ctk.CTkFrame(_parent)
-        date_frame.pack(fill="x", padx=15, pady=(15, 5))
-        ctk.CTkLabel(date_frame, text="Date Range", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=10, pady=(10, 5))
+        _date_card, date_frame = make_section_card(
+            _parent,
+            "Date Range",
+            "Pick the QB sync window using US business dates, then use auto-fill to catch up missing Toast sales.",
+        )
 
         yesterday = get_safe_target_date(include_today=False)
         yesterday_dt = datetime.strptime(yesterday, "%Y-%m-%d")
@@ -788,39 +918,41 @@ class QBSyncTab(ctk.CTkFrame):
 
         # ── Calendar widgets (matching Download tab) ──────────────────────
         cal_row = ctk.CTkFrame(date_frame, fg_color="transparent")
-        cal_row.pack(fill="x", padx=10, pady=(0, 5))
+        cal_row.pack(fill="x", pady=(0, 8))
 
         # Start Date
-        start_col = ctk.CTkFrame(cal_row, fg_color="transparent")
-        start_col.pack(side="left", padx=(0, 20))
-        ctk.CTkLabel(start_col, text="Start Date", font=ctk.CTkFont(size=12, weight="bold")).pack(anchor="w")
+        start_col = make_subcard(cal_row)
+        start_col.pack(side="left", padx=(0, 14), fill="y")
+        ctk.CTkLabel(start_col, text="Start Date", font=ctk.CTkFont(size=12, weight="bold"), text_color=UI_HEADING_TEXT).pack(anchor="w", padx=12, pady=(12, 0))
         self.start_cal_frame, self.start_cal = make_calendar(start_col, yesterday_dt)
         start_entry_row = ctk.CTkFrame(start_col, fg_color="transparent")
-        start_entry_row.pack(fill="x", pady=(5, 0))
-        self.start_date_entry = ctk.CTkEntry(start_entry_row, textvariable=self.date_from_var, width=130)
+        start_entry_row.pack(fill="x", padx=12, pady=(8, 12))
+        self.start_date_entry = ctk.CTkEntry(start_entry_row, textvariable=self.date_from_var, width=150, fg_color="#111827", border_color="#475569")
         self.start_date_entry.pack(side="left")
         self.start_date_entry.bind("<Return>", lambda e: self._sync_start_cal())
         self.start_cal.bind("<<CalendarSelected>>", lambda e: self._on_start_date_selected())
 
         # End Date
-        end_col = ctk.CTkFrame(cal_row, fg_color="transparent")
-        end_col.pack(side="left", padx=(0, 20))
-        ctk.CTkLabel(end_col, text="End Date", font=ctk.CTkFont(size=12, weight="bold")).pack(anchor="w")
+        end_col = make_subcard(cal_row)
+        end_col.pack(side="left", padx=(0, 14), fill="y")
+        ctk.CTkLabel(end_col, text="End Date", font=ctk.CTkFont(size=12, weight="bold"), text_color=UI_HEADING_TEXT).pack(anchor="w", padx=12, pady=(12, 0))
         self.end_cal_frame, self.end_cal = make_calendar(end_col, yesterday_dt)
         end_entry_row = ctk.CTkFrame(end_col, fg_color="transparent")
-        end_entry_row.pack(fill="x", pady=(5, 0))
-        self.end_date_entry = ctk.CTkEntry(end_entry_row, textvariable=self.date_to_var, width=130)
+        end_entry_row.pack(fill="x", padx=12, pady=(8, 12))
+        self.end_date_entry = ctk.CTkEntry(end_entry_row, textvariable=self.date_to_var, width=150, fg_color="#111827", border_color="#475569")
         self.end_date_entry.pack(side="left")
         self.end_date_entry.bind("<Return>", lambda e: self._sync_end_cal())
         self.end_cal.bind("<<CalendarSelected>>", lambda e: self._on_end_date_selected())
 
-        self.date_info_label = ctk.CTkLabel(date_frame, text="", text_color="#60a5fa", font=ctk.CTkFont(size=12))
-        self.date_info_label.pack(anchor="w", padx=10, pady=(2, 0))
+        info_bar = ctk.CTkFrame(date_frame, fg_color="#101827", corner_radius=12, border_width=1, border_color="#1e3a8a")
+        info_bar.pack(fill="x", pady=(4, 8))
+        self.date_info_label = ctk.CTkLabel(info_bar, text="", text_color="#60a5fa", font=ctk.CTkFont(size=12, weight="bold"))
+        self.date_info_label.pack(anchor="w", padx=12, pady=10)
         self._update_date_range_info()
 
         # Quick buttons
         btn_row = ctk.CTkFrame(date_frame, fg_color="transparent")
-        btn_row.pack(fill="x", padx=10, pady=(5, 10))
+        btn_row.pack(fill="x")
 
         def set_single_date(include_today):
             d_str = self._selection_target_date(include_today=include_today)
@@ -840,38 +972,26 @@ class QBSyncTab(ctk.CTkFrame):
             self.end_cal.selection_set(end)
             self._update_date_range_info()
 
-        ctk.CTkButton(btn_row, text="Yesterday (US)", width=110, command=lambda: set_single_date(False)).pack(side="left", padx=2)
-        ctk.CTkButton(btn_row, text="Today (US)", width=90, command=lambda: set_single_date(True)).pack(side="left", padx=2)
-        ctk.CTkButton(btn_row, text="Last 7 days", width=100, command=lambda: set_last_n_days(7)).pack(side="left", padx=2)
-        ctk.CTkButton(btn_row, text="Last 30 days", width=100, command=lambda: set_last_n_days(30)).pack(side="left", padx=2)
-        ctk.CTkButton(
-            btn_row,
-            text="Auto Fill QB Missing",
-            width=150,
-            command=lambda: self._apply_auto_qb_plan(False),
-            fg_color="#0f766e",
-            hover_color="#0d5f59",
-        ).pack(side="left", padx=(10, 2))
-        ctk.CTkButton(
-            btn_row,
-            text="Auto Fill QB + Today",
-            width=150,
-            command=lambda: self._apply_auto_qb_plan(True),
-            fg_color="#2563eb",
-            hover_color="#1d4ed8",
-        ).pack(side="left", padx=2)
+        make_action_button(btn_row, "Yesterday (US)", lambda: set_single_date(False), tone="neutral", width=120).pack(side="left", padx=(0, 8))
+        make_action_button(btn_row, "Today (US)", lambda: set_single_date(True), tone="primary", width=110).pack(side="left", padx=(0, 8))
+        make_action_button(btn_row, "Last 7 days", lambda: set_last_n_days(7), tone="neutral", width=110).pack(side="left", padx=(0, 8))
+        make_action_button(btn_row, "Last 30 days", lambda: set_last_n_days(30), tone="neutral", width=118).pack(side="left", padx=(0, 8))
+        make_action_button(btn_row, "Auto Fill QB Missing", lambda: self._apply_auto_qb_plan(False), tone="teal", width=160).pack(side="left", padx=(8, 8))
+        make_action_button(btn_row, "Auto Fill QB + Today", lambda: self._apply_auto_qb_plan(True), tone="primary", width=160).pack(side="left")
 
         # ── Stores Section ──
-        store_frame = ctk.CTkFrame(_parent)
-        store_frame.pack(fill="x", padx=15, pady=5)
-        ctk.CTkLabel(store_frame, text="QB Stores", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=10, pady=(10, 5))
+        _store_card, store_frame = make_section_card(
+            _parent,
+            "QB Stores",
+            "Select stores and point each one to the correct `.qbw` company file before running sync or preview.",
+        )
 
         self._local_cfg = load_local_config()
         self._qb_item_catalog_cache = {}
         qbw_paths = self._local_cfg.get("qbw_paths", {})
 
         stores_grid = ctk.CTkFrame(store_frame, fg_color="transparent")
-        stores_grid.pack(fill="x", padx=10, pady=(0, 5))
+        stores_grid.pack(fill="x", pady=(0, 8))
 
         ctk.CTkLabel(stores_grid, text="", width=30).grid(row=0, column=0)
         ctk.CTkLabel(stores_grid, text="Store", font=ctk.CTkFont(size=12, weight="bold"), width=100, anchor="w").grid(row=0, column=1, sticky="w")
@@ -889,25 +1009,26 @@ class QBSyncTab(ctk.CTkFrame):
             ctk.CTkLabel(stores_grid, text=name, width=100, anchor="w").grid(row=row, column=1, padx=(0, 5), pady=3, sticky="w")
             path_var = ctk.StringVar(value=qbw_paths.get(name, ""))
             self.qbw_path_vars[name] = path_var
-            ctk.CTkEntry(stores_grid, textvariable=path_var, width=400,
+            ctk.CTkEntry(stores_grid, textvariable=path_var, width=400, fg_color="#111827", border_color="#475569",
                           placeholder_text="Click Browse to select .qbw file").grid(row=row, column=2, padx=(10, 5), pady=3, sticky="w")
-            ctk.CTkButton(stores_grid, text="Browse", width=70,
-                           command=lambda n=name: self._browse_qbw(n)).grid(row=row, column=3, padx=2, pady=3)
+            make_action_button(stores_grid, "Browse", lambda n=name: self._browse_qbw(n), tone="neutral", width=76).grid(row=row, column=3, padx=2, pady=3)
 
         stores_grid.columnconfigure(2, weight=1)
 
         btn_row = ctk.CTkFrame(store_frame, fg_color="transparent")
-        btn_row.pack(fill="x", padx=10, pady=(0, 10))
-        ctk.CTkButton(btn_row, text="Select All", width=90, command=lambda: [v.set(True) for v in self.store_vars.values()]).pack(side="left", padx=2)
-        ctk.CTkButton(btn_row, text="Deselect All", width=100, command=lambda: [v.set(False) for v in self.store_vars.values()]).pack(side="left", padx=2)
-        ctk.CTkButton(btn_row, text="Auto Scan D:\\QB", width=120, command=self._auto_scan_qbw,
-                       fg_color="#6366f1", hover_color="#4f46e5").pack(side="left", padx=10)
+        btn_row.pack(fill="x")
+        make_action_button(btn_row, "Select All Stores", lambda: [v.set(True) for v in self.store_vars.values()], tone="neutral", width=130).pack(side="left", padx=(0, 8))
+        make_action_button(btn_row, "Clear Selection", lambda: [v.set(False) for v in self.store_vars.values()], tone="amber", width=122).pack(side="left", padx=(0, 8))
+        make_action_button(btn_row, "Auto Scan D:\\QB", self._auto_scan_qbw, tone="primary", width=138).pack(side="left")
 
         # ── Options ──
-        opt_frame = ctk.CTkFrame(_parent)
-        opt_frame.pack(fill="x", padx=15, pady=5)
+        _opt_card, opt_frame = make_section_card(
+            _parent,
+            "Sync Options",
+            "Choose Drive or local source, limit which channels sync, and decide whether this run is preview-only.",
+        )
         opt_inner = ctk.CTkFrame(opt_frame, fg_color="transparent")
-        opt_inner.pack(fill="x", padx=10, pady=10)
+        opt_inner.pack(fill="x")
 
         ctk.CTkLabel(opt_inner, text="Data Source:").grid(row=0, column=0, padx=(0, 10), sticky="w")
         self.source_var = ctk.StringVar(value="gdrive")
@@ -936,10 +1057,13 @@ class QBSyncTab(ctk.CTkFrame):
         ).grid(row=3, column=0, columnspan=3, pady=(8, 0), sticky="w")
 
         # ── Marketplace Uploads ──
-        marketplace_frame = ctk.CTkFrame(_parent)
-        marketplace_frame.pack(fill="x", padx=15, pady=5)
+        _marketplace_card, marketplace_frame = make_section_card(
+            _parent,
+            "Marketplace Uploads",
+            "Attach the latest Uber, DoorDash, or Grubhub CSVs for stores that need additional sales receipts.",
+        )
         marketplace_header = ctk.CTkFrame(marketplace_frame, fg_color="transparent")
-        marketplace_header.pack(fill="x", padx=10, pady=(10, 4))
+        marketplace_header.pack(fill="x", pady=(0, 4))
         ctk.CTkLabel(
             marketplace_header,
             text="Marketplace Uploads",
@@ -953,22 +1077,12 @@ class QBSyncTab(ctk.CTkFrame):
         self.marketplace_summary.pack(side="left", padx=10)
 
         marketplace_btn_row = ctk.CTkFrame(marketplace_frame, fg_color="transparent")
-        marketplace_btn_row.pack(fill="x", padx=10, pady=(0, 4))
-        ctk.CTkButton(
-            marketplace_btn_row,
-            text="Refresh File Status",
-            width=130,
-            command=self._refresh_marketplace_source_statuses,
-        ).pack(side="left", padx=2)
-        ctk.CTkButton(
-            marketplace_btn_row,
-            text="Open Upload Folder",
-            width=130,
-            command=self._open_marketplace_upload_folder,
-        ).pack(side="left", padx=2)
+        marketplace_btn_row.pack(fill="x", pady=(0, 4))
+        make_action_button(marketplace_btn_row, "Refresh File Status", self._refresh_marketplace_source_statuses, tone="neutral", width=140).pack(side="left", padx=(0, 8))
+        make_action_button(marketplace_btn_row, "Open Upload Folder", self._open_marketplace_upload_folder, tone="primary", width=140).pack(side="left")
 
         marketplace_grid = ctk.CTkFrame(marketplace_frame, fg_color="transparent")
-        marketplace_grid.pack(fill="x", padx=10, pady=(0, 8))
+        marketplace_grid.pack(fill="x", pady=(0, 8))
         ctk.CTkLabel(marketplace_grid, text="Store", font=ctk.CTkFont(size=12, weight="bold")).grid(row=0, column=0, sticky="w", padx=(0, 6))
         ctk.CTkLabel(marketplace_grid, text="Source", font=ctk.CTkFont(size=12, weight="bold")).grid(row=0, column=1, sticky="w", padx=(0, 6))
         ctk.CTkLabel(marketplace_grid, text="Uploaded CSV", font=ctk.CTkFont(size=12, weight="bold")).grid(row=0, column=2, sticky="w", padx=(0, 6))
@@ -995,20 +1109,12 @@ class QBSyncTab(ctk.CTkFrame):
                     marketplace_grid,
                     textvariable=path_var,
                     width=360,
+                    fg_color="#111827",
+                    border_color="#475569",
                     placeholder_text=f"Select uploaded {source_cfg.get('file_name', 'CSV file')}",
                 ).grid(row=row_index, column=2, sticky="ew", padx=(0, 6), pady=3)
-                ctk.CTkButton(
-                    marketplace_grid,
-                    text="Browse",
-                    width=70,
-                    command=lambda s=store_name, src=source_name, fn=source_cfg.get("file_name", ""): self._browse_marketplace_file(s, src, fn),
-                ).grid(row=row_index, column=3, padx=2, pady=3)
-                ctk.CTkButton(
-                    marketplace_grid,
-                    text="Clear",
-                    width=60,
-                    command=lambda s=store_name, src=source_name: self._clear_marketplace_file(s, src),
-                ).grid(row=row_index, column=4, padx=2, pady=3)
+                make_action_button(marketplace_grid, "Browse", lambda s=store_name, src=source_name, fn=source_cfg.get("file_name", ""): self._browse_marketplace_file(s, src, fn), tone="neutral", width=76).grid(row=row_index, column=3, padx=2, pady=3)
+                make_action_button(marketplace_grid, "Clear", lambda s=store_name, src=source_name: self._clear_marketplace_file(s, src), tone="amber", width=66).grid(row=row_index, column=4, padx=2, pady=3)
                 status_label = ctk.CTkLabel(marketplace_grid, text="No file selected", text_color="gray", anchor="w")
                 status_label.grid(row=row_index, column=5, sticky="w", padx=(6, 0), pady=3)
                 self.marketplace_status_labels[key] = status_label
@@ -1017,24 +1123,34 @@ class QBSyncTab(ctk.CTkFrame):
         marketplace_grid.columnconfigure(2, weight=1)
 
         # ── Action Button ──
-        self.sync_btn = ctk.CTkButton(_parent, text="Sync to QuickBooks",
-                                       font=ctk.CTkFont(size=15, weight="bold"),
-                                       height=45, command=self.start_sync,
-                                       fg_color="#059669", hover_color="#047857")
-        self.sync_btn.pack(fill="x", padx=15, pady=10)
+        run_card, run_frame = make_section_card(
+            _parent,
+            "Execution",
+            "Run a preview first when mapping or data quality changed. Use full sync only when the validation panel is clean.",
+        )
+        self.sync_btn = ctk.CTkButton(run_frame, text="Sync to QuickBooks",
+                                       font=ctk.CTkFont(size=16, weight="bold"),
+                                       height=48, command=self.start_sync,
+                                       fg_color="#059669", hover_color="#047857", corner_radius=14)
+        self.sync_btn.pack(fill="x")
 
         # ── Progress ──
-        self.progress_bar = ctk.CTkProgressBar(_parent)
-        self.progress_bar.pack(fill="x", padx=15, pady=(0, 5))
+        progress_wrap = make_subcard(run_frame)
+        progress_wrap.pack(fill="x", pady=(12, 0))
+        self.progress_bar = ctk.CTkProgressBar(progress_wrap, progress_color="#059669", fg_color="#1e293b")
+        self.progress_bar.pack(fill="x", padx=12, pady=(12, 6))
         self.progress_bar.set(0)
-        self.progress_label = ctk.CTkLabel(_parent, text="Ready", text_color="gray")
-        self.progress_label.pack(anchor="w", padx=15)
+        self.progress_label = ctk.CTkLabel(progress_wrap, text="Ready", text_color="#94a3b8", font=ctk.CTkFont(size=12, weight="bold"))
+        self.progress_label.pack(anchor="w", padx=12, pady=(0, 12))
 
         # ── Validation Issues ──
-        issue_frame = ctk.CTkFrame(_parent)
-        issue_frame.pack(fill="x", padx=15, pady=(5, 5))
+        _issue_card, issue_frame = make_section_card(
+            _parent,
+            "Validation Issues",
+            "Review blocking errors, export the issue list, and confirm the report is balanced before posting to QuickBooks.",
+        )
         issue_header = ctk.CTkFrame(issue_frame, fg_color="transparent")
-        issue_header.pack(fill="x", padx=10, pady=(10, 4))
+        issue_header.pack(fill="x", pady=(0, 4))
         ctk.CTkLabel(issue_header, text="Validation Issues", font=ctk.CTkFont(size=13, weight="bold")).pack(side="left")
         self.validation_summary = ctk.CTkLabel(issue_header, text="No validation issues yet", text_color="gray")
         self.validation_summary.pack(side="left", padx=10)
@@ -1048,14 +1164,17 @@ class QBSyncTab(ctk.CTkFrame):
         )
         self.export_issues_btn.pack(side="right")
         self.validation_box = ctk.CTkTextbox(issue_frame, height=140, font=ctk.CTkFont(family="Consolas", size=11))
-        self.validation_box.pack(fill="x", padx=10, pady=(0, 10))
+        self.validation_box.pack(fill="x", pady=(0, 0))
         self.validation_box.configure(state="disabled")
 
         # ── Mapping Maintenance ──
-        mapping_frame = ctk.CTkFrame(_parent)
-        mapping_frame.pack(fill="x", padx=15, pady=(5, 5))
+        _mapping_card, mapping_frame = make_section_card(
+            _parent,
+            "Mapping Maintenance",
+            "Fix unmapped QB items and re-run preview without leaving the app.",
+        )
         mapping_header = ctk.CTkFrame(mapping_frame, fg_color="transparent")
-        mapping_header.pack(fill="x", padx=10, pady=(10, 4))
+        mapping_header.pack(fill="x", pady=(0, 4))
         ctk.CTkLabel(mapping_header, text="Mapping Maintenance", font=ctk.CTkFont(size=13, weight="bold")).pack(side="left")
         self.mapping_summary = ctk.CTkLabel(mapping_header, text="No unmapped issues to fix yet", text_color="gray")
         self.mapping_summary.pack(side="left", padx=10)
@@ -1170,10 +1289,13 @@ class QBSyncTab(ctk.CTkFrame):
         self.item_creation_history_box.configure(state="disabled")
 
         # ── Last Sync Status ──
-        status_frame = ctk.CTkFrame(_parent)
-        status_frame.pack(fill="x", padx=15, pady=(5, 5))
+        _status_card, status_frame = make_section_card(
+            _parent,
+            "Last Sync Status",
+            "Inspect the most recent run, export audit details, or mark stale sync attempts before a controlled re-run.",
+        )
         status_header = ctk.CTkFrame(status_frame, fg_color="transparent")
-        status_header.pack(fill="x", padx=10, pady=(10, 4))
+        status_header.pack(fill="x", pady=(0, 4))
         ctk.CTkLabel(status_header, text="Last Sync Status", font=ctk.CTkFont(size=13, weight="bold")).pack(side="left")
         self.last_sync_summary = ctk.CTkLabel(status_header, text="Select one store and one date to inspect sync history", text_color="gray")
         self.last_sync_summary.pack(side="left", padx=10)
@@ -1197,7 +1319,15 @@ class QBSyncTab(ctk.CTkFrame):
         self.source_sync_box.configure(state="disabled")
 
         # ── Log ──
-        self.log_box = make_log_box(_parent)
+        log_frame = ctk.CTkFrame(
+            _parent,
+            fg_color=UI_CARD_FG,
+            corner_radius=18,
+            border_width=1,
+            border_color=UI_CARD_BORDER,
+        )
+        log_frame.pack(fill="both", expand=True, padx=15, pady=(7, 15))
+        self.log_box = make_log_box(log_frame, height=220)
         self._refresh_mapping_candidates()
         self._refresh_marketplace_source_statuses()
         self._refresh_last_sync_status()
@@ -3154,12 +3284,19 @@ class RemoveTab(ctk.CTkFrame):
         return env_values
 
     def _build_ui(self):
-        main = ctk.CTkFrame(self)
+        main = ctk.CTkFrame(self, fg_color="transparent")
         main.pack(fill="both", expand=True, padx=5, pady=5)
+        make_hero_banner(
+            main,
+            "Removal Control Center",
+            "Connect to the correct QuickBooks company, filter transactions carefully, and prefer dry-run export before any delete action.",
+            "High-risk workflow",
+            accent="#b45309",
+        )
 
         # ── Top: Store Selection + Connection ──
-        top_frame = ctk.CTkFrame(main)
-        top_frame.pack(fill="x", padx=10, pady=(10, 5))
+        top_frame = ctk.CTkFrame(main, fg_color=UI_CARD_FG, corner_radius=18, border_width=1, border_color=UI_CARD_BORDER)
+        top_frame.pack(fill="x", padx=10, pady=(0, 5))
         self._build_store_section(top_frame)
 
         # ── Left + Right panels ──
@@ -3169,16 +3306,16 @@ class RemoveTab(ctk.CTkFrame):
         panels.grid_columnconfigure(1, weight=2, minsize=450)
         panels.grid_rowconfigure(0, weight=1)
 
-        left = ctk.CTkFrame(panels)
+        left = ctk.CTkFrame(panels, fg_color=UI_CARD_FG, corner_radius=18, border_width=1, border_color=UI_CARD_BORDER)
         left.grid(row=0, column=0, sticky="nsew", padx=(5, 3), pady=5)
         self._build_filter_panel(left)
 
-        right = ctk.CTkFrame(panels)
+        right = ctk.CTkFrame(panels, fg_color=UI_CARD_FG, corner_radius=18, border_width=1, border_color=UI_CARD_BORDER)
         right.grid(row=0, column=1, sticky="nsew", padx=(3, 5), pady=5)
         self._build_results_panel(right)
 
         # ── Bottom: Log ──
-        log_frame = ctk.CTkFrame(main)
+        log_frame = ctk.CTkFrame(main, fg_color=UI_CARD_FG, corner_radius=18, border_width=1, border_color=UI_CARD_BORDER)
         log_frame.pack(fill="x", padx=10, pady=(5, 10))
         ctk.CTkLabel(log_frame, text="Log", font=ctk.CTkFont(size=12, weight="bold")).pack(anchor="w", padx=10, pady=(5, 0))
         self.log_box = ctk.CTkTextbox(log_frame, height=100, font=ctk.CTkFont(family="Consolas", size=12))
@@ -3190,14 +3327,15 @@ class RemoveTab(ctk.CTkFrame):
     def _build_store_section(self, parent):
         header = ctk.CTkFrame(parent, fg_color="transparent")
         header.pack(fill="x", padx=10, pady=(10, 0))
-        ctk.CTkLabel(header, text="QB Store", font=ctk.CTkFont(size=14, weight="bold")).pack(side="left")
-        self.conn_status = ctk.CTkLabel(header, text="Not connected", text_color="gray")
+        ctk.CTkLabel(header, text="QB Store", font=ctk.CTkFont(size=16, weight="bold"), text_color="#f8fafc").pack(side="left")
+        self.conn_status = ctk.CTkLabel(header, text="Not connected", text_color=UI_MUTED_TEXT, font=ctk.CTkFont(size=12, weight="bold"))
         self.conn_status.pack(side="right", padx=10)
-        self.btn_connect = ctk.CTkButton(header, text="Connect to QB", width=140, command=self._connect_qb)
+        self.btn_connect = make_action_button(header, "Connect to QB", self._connect_qb, tone="primary", width=140, height=36)
         self.btn_connect.pack(side="right", padx=5)
 
-        store_frame = ctk.CTkScrollableFrame(parent, height=130)
+        store_frame = ctk.CTkScrollableFrame(parent, height=130, fg_color=UI_SUBCARD_FG, corner_radius=14, border_width=1, border_color=UI_SUBCARD_BORDER)
         store_frame.pack(fill="x", padx=10, pady=(5, 0))
+        style_scrollable_frame(store_frame)
         store_frame.grid_columnconfigure(0, minsize=30)
         store_frame.grid_columnconfigure(1, minsize=100)
         store_frame.grid_columnconfigure(2, weight=1)
@@ -3212,19 +3350,16 @@ class RemoveTab(ctk.CTkFrame):
             var = ctk.BooleanVar(value=False)
             self.rm_store_vars[name] = var
             ctk.CTkCheckBox(store_frame, text="", variable=var, width=30).grid(row=row, column=0, padx=2, pady=3)
-            ctk.CTkLabel(store_frame, text=name, width=100, anchor="w").grid(row=row, column=1, padx=(0, 5), pady=3, sticky="w")
+            ctk.CTkLabel(store_frame, text=name, width=100, anchor="w", text_color=UI_HEADING_TEXT).grid(row=row, column=1, padx=(0, 5), pady=3, sticky="w")
             path_var = ctk.StringVar(value=qbw_paths.get(name, ""))
             self.rm_qbw_path_vars[name] = path_var
-            ctk.CTkEntry(store_frame, textvariable=path_var, width=400,
+            ctk.CTkEntry(store_frame, textvariable=path_var, width=400, fg_color="#111827", border_color="#475569",
                           placeholder_text="Click Browse").grid(row=row, column=2, padx=(10, 5), pady=3, sticky="ew")
-            ctk.CTkButton(store_frame, text="Browse", width=70,
-                           command=lambda n=name: self._browse_qbw_rm(n)).grid(row=row, column=3, padx=2, pady=3)
+            make_action_button(store_frame, "Browse", lambda n=name: self._browse_qbw_rm(n), tone="neutral", width=76).grid(row=row, column=3, padx=2, pady=3)
 
         btn_row = ctk.CTkFrame(parent, fg_color="transparent")
         btn_row.pack(fill="x", padx=10, pady=(5, 10))
-        ctk.CTkButton(btn_row, text="Auto Scan D:\\QB", width=130, height=28,
-                       command=self._auto_scan_qbw_rm,
-                       fg_color="#6366f1", hover_color="#4f46e5").pack(side="left", padx=2)
+        make_action_button(btn_row, "Auto Scan D:\\QB", self._auto_scan_qbw_rm, tone="primary", width=140).pack(side="left", padx=2)
 
     def _browse_qbw_rm(self, store_name):
         filepath = filedialog.askopenfilename(
@@ -3279,27 +3414,28 @@ class RemoveTab(ctk.CTkFrame):
     # ── Filter Panel ─────────────────────────────────────────────────
 
     def _build_filter_panel(self, parent):
-        ctk.CTkLabel(parent, text="Filters", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=10, pady=(10, 5))
+        ctk.CTkLabel(parent, text="Filters", font=ctk.CTkFont(size=16, weight="bold"), text_color="#f8fafc").pack(anchor="w", padx=10, pady=(12, 6))
 
         # Account selection
-        acct_frame = ctk.CTkFrame(parent)
+        acct_frame = ctk.CTkFrame(parent, fg_color=UI_SUBCARD_FG, corner_radius=14, border_width=1, border_color=UI_SUBCARD_BORDER)
         acct_frame.pack(fill="x", padx=10, pady=5)
         acct_header = ctk.CTkFrame(acct_frame, fg_color="transparent")
         acct_header.pack(fill="x", padx=5, pady=(5, 0))
         ctk.CTkLabel(acct_header, text="Accounts:", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
         acct_btn_frame = ctk.CTkFrame(acct_header, fg_color="transparent")
         acct_btn_frame.pack(side="right")
-        ctk.CTkButton(acct_btn_frame, text="All", width=40, height=24, command=lambda: self._select_all_accounts(True)).pack(side="left", padx=2)
-        ctk.CTkButton(acct_btn_frame, text="None", width=40, height=24, command=lambda: self._select_all_accounts(False)).pack(side="left", padx=2)
+        make_action_button(acct_btn_frame, "All", lambda: self._select_all_accounts(True), tone="neutral", width=44, height=26).pack(side="left", padx=2)
+        make_action_button(acct_btn_frame, "None", lambda: self._select_all_accounts(False), tone="amber", width=52, height=26).pack(side="left", padx=2)
 
-        self.acct_scroll = ctk.CTkScrollableFrame(acct_frame, height=100)
+        self.acct_scroll = ctk.CTkScrollableFrame(acct_frame, height=100, fg_color="#111827")
         self.acct_scroll.pack(fill="x", padx=5, pady=5)
+        style_scrollable_frame(self.acct_scroll)
         self.acct_vars = {}
         self.acct_placeholder = ctk.CTkLabel(self.acct_scroll, text="Connect to QB to load accounts", text_color="gray")
         self.acct_placeholder.pack(pady=10)
 
         # Transaction type
-        txn_frame = ctk.CTkFrame(parent)
+        txn_frame = ctk.CTkFrame(parent, fg_color=UI_SUBCARD_FG, corner_radius=14, border_width=1, border_color=UI_SUBCARD_BORDER)
         txn_frame.pack(fill="x", padx=10, pady=5)
         ctk.CTkLabel(txn_frame, text="Transaction Types:", font=ctk.CTkFont(size=12, weight="bold")).pack(anchor="w", padx=5, pady=(5, 0))
 
@@ -3318,7 +3454,7 @@ class RemoveTab(ctk.CTkFrame):
             ctk.CTkCheckBox(txn_grid, text=label, variable=var, width=150).grid(row=i // 2, column=i % 2, sticky="w", padx=5, pady=2)
 
         # Date range
-        date_frame = ctk.CTkFrame(parent)
+        date_frame = ctk.CTkFrame(parent, fg_color=UI_SUBCARD_FG, corner_radius=14, border_width=1, border_color=UI_SUBCARD_BORDER)
         date_frame.pack(fill="x", padx=10, pady=5)
         ctk.CTkLabel(date_frame, text="Date Range:", font=ctk.CTkFont(size=12, weight="bold")).pack(anchor="w", padx=5, pady=(5, 0))
 
@@ -3332,20 +3468,19 @@ class RemoveTab(ctk.CTkFrame):
             ("Last 30 days", datetime.now() - timedelta(days=30), yesterday),
         ]
         for label, d_from, d_to in quick_dates:
-            ctk.CTkButton(quick_frame, text=label, width=80, height=26,
-                           command=lambda f=d_from, t=d_to: self._set_dates(f, t)).pack(side="left", padx=2, pady=2)
+            make_action_button(quick_frame, label, lambda f=d_from, t=d_to: self._set_dates(f, t), tone="neutral", width=90, height=28).pack(side="left", padx=2, pady=2)
 
         dates_row = ctk.CTkFrame(date_frame, fg_color="transparent")
         dates_row.pack(fill="x", padx=5, pady=5)
         ctk.CTkLabel(dates_row, text="From:").pack(side="left")
         self.date_from_var = ctk.StringVar(value=yesterday.strftime("%Y-%m-%d"))
-        ctk.CTkEntry(dates_row, textvariable=self.date_from_var, width=110).pack(side="left", padx=(5, 15))
+        ctk.CTkEntry(dates_row, textvariable=self.date_from_var, width=110, fg_color="#111827", border_color="#475569").pack(side="left", padx=(5, 15))
         ctk.CTkLabel(dates_row, text="To:").pack(side="left")
         self.date_to_var = ctk.StringVar(value=yesterday.strftime("%Y-%m-%d"))
-        ctk.CTkEntry(dates_row, textvariable=self.date_to_var, width=110).pack(side="left", padx=(5, 0))
+        ctk.CTkEntry(dates_row, textvariable=self.date_to_var, width=110, fg_color="#111827", border_color="#475569").pack(side="left", padx=(5, 0))
 
         # Action buttons
-        btn_frame = ctk.CTkFrame(parent, fg_color="transparent")
+        btn_frame = ctk.CTkFrame(parent, fg_color=UI_SUBCARD_FG, corner_radius=14, border_width=1, border_color=UI_SUBCARD_BORDER)
         btn_frame.pack(fill="x", padx=10, pady=10)
         policy_color = "#f59e0b" if self.delete_policy.is_locked else "#dc2626"
         self.delete_policy_label = ctk.CTkLabel(
@@ -3356,7 +3491,7 @@ class RemoveTab(ctk.CTkFrame):
             wraplength=320,
         )
         self.delete_policy_label.pack(anchor="w", padx=5, pady=(0, 6))
-        self.btn_search = ctk.CTkButton(btn_frame, text="Search Transactions", height=36, command=self._search, state="disabled")
+        self.btn_search = ctk.CTkButton(btn_frame, text="Search Transactions", height=38, command=self._search, state="disabled", fg_color=UI_ACCENT_BLUE, hover_color="#1d4ed8", corner_radius=12)
         self.btn_search.pack(fill="x", padx=5, pady=3)
         self.dry_run_checkbox = ctk.CTkCheckBox(
             btn_frame,
@@ -3367,15 +3502,17 @@ class RemoveTab(ctk.CTkFrame):
         self.btn_export = ctk.CTkButton(
             btn_frame,
             text="Export Selected",
-            height=32,
+            height=34,
             fg_color="#2563eb",
             hover_color="#1d4ed8",
+            corner_radius=12,
             command=self._export_selected,
             state="disabled",
         )
         self.btn_export.pack(fill="x", padx=5, pady=3)
         self.btn_delete = ctk.CTkButton(btn_frame, text="Delete Selected", height=36,
                                           fg_color="#c0392b", hover_color="#e74c3c",
+                                          corner_radius=12,
                                           command=self._delete_selected, state="disabled")
         self.btn_delete.pack(fill="x", padx=5, pady=3)
         self._apply_delete_policy_ui()
@@ -3393,18 +3530,19 @@ class RemoveTab(ctk.CTkFrame):
 
     def _build_results_panel(self, parent):
         header = ctk.CTkFrame(parent, fg_color="transparent")
-        header.pack(fill="x", padx=10, pady=(10, 0))
-        ctk.CTkLabel(header, text="Transactions Found", font=ctk.CTkFont(size=14, weight="bold")).pack(side="left")
-        self.result_count = ctk.CTkLabel(header, text="", text_color="gray")
+        header.pack(fill="x", padx=10, pady=(12, 0))
+        ctk.CTkLabel(header, text="Transactions Found", font=ctk.CTkFont(size=16, weight="bold"), text_color="#f8fafc").pack(side="left")
+        self.result_count = ctk.CTkLabel(header, text="", text_color=UI_MUTED_TEXT)
         self.result_count.pack(side="left", padx=10)
 
         sel_frame = ctk.CTkFrame(header, fg_color="transparent")
         sel_frame.pack(side="right")
-        ctk.CTkButton(sel_frame, text="Select All", width=70, height=24, command=lambda: self._select_all_txns(True)).pack(side="left", padx=2)
-        ctk.CTkButton(sel_frame, text="None", width=50, height=24, command=lambda: self._select_all_txns(False)).pack(side="left", padx=2)
+        make_action_button(sel_frame, "Select All", lambda: self._select_all_txns(True), tone="neutral", width=80, height=26).pack(side="left", padx=2)
+        make_action_button(sel_frame, "None", lambda: self._select_all_txns(False), tone="amber", width=56, height=26).pack(side="left", padx=2)
 
-        self.txn_scroll = ctk.CTkScrollableFrame(parent)
+        self.txn_scroll = ctk.CTkScrollableFrame(parent, fg_color=UI_SUBCARD_FG, corner_radius=14, border_width=1, border_color=UI_SUBCARD_BORDER)
         self.txn_scroll.pack(fill="both", expand=True, padx=10, pady=10)
+        style_scrollable_frame(self.txn_scroll)
 
         hdr = ctk.CTkFrame(self.txn_scroll, fg_color="transparent")
         hdr.pack(fill="x", pady=(0, 5))
@@ -3812,91 +3950,110 @@ class SettingsTab(ctk.CTkFrame):
     def _build_ui(self):
         content = ctk.CTkScrollableFrame(self, fg_color="transparent")
         content.pack(fill="both", expand=True)
+        style_scrollable_frame(content)
+
+        make_hero_banner(
+            content,
+            "Settings & Recovery Center",
+            "Manage Google Drive, Toast session state, QuickBooks configuration, diagnostics, and recovery actions from one place.",
+            "Admin controls",
+            accent="#475569",
+        )
 
         # ── Google Drive ──
-        gdrive_frame = ctk.CTkFrame(content)
-        gdrive_frame.pack(fill="x", padx=15, pady=(15, 5))
-        ctk.CTkLabel(gdrive_frame, text="Google Drive", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=10, pady=(10, 5))
-        self.gdrive_status = ctk.CTkLabel(gdrive_frame, text="Not connected", text_color="gray")
-        self.gdrive_status.pack(anchor="w", padx=10, pady=2)
+        _gdrive_card, gdrive_frame = make_section_card(
+            content,
+            "Google Drive",
+            "Connect the Drive account used to store Toast exports and create the expected folder structure when needed.",
+        )
+        self.gdrive_status = ctk.CTkLabel(gdrive_frame, text="Not connected", text_color=UI_MUTED_TEXT, font=ctk.CTkFont(size=12, weight="bold"))
+        self.gdrive_status.pack(anchor="w", pady=2)
         gdrive_btns = ctk.CTkFrame(gdrive_frame, fg_color="transparent")
-        gdrive_btns.pack(fill="x", padx=10, pady=(5, 10))
-        ctk.CTkButton(gdrive_btns, text="Connect Google Drive", width=180, command=self._connect_gdrive).pack(side="left", padx=2)
-        ctk.CTkButton(gdrive_btns, text="Setup Folders", width=130, command=self._setup_folders).pack(side="left", padx=2)
-        ctk.CTkButton(gdrive_btns, text="Clear Token", width=100, fg_color="#dc2626", hover_color="#b91c1c", command=self._clear_token).pack(side="left", padx=2)
+        gdrive_btns.pack(fill="x", pady=(5, 0))
+        make_action_button(gdrive_btns, "Connect Google Drive", self._connect_gdrive, tone="primary", width=180).pack(side="left", padx=(0, 8))
+        make_action_button(gdrive_btns, "Setup Folders", self._setup_folders, tone="neutral", width=130).pack(side="left", padx=(0, 8))
+        make_action_button(gdrive_btns, "Clear Token", self._clear_token, tone="danger", width=110).pack(side="left")
 
         # ── Toast Session ──
-        toast_frame = ctk.CTkFrame(content)
-        toast_frame.pack(fill="x", padx=15, pady=5)
-        ctk.CTkLabel(toast_frame, text="Toast Session", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=10, pady=(10, 5))
-        self.toast_status = ctk.CTkLabel(toast_frame, text="No saved session", text_color="gray")
-        self.toast_status.pack(anchor="w", padx=10, pady=2)
-        ctk.CTkButton(toast_frame, text="Clear Session", width=120, fg_color="#dc2626",
-                       hover_color="#b91c1c", command=self._clear_session).pack(anchor="w", padx=10, pady=(5, 10))
+        _toast_card, toast_frame = make_section_card(
+            content,
+            "Toast Session",
+            "Clear the saved Toast browser session if login expires or the account password changes.",
+        )
+        self.toast_status = ctk.CTkLabel(toast_frame, text="No saved session", text_color=UI_MUTED_TEXT, font=ctk.CTkFont(size=12, weight="bold"))
+        self.toast_status.pack(anchor="w", pady=2)
+        make_action_button(toast_frame, "Clear Session", self._clear_session, tone="danger", width=126).pack(anchor="w", pady=(6, 0))
 
         # ── QB Configuration ──
-        qb_frame = ctk.CTkFrame(content)
-        qb_frame.pack(fill="x", padx=15, pady=5)
-        ctk.CTkLabel(qb_frame, text="QuickBooks Desktop", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=10, pady=(10, 5))
+        _qb_card, qb_frame = make_section_card(
+            content,
+            "QuickBooks Desktop",
+            "Review config file health, current delete policy, and mapped store coverage before production work.",
+        )
         env_file = runtime_path(".env.qb")
         delete_policy = load_delete_policy(load_local_config(), self._load_env_values(env_file))
         if env_file.exists():
-            ctk.CTkLabel(qb_frame, text=f"Config: {env_file}", text_color="#059669").pack(anchor="w", padx=10, pady=2)
+            ctk.CTkLabel(qb_frame, text=f"Config: {env_file}", text_color="#059669").pack(anchor="w", pady=2)
         else:
-            ctk.CTkLabel(qb_frame, text="Config: .env.qb not found", text_color="#dc2626").pack(anchor="w", padx=10, pady=2)
+            ctk.CTkLabel(qb_frame, text="Config: .env.qb not found", text_color="#dc2626").pack(anchor="w", pady=2)
         delete_policy_color = "#d97706" if delete_policy.is_locked else "#dc2626"
         ctk.CTkLabel(
             qb_frame,
             text=f"Delete policy: {delete_policy.mode_label} ({delete_policy.source})",
             text_color=delete_policy_color,
-        ).pack(anchor="w", padx=10, pady=2)
+        ).pack(anchor="w", pady=2)
         ctk.CTkLabel(
             qb_frame,
             text="Set local-config.json -> delete_policy.allow_live_delete=true or ALLOW_LIVE_DELETE=1 in .env.qb only during approved maintenance.",
-            text_color="gray",
+            text_color=UI_MUTED_TEXT,
             font=ctk.CTkFont(size=11),
             wraplength=700,
-        ).pack(anchor="w", padx=10, pady=(0, 6))
+        ).pack(anchor="w", pady=(0, 6))
         try:
             _, stores = load_mapping()
             store_text = ", ".join(stores.keys())
-            ctk.CTkLabel(qb_frame, text=f"Stores: {store_text}", text_color="gray",
-                          font=ctk.CTkFont(size=11), wraplength=600).pack(anchor="w", padx=10, pady=(2, 10))
+            ctk.CTkLabel(qb_frame, text=f"Stores: {store_text}", text_color=UI_MUTED_TEXT,
+                          font=ctk.CTkFont(size=11), wraplength=600).pack(anchor="w", pady=(2, 0))
         except Exception:
             pass
 
         # ── Diagnostics ──
-        diag_frame = ctk.CTkFrame(content)
-        diag_frame.pack(fill="x", padx=15, pady=5)
-        ctk.CTkLabel(diag_frame, text="Startup Diagnostics", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=10, pady=(10, 5))
-        self.diag_summary = ctk.CTkLabel(diag_frame, text="Environment check not run yet", text_color="gray")
-        self.diag_summary.pack(anchor="w", padx=10, pady=2)
+        _diag_card, diag_frame = make_section_card(
+            content,
+            "Startup Diagnostics",
+            "Run an environment check and review missing files, warnings, or runtime blockers before operations begin.",
+        )
+        self.diag_summary = ctk.CTkLabel(diag_frame, text="Environment check not run yet", text_color=UI_MUTED_TEXT, font=ctk.CTkFont(size=12, weight="bold"))
+        self.diag_summary.pack(anchor="w", pady=2)
         diag_btn_row = ctk.CTkFrame(diag_frame, fg_color="transparent")
-        diag_btn_row.pack(fill="x", padx=10, pady=(5, 5))
-        ctk.CTkButton(
+        diag_btn_row.pack(fill="x", pady=(5, 5))
+        make_action_button(
             diag_btn_row,
-            text="Run Diagnostics",
+            "Run Diagnostics",
+            (lambda: self.run_diagnostics(True)) if self.run_diagnostics else None,
+            tone="primary",
             width=140,
-            command=(lambda: self.run_diagnostics(True)) if self.run_diagnostics else None,
         ).pack(side="left", padx=2)
         self.diag_box = ctk.CTkTextbox(diag_frame, height=180, font=ctk.CTkFont(family="Consolas", size=11))
-        self.diag_box.pack(fill="x", padx=10, pady=(0, 10))
+        self.diag_box.pack(fill="x", pady=(0, 0))
         self.diag_box.configure(state="disabled")
 
         # ── Recovery Center ──
-        recovery_frame = ctk.CTkFrame(content)
-        recovery_frame.pack(fill="x", padx=15, pady=5)
-        ctk.CTkLabel(recovery_frame, text="Recovery Center", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=10, pady=(10, 5))
+        _recovery_card, recovery_frame = make_section_card(
+            content,
+            "Recovery Center",
+            "Use guided playbooks and safe reset actions when operational issues happen and a developer is unavailable.",
+        )
         ctk.CTkLabel(
             recovery_frame,
             text="Use these playbooks and actions when there is no developer available. Start with a Health Report before changing runtime files.",
-            text_color="gray",
+            text_color=UI_MUTED_TEXT,
             wraplength=760,
             justify="left",
-        ).pack(anchor="w", padx=10, pady=(0, 6))
+        ).pack(anchor="w", pady=(0, 6))
 
         playbook_row = ctk.CTkFrame(recovery_frame, fg_color="transparent")
-        playbook_row.pack(fill="x", padx=10, pady=(0, 6))
+        playbook_row.pack(fill="x", pady=(0, 6))
         ctk.CTkLabel(playbook_row, text="Scenario:").pack(side="left", padx=(0, 10))
         playbook_titles = [item["title"] for item in self.recovery_playbooks]
         self.playbook_var = ctk.StringVar(value=playbook_titles[0])
@@ -3910,30 +4067,32 @@ class SettingsTab(ctk.CTkFrame):
         self.playbook_menu.pack(side="left")
 
         recovery_btn_row = ctk.CTkFrame(recovery_frame, fg_color="transparent")
-        recovery_btn_row.pack(fill="x", padx=10, pady=(0, 6))
-        ctk.CTkButton(recovery_btn_row, text="Export Health Report", width=150, command=self._export_health_report).pack(side="left", padx=2)
-        ctk.CTkButton(recovery_btn_row, text="Create .env.qb", width=120, command=partial(self._create_runtime_file, ".env.qb.example", ".env.qb")).pack(side="left", padx=2)
-        ctk.CTkButton(recovery_btn_row, text="Create local-config", width=140, command=partial(self._create_runtime_file, "local-config.example.json", "local-config.json")).pack(side="left", padx=2)
-        ctk.CTkButton(recovery_btn_row, text="Open Recovery Backups", width=170, command=lambda: os.startfile(str(runtime_path("recovery-backups")))).pack(side="left", padx=2)
+        recovery_btn_row.pack(fill="x", pady=(0, 6))
+        make_action_button(recovery_btn_row, "Export Health Report", self._export_health_report, tone="primary", width=150).pack(side="left", padx=(0, 8))
+        make_action_button(recovery_btn_row, "Create .env.qb", partial(self._create_runtime_file, ".env.qb.example", ".env.qb"), tone="neutral", width=120).pack(side="left", padx=(0, 8))
+        make_action_button(recovery_btn_row, "Create local-config", partial(self._create_runtime_file, "local-config.example.json", "local-config.json"), tone="neutral", width=140).pack(side="left", padx=(0, 8))
+        make_action_button(recovery_btn_row, "Open Recovery Backups", lambda: os.startfile(str(runtime_path("recovery-backups"))), tone="neutral", width=176).pack(side="left")
 
         reset_btn_row = ctk.CTkFrame(recovery_frame, fg_color="transparent")
-        reset_btn_row.pack(fill="x", padx=10, pady=(0, 6))
-        ctk.CTkButton(reset_btn_row, text="Backup + Reset Toast Session", width=210, fg_color="#d97706", hover_color="#b45309", command=self._backup_clear_session).pack(side="left", padx=2)
-        ctk.CTkButton(reset_btn_row, text="Backup + Reset Google Token", width=210, fg_color="#d97706", hover_color="#b45309", command=self._backup_clear_token).pack(side="left", padx=2)
-        ctk.CTkButton(reset_btn_row, text="Open Runtime Folder", width=150, command=lambda: os.startfile(str(RUNTIME_DIR))).pack(side="left", padx=2)
+        reset_btn_row.pack(fill="x", pady=(0, 6))
+        make_action_button(reset_btn_row, "Backup + Reset Toast Session", self._backup_clear_session, tone="amber", width=210).pack(side="left", padx=(0, 8))
+        make_action_button(reset_btn_row, "Backup + Reset Google Token", self._backup_clear_token, tone="amber", width=210).pack(side="left", padx=(0, 8))
+        make_action_button(reset_btn_row, "Open Runtime Folder", lambda: os.startfile(str(RUNTIME_DIR)), tone="neutral", width=150).pack(side="left")
 
         self.recovery_box = ctk.CTkTextbox(recovery_frame, height=220, font=ctk.CTkFont(family="Consolas", size=11))
-        self.recovery_box.pack(fill="x", padx=10, pady=(0, 10))
+        self.recovery_box.pack(fill="x", pady=(0, 0))
         self.recovery_box.configure(state="disabled")
         self._show_playbook(self.playbook_var.get())
         self._refresh_recovery_status()
 
         # ── Appearance ──
-        theme_frame = ctk.CTkFrame(content)
-        theme_frame.pack(fill="x", padx=15, pady=5)
-        ctk.CTkLabel(theme_frame, text="Appearance", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=10, pady=(10, 5))
+        _theme_card, theme_frame = make_section_card(
+            content,
+            "Appearance",
+            "Switch theme modes for the current workstation.",
+        )
         theme_row = ctk.CTkFrame(theme_frame, fg_color="transparent")
-        theme_row.pack(fill="x", padx=10, pady=(0, 10))
+        theme_row.pack(fill="x")
         ctk.CTkLabel(theme_row, text="Theme:").pack(side="left", padx=(0, 10))
         self.theme_menu = ctk.CTkOptionMenu(theme_row, values=["System", "Dark", "Light"],
                                              command=lambda c: ctk.set_appearance_mode(c), width=120)
@@ -3941,17 +4100,16 @@ class SettingsTab(ctk.CTkFrame):
         self.theme_menu.pack(side="left")
 
         # ── Quick Links ──
-        folder_frame = ctk.CTkFrame(content)
-        folder_frame.pack(fill="x", padx=15, pady=(5, 15))
-        ctk.CTkLabel(folder_frame, text="Quick Links", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=10, pady=(10, 5))
+        _folder_card, folder_frame = make_section_card(
+            content,
+            "Quick Links",
+            "Jump directly to the folders operators use most often during support and reconciliation work.",
+        )
         links_row = ctk.CTkFrame(folder_frame, fg_color="transparent")
-        links_row.pack(fill="x", padx=10, pady=(0, 10))
-        ctk.CTkButton(links_row, text="Open Reports Folder", width=150,
-                       command=lambda: os.startfile(str(REPORTS_DIR))).pack(side="left", padx=2)
-        ctk.CTkButton(links_row, text="Open Map Folder", width=130,
-                       command=lambda: os.startfile(str(app_path("Map")))).pack(side="left", padx=2)
-        ctk.CTkButton(links_row, text="Open Project Folder", width=150,
-                       command=lambda: os.startfile(str(RUNTIME_DIR))).pack(side="left", padx=2)
+        links_row.pack(fill="x")
+        make_action_button(links_row, "Open Reports Folder", lambda: os.startfile(str(REPORTS_DIR)), tone="primary", width=150).pack(side="left", padx=(0, 8))
+        make_action_button(links_row, "Open Map Folder", lambda: os.startfile(str(app_path("Map"))), tone="neutral", width=130).pack(side="left", padx=(0, 8))
+        make_action_button(links_row, "Open Project Folder", lambda: os.startfile(str(RUNTIME_DIR)), tone="neutral", width=150).pack(side="left")
 
     def update_diagnostics(self, report):
         summary_color = "#059669"
