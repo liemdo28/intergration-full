@@ -41,11 +41,18 @@ QB_EXE = os.environ.get(
 )
 QB_COMPANY_DIR = os.environ.get("QB_COMPANY_DIR", r"D:\QB")
 
-PASSWORDS = {
-    "pass1": os.environ.get("QB_PASSWORD1", ""),
-    "pass2": os.environ.get("QB_PASSWORD2", ""),
-    "pass3": os.environ.get("QB_PASSWORD3", ""),
-}
+
+def _load_passwords():
+    """Reload passwords from environment (re-reads .env.qb each time)."""
+    load_env(runtime_path(".env.qb"))
+    return {
+        "pass1": os.environ.get("QB_PASSWORD1", ""),
+        "pass2": os.environ.get("QB_PASSWORD2", ""),
+        "pass3": os.environ.get("QB_PASSWORD3", ""),
+    }
+
+
+PASSWORDS = _load_passwords()
 
 
 def _normalize_text(value):
@@ -167,7 +174,11 @@ def open_qb_with_file(qbw_path, password_key="pass1", callback=None, expected_ma
         else:
             log(msg)
 
-    password = PASSWORDS.get(password_key, "")
+    passwords = _load_passwords()
+    password_key = password_key or "pass1"
+    password = passwords.get(password_key, "")
+    if not password:
+        _log(f"Warning: Password '{password_key}' is empty. Check .env.qb file at {runtime_path('.env.qb')}")
     qb_exe = resolve_qb_executable()
 
     valid_file, file_msg = validate_company_file_path(qbw_path, expected_match, store_name)
@@ -207,6 +218,7 @@ def open_qb_with_file(qbw_path, password_key="pass1", callback=None, expected_ma
 
     # Login
     time.sleep(3)
+    _log(f"Using password key: {password_key} (length={len(password)})")
     logged_in = _do_login(app, password, _log)
     if not logged_in:
         _log("Login failed")
@@ -232,7 +244,11 @@ def open_store(store_name, store_paths, qbw_match=None, password_key="pass1"):
         return False
 
     qbw_path = store_paths[store_name]
-    password = PASSWORDS.get(password_key, "")
+    passwords = _load_passwords()
+    password_key = password_key or "pass1"
+    password = passwords.get(password_key, "")
+    if not password:
+        log(f"Warning: Password '{password_key}' is empty. Check .env.qb file at {runtime_path('.env.qb')}")
     qb_exe = resolve_qb_executable()
 
     valid_file, file_msg = validate_company_file_path(qbw_path, qbw_match, store_name)
@@ -271,6 +287,7 @@ def open_store(store_name, store_paths, qbw_match=None, password_key="pass1"):
     log("Connected to QB")
 
     time.sleep(3)
+    log(f"Using password key: {password_key} (length={len(password)})")
     logged_in = _do_login(app, password, log)
     if not logged_in:
         log("Login failed")
@@ -306,7 +323,26 @@ def _do_login(app, password, _log):
 
         pwd_field.click_input()
         time.sleep(0.3)
-        pwd_field.set_edit_text(password)
+
+        # Clear any existing text first
+        import pywinauto.keyboard as kb
+        kb.send_keys("^a")
+        time.sleep(0.1)
+        kb.send_keys("{DELETE}")
+        time.sleep(0.1)
+
+        # Use type_keys instead of set_edit_text — set_edit_text often fails
+        # on masked password fields (ES_PASSWORD style) due to Windows security
+        if password:
+            # Escape special pywinauto type_keys chars
+            safe_pw = ""
+            special = set("{}+^%()~")
+            for ch in password:
+                if ch in special:
+                    safe_pw += "{" + ch + "}"
+                else:
+                    safe_pw += ch
+            pwd_field.type_keys(safe_pw, with_spaces=True, pause=0.02)
         time.sleep(0.5)
 
         ok_btn = dlg.child_window(title="OK", auto_id="51")

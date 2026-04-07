@@ -21,8 +21,10 @@ def log(msg):
 def escape_xml(s):
     if not s:
         return ""
+    import re
+    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", str(s))
     return (
-        str(s)
+        text
         .replace("&", "&amp;")
         .replace("<", "&lt;")
         .replace(">", "&gt;")

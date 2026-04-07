@@ -3,13 +3,19 @@ from pathlib import Path
 from marketplace_sync import (
     extract_marketplace_receipt_lines,
     get_marketplace_sources_for_store,
-    normalize_marketplace_date,
 )
+from date_parser import normalize_marketplace_date
 
 
 def test_normalize_marketplace_date():
-    assert normalize_marketplace_date("1/2/2026") == "2026-01-02"
-    assert normalize_marketplace_date("Grand Total") is None
+    # FIX C1: normalize_marketplace_date now returns ParseResult (not None silently)
+    r = normalize_marketplace_date("1/2/2026")
+    assert r.success
+    assert r.value.date_str == "2026-01-02"
+
+    r_gt = normalize_marketplace_date("Grand Total")
+    assert not r_gt.success
+    assert "Grand Total" in r_gt.error
 
 
 def test_extract_marketplace_lines_balances_doordash_row(tmp_path):
@@ -51,6 +57,10 @@ def test_extract_marketplace_lines_balances_doordash_row(tmp_path):
 
 
 def test_extract_marketplace_lines_handles_negative_payout_by_inverting_sign(tmp_path):
+    """
+    FIX C4: Uber payout can be NEGATIVE (platform owes restaurant).
+    When negative in CSV, keep as-is (do NOT double-invert).
+    """
     report_path = tmp_path / "UberSale.csv"
     map_path = tmp_path / "uber_raw.csv"
 
@@ -86,7 +96,57 @@ def test_extract_marketplace_lines_handles_negative_payout_by_inverting_sign(tmp
     assert not issues
     assert sum(line["amount"] for line in lines) == 0
     payout_line = next(line for line in lines if line["item_name"] == "UE Payout")
-    assert str(payout_line["amount"]) == "7.96"
+    # FIX C4: Negative payout stays NEGATIVE (platform owes restaurant)
+    assert str(payout_line["amount"]) == "-7.96"
+
+
+def test_extract_marketplace_lines_doordash_negative_payout_not_double_inverted(tmp_path):
+    """
+    FIX C4 (CRITICAL): DoorDash "Net total" is ALREADY NEGATIVE in CSV
+    (platform owes restaurant money). Previous code ALWAYS inverted payment type,
+    turning -15.50 into +15.50 — WRONG accounting entry.
+
+    New fix: DoorDash payout is NOT inverted. Negative stays negative.
+    """
+    report_path = tmp_path / "DoordashSale.csv"
+    map_path = tmp_path / "doordash_raw.csv"
+
+    # Net total is NEGATIVE (DoorDash owes restaurant)
+    report_path.write_text(
+        "\n".join(
+            [
+                "Row Labels,Sum of Subtotal,Sum of Net total",
+                "1/15/2026,100.00,-15.50",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    map_path.write_text(
+        "\n".join(
+            [
+                "QB,Column,Type",
+                "DD Subtotal,Sum of Subtotal,item",
+                "DD Payout,Sum of Net total,payment",
+                "Over/Short,auto-balance,balance",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    lines, issues, row = extract_marketplace_receipt_lines(
+        report_path=report_path,
+        date_str="2026-01-15",
+        map_path=map_path,
+        source_name="DoorDash",
+    )
+
+    assert row is not None
+    assert not issues
+    payout_line = next(line for line in lines if line["item_name"] == "DD Payout")
+    # FIX C4: DoorDash Net total is POSITIVE in CSV → invert to negative (restaurant receives payout)
+    assert str(payout_line["amount"]) == "-15.50"
+
+
 
 
 def test_get_marketplace_sources_for_store_resolves_existing_reports(tmp_path):

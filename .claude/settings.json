@@ -1,0 +1,43 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m pytest tests/test_date_parser.py tests/test_marketplace_sync.py -v)",
+      "Read(//c/Users/liemdo/Downloads/**)",
+      "Bash(timeout 8 python app.py)",
+      "Bash(timeout 10 python app.py)",
+      "Bash(findstr /N \".\")",
+      "Bash(findstr \"^[0-9]*[0-9]$:\")",
+      "Bash(more +10)",
+      "Bash(python -c \":*)",
+      "Bash(timeout 15 python app.py)",
+      "Read(//d E:/Project/Toasttab Quickbook/**)",
+      "Bash(python -m pytest tests/ -q)",
+      "Bash(python -m pytest tests/test_sync_ledger.py -v)",
+      "Bash(python -c \"from datetime import timezone; print\\(''OK''\\)\")",
+      "Bash(python -m pytest tests/test_sync_ledger.py::test_begin_run_and_mark_success -v)",
+      "Bash(timeout 8 python -c \"import app; root = app.App\\(\\); root.after\\(5000, root.destroy\\); root.mainloop\\(\\)\")",
+      "Bash(ls -la \"E:\\\\Project\\\\review-management-mcp\\\\review-management-mcp \\(vip file\\)\")",
+      "Bash(npm install:*)",
+      "Bash(pip install:*)",
+      "Bash(python app.py)",
+      "Bash(pyinstaller --onefile --windowed --name \"ReviewAutoReply\" --icon=NONE --add-data \"src;src\" --hidden-import=\"pydantic\" --hidden-import=\"tenacity\" --hidden-import=\"openai\" --hidden-import=\"requests\" --hidden-import=\"dotenv\" app.py)",
+      "Bash(pyinstaller --onefile --windowed --name \"ReviewAutoReply\" --icon=NONE app.py)",
+      "Bash(taskkill /F /IM ReviewAutoReply.exe)",
+      "Bash(pyinstaller --onefile --windowed --name \"ReviewAutoReply\" --icon=NONE --clean app.py)",
+      "Bash(del /f \"E:\\\\Project\\\\review-management-mcp\\\\review-management-mcp\\\\dist\\\\ReviewAutoReply.exe\")",
+      "Bash(powershell -Command \"Remove-Item -Path ''E:\\\\Project\\\\review-management-mcp\\\\review-management-mcp\\\\dist\\\\ReviewAutoReply.exe'' -Force -ErrorAction SilentlyContinue; if \\(Test-Path ''E:\\\\Project\\\\review-management-mcp\\\\review-management-mcp\\\\dist\\\\ReviewAutoReply.exe''\\) { Write-Host ''still exists'' } else { Write-Host ''deleted'' }\")",
+      "Bash(pyinstaller --onefile --windowed --name \"ReviewAutoReply-v2\" --icon=NONE --distpath dist-new app.py)",
+      "Bash(python -m pytest tests/test_src.py -v)",
+      "Bash(python -m pytest tests/test_src.py -q)",
+      "Bash(pyinstaller --onefile --windowed --name \"ReviewAutoReply-v3\" --distpath dist-v3 app.py)",
+      "Bash(\"E:\\\\Project\\\\review-management-mcp\\\\review-management-mcp\\\\BUG-REPORT.md\":*)",
+      "Bash(ls \"E:\\\\Project\\\\review-management-mcp\\\\review-management-mcp \\(vip file\\)\")",
+      "Bash(grep -v \"^$\")",
+      "Bash(pyinstaller --onefile --windowed --name \"ReviewAutoReply-v3\" --distpath dist-v3 --clean app.py)",
+      "Bash(taskkill /F /IM ReviewAutoReply-v3.exe)"
+    ],
+    "additionalDirectories": [
+      "E:\\Project\\review-management-mcp\\review-management-mcp (vip file)"
+    ]
+  }
+}

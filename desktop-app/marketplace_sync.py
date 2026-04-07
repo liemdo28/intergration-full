@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import csv
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 
 from app_paths import runtime_path
+from date_parser import normalize_marketplace_date
+
+logger = logging.getLogger(__name__)
 
 
 MARKETPLACE_REPORTS_DIR = runtime_path("marketplace-reports")
@@ -116,24 +120,14 @@ def load_marketplace_map(map_path: str | Path) -> list[dict]:
         ]
 
 
-def normalize_marketplace_date(value: str) -> str | None:
-    text = (value or "").strip()
-    if not text or text.lower() == "grand total":
-        return None
-    for fmt in ("%m/%d/%Y", "%Y-%m-%d"):
-        try:
-            return datetime.strptime(text, fmt).strftime("%Y-%m-%d")
-        except ValueError:
-            continue
-    return None
-
 
 def find_marketplace_row(report_path: str | Path, date_str: str) -> dict | None:
+    """Find the CSV row matching the target date using new ParseResult-based parser."""
     with open(report_path, "r", encoding="utf-8-sig", newline="") as f:
         reader = csv.DictReader(f)
-        for row in reader:
-            normalized = normalize_marketplace_date(row.get("Row Labels", ""))
-            if normalized == date_str:
+        for i, row in enumerate(reader, start=2):  # Row 1 = header, data starts row 2
+            result = normalize_marketplace_date(row.get("Row Labels", ""), row_num=i)
+            if result.success and result.value.date_str == date_str:
                 return row
     return None
 
@@ -192,8 +186,21 @@ def extract_marketplace_receipt_lines(
         if amount == 0:
             continue
 
+        # FIX C4: Platform-aware payout sign handling
+        # DoorDash Net total: POSITIVE in CSV → invert to negative (correct)
+        # Uber payout: can be positive (paid) or negative (owed) → only invert if positive
+        # Grubhub Total: POSITIVE in CSV → invert to negative (correct)
         if entry_type == "payment":
-            amount = -amount
+            source_lower = source_name.lower()
+            is_doordash = source_lower == "doordash" or source_lower.startswith("doordash")
+            if is_doordash:
+                # DoorDash: positive in CSV → invert to negative (restaurant receives payout)
+                if amount > 0:
+                    amount = -amount
+            elif amount > 0:
+                # Uber / Grubhub: positive payout → invert to negative
+                amount = -amount
+            # else: already negative (owed), keep as-is
         elif entry_type != "item":
             issues.append(
                 _issue(

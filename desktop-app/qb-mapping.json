@@ -37,6 +37,7 @@
       "customer_name": "Toasttab",
       "sale_no_prefix": "",
       "csv_map": "raw.csv",
+      "_note_toast_filename_pattern": "Optional. Use {date} placeholder, e.g. 'SalesSummary_{date}_{date}.xlsx'",
       "additional_sale_receipts": [
         {
           "name": "Uber",

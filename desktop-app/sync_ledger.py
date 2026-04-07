@@ -47,11 +47,14 @@ def utc_now() -> str:
 def build_report_identity(report_path: str | Path) -> ReportIdentity:
     path = Path(report_path)
     stat = path.stat()
+    # FIX C2: Store mtime in UTC for consistency with utc_now() timestamps.
+    # Previously stored as local time, causing off-by-one near DST transitions.
+    utc_mtime = datetime.fromtimestamp(stat.st_mtime, tz=UTC).replace(microsecond=0)
     return ReportIdentity(
         path=path,
         report_hash=compute_sha256(path),
         report_size=stat.st_size,
-        report_mtime=datetime.fromtimestamp(stat.st_mtime).replace(microsecond=0).isoformat(),
+        report_mtime=utc_mtime.strftime("%Y-%m-%dT%H:%M:%SZ"),
     )
 
 
@@ -63,8 +66,9 @@ class SyncLedger:
         self._init_db()
 
     def _connect(self):
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=10)
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
         return conn
 
     def _init_db(self):
