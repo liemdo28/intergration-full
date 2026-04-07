@@ -6,6 +6,8 @@ class _FakePage:
         self._urls = list(urls)
         self.wait_calls = []
         self.goto_calls = []
+        self.function_calls = []
+        self.evaluate_calls = []
 
     @property
     def url(self):
@@ -15,6 +17,16 @@ class _FakePage:
 
     def goto(self, url, **kwargs):
         self.goto_calls.append((url, kwargs))
+
+    def wait_for_load_state(self, *args, **kwargs):
+        return None
+
+    def wait_for_function(self, script, arg=None, timeout=None):
+        self.function_calls.append({"script": script, "arg": arg, "timeout": timeout})
+
+    def evaluate(self, script, *args):
+        self.evaluate_calls.append({"script": script, "args": args})
+        return None
 
     def wait_for_timeout(self, timeout_ms):
         self.wait_calls.append(timeout_ms)
@@ -71,6 +83,14 @@ class _RoutePage:
 
     def locator(self, selector):
         return _FakeLocator(self, selector)
+
+
+class _FallbackLocationPage(_RoutePage):
+    def evaluate(self, script, arg=None):
+        self.function_calls.append({"script": script, "arg": arg, "timeout": None})
+        if "normalizedStores" in script:
+            return "Stockton, CA Raw Sushi Bistro"
+        return None
 
 
 def test_wait_for_manual_login_logs_progress_and_succeeds():
@@ -140,3 +160,16 @@ def test_open_report_view_uses_direct_route_for_sales_orders():
     downloader._open_report_view("sales_orders")
 
     assert page.goto_urls[0][0] == "https://www.toasttab.com/restaurants/admin/reports/home#sales-orders"
+
+
+def test_open_location_dropdown_uses_store_name_fallback_match():
+    logs = []
+    downloader = toast_downloader.ToastDownloader(on_log=logs.append)
+    page = _FallbackLocationPage()
+    downloader.page = page
+    downloader._dismiss_overlays = lambda: None
+
+    ok = downloader._open_location_dropdown()
+
+    assert ok is True
+    assert any("fallback match" in line for line in logs)

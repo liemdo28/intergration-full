@@ -196,16 +196,43 @@ class ToastDownloader:
         except Exception:
             pass
 
+    def _wait_for_shell_ready(self):
+        try:
+            self.page.wait_for_load_state("domcontentloaded", timeout=15000)
+        except Exception:
+            pass
+        try:
+            self.page.wait_for_function(
+                """() => {
+                    const clickable = document.querySelectorAll(
+                        'button, [role="button"], [role="combobox"], [aria-haspopup], a'
+                    );
+                    return clickable.length > 3;
+                }""",
+                timeout=15000,
+            )
+        except Exception:
+            pass
+        self.page.wait_for_timeout(1000)
+
     def _open_location_dropdown(self):
         """Open the restaurant location dropdown."""
-        # Wait for page to be fully interactive
-        self.page.wait_for_timeout(2000)
+        # Wait for page shell/navigation to finish hydrating.
+        self._wait_for_shell_ready()
+        self._dismiss_overlays()
 
         selectors = [
             "#switch-restaurants-menu",
             '[data-toast-track-id="nav-layout--restaurant-picker"]',
             '[aria-label="Toggle restaurant picker"]',
+            '[aria-label*="restaurant" i]',
+            '[aria-label*="location" i]',
+            '[data-testid*="restaurant" i]',
+            '[data-testid*="location" i]',
             'button[role="combobox"][aria-haspopup="listbox"]',
+            '[role="combobox"][aria-haspopup="listbox"]',
+            '[aria-haspopup="listbox"]',
+            '[aria-haspopup="menu"]',
         ]
 
         for sel in selectors:
@@ -218,12 +245,54 @@ class ToastDownloader:
             except Exception:
                 continue
 
+        try:
+            matched = self.page.evaluate(
+                """(knownStores) => {
+                    const normalizedStores = knownStores.map((item) => item.toLowerCase());
+                    const clickable = Array.from(
+                        document.querySelectorAll(
+                            'button, [role="button"], [role="combobox"], [aria-haspopup], a'
+                        )
+                    );
+
+                    for (const el of clickable) {
+                        const text = (el.innerText || el.textContent || '').replace(/\\s+/g, ' ').trim();
+                        if (!text || text.length > 120) continue;
+                        if (normalizedStores.some((store) => text.toLowerCase().includes(store))) {
+                            el.click();
+                            return text;
+                        }
+                    }
+
+                    const iconCandidate = Array.from(
+                        document.querySelectorAll(
+                            '[data-icon*="location" i], [aria-label*="location" i], [class*="location" i]'
+                        )
+                    )
+                        .map((node) => node.closest('button, [role="button"], [role="combobox"], [aria-haspopup], a'))
+                        .find(Boolean);
+                    if (iconCandidate) {
+                        const text = (iconCandidate.innerText || iconCandidate.textContent || '').replace(/\\s+/g, ' ').trim();
+                        iconCandidate.click();
+                        return text || '__location_icon__';
+                    }
+                    return null;
+                }""",
+                TOAST_LOCATIONS,
+            )
+            if matched:
+                self.log(f"  Opened location dropdown via fallback match: {matched}")
+                self.page.wait_for_timeout(800)
+                return True
+        except Exception:
+            pass
+
         # Last resort: try finding any nav button with restaurant name
         self.log("  Dropdown not found with known selectors, trying fallback...")
         try:
             # Look for elements in the navigation that might be the restaurant picker
-            nav_buttons = self.page.locator("nav button, header button").all()
-            self.log(f"  Found {len(nav_buttons)} nav/header buttons")
+            nav_buttons = self.page.locator("nav button, header button, button, [role='button'], [role='combobox']").all()
+            self.log(f"  Found {len(nav_buttons)} clickable nav candidates")
             for btn in nav_buttons:
                 try:
                     text = btn.inner_text(timeout=1000)
@@ -242,12 +311,15 @@ class ToastDownloader:
             return False
 
         self.page.wait_for_timeout(1000)
+        self._dismiss_overlays()
         search_inputs = [
             'input[placeholder*="Search" i]',
+            'input[aria-label*="Search" i]',
             'input[type="search"]',
             '[role="searchbox"]',
             '[role="dialog"] input',
             '[role="listbox"] input',
+            '[aria-modal="true"] input',
         ]
         for sel in search_inputs:
             try:
