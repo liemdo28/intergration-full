@@ -182,68 +182,190 @@ class DownloadTab(ctk.CTkFrame):
         super().__init__(master, **kwargs)
         self.status_var = status_var
         self._running = False
+        self._card_fg = "#111827"
+        self._card_border = "#1f2a3b"
+        self._subcard_fg = "#0f172a"
+        self._muted_text = "#94a3b8"
+        self._heading_text = "#e2e8f0"
+        self._accent_blue = "#2563eb"
+        self._accent_teal = "#0f766e"
+        self._accent_amber = "#b45309"
         self._build_ui()
+
+    def _make_section_card(self, parent, title, subtitle=None):
+        card = ctk.CTkFrame(
+            parent,
+            fg_color=self._card_fg,
+            corner_radius=18,
+            border_width=1,
+            border_color=self._card_border,
+        )
+        card.pack(fill="x", padx=15, pady=7)
+        header = ctk.CTkFrame(card, fg_color="transparent")
+        header.pack(fill="x", padx=16, pady=(14, 6))
+        ctk.CTkLabel(
+            header,
+            text=title,
+            font=ctk.CTkFont(size=16, weight="bold"),
+            text_color="#f8fafc",
+        ).pack(anchor="w")
+        if subtitle:
+            ctk.CTkLabel(
+                header,
+                text=subtitle,
+                font=ctk.CTkFont(size=11),
+                text_color=self._muted_text,
+            ).pack(anchor="w", pady=(3, 0))
+        body = ctk.CTkFrame(card, fg_color="transparent")
+        body.pack(fill="x", padx=16, pady=(0, 16))
+        return card, body
+
+    def _make_subcard(self, parent):
+        return ctk.CTkFrame(
+            parent,
+            fg_color=self._subcard_fg,
+            corner_radius=14,
+            border_width=1,
+            border_color="#1e293b",
+        )
+
+    def _make_action_button(self, parent, text, command, *, tone="neutral", width=120):
+        palette = {
+            "neutral": ("#334155", "#475569"),
+            "primary": (self._accent_blue, "#1d4ed8"),
+            "teal": (self._accent_teal, "#0f5f59"),
+            "amber": (self._accent_amber, "#92400e"),
+        }
+        fg_color, hover_color = palette[tone]
+        return ctk.CTkButton(
+            parent,
+            text=text,
+            command=command,
+            width=width,
+            height=34,
+            corner_radius=10,
+            fg_color=fg_color,
+            hover_color=hover_color,
+            font=ctk.CTkFont(size=12, weight="bold"),
+        )
 
     def _build_ui(self):
         content = ctk.CTkScrollableFrame(self, fg_color="transparent")
         content.pack(fill="both", expand=True)
+        try:
+            content._scrollbar.configure(button_color="#334155", button_hover_color="#475569")
+        except Exception:
+            pass
+
+        hero = ctk.CTkFrame(
+            content,
+            fg_color="#0f172a",
+            corner_radius=20,
+            border_width=1,
+            border_color="#1d4ed8",
+        )
+        hero.pack(fill="x", padx=15, pady=(15, 8))
+        hero_top = ctk.CTkFrame(hero, fg_color="transparent")
+        hero_top.pack(fill="x", padx=18, pady=(16, 8))
+        title_col = ctk.CTkFrame(hero_top, fg_color="transparent")
+        title_col.pack(side="left", fill="x", expand=True)
+        ctk.CTkLabel(
+            title_col,
+            text="Download Command Center",
+            font=ctk.CTkFont(size=22, weight="bold"),
+            text_color="#f8fafc",
+        ).pack(anchor="w")
+        ctk.CTkLabel(
+            title_col,
+            text="Choose store, report type, and US business date range. Then run one clean batch to Toast and Google Drive.",
+            font=ctk.CTkFont(size=11),
+            text_color="#93c5fd",
+            wraplength=560,
+            justify="left",
+        ).pack(anchor="w", pady=(4, 0))
+        summary_chip = ctk.CTkFrame(hero_top, fg_color="#172554", corner_radius=14, border_width=1, border_color="#2563eb")
+        summary_chip.pack(side="right", padx=(12, 0))
+        ctk.CTkLabel(
+            summary_chip,
+            text="US-aware scheduling",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color="#dbeafe",
+        ).pack(padx=12, pady=10)
+        hero_stats = ctk.CTkFrame(hero, fg_color="transparent")
+        hero_stats.pack(fill="x", padx=18, pady=(0, 16))
+        for text in (
+            "1. Pick dates using store time in the USA",
+            "2. Select stores and the Toast reports you need",
+            "3. Auto-fill gaps or run a full batch now",
+        ):
+            chip = ctk.CTkFrame(hero_stats, fg_color="#111c31", corner_radius=12, border_width=1, border_color="#1e3a8a")
+            chip.pack(side="left", padx=(0, 8))
+            ctk.CTkLabel(
+                chip,
+                text=text,
+                font=ctk.CTkFont(size=10),
+                text_color="#bfdbfe",
+            ).pack(padx=10, pady=8)
 
         # ── Date Section ──
-        date_frame = ctk.CTkFrame(content)
-        date_frame.pack(fill="x", padx=15, pady=(15, 5))
-
-        ctk.CTkLabel(date_frame, text="Date Range", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=10, pady=(10, 5))
+        _date_card, date_frame = self._make_section_card(
+            content,
+            "Date Range",
+            "Use US business dates so each store downloads the correct reporting window.",
+        )
 
         cal_row = ctk.CTkFrame(date_frame, fg_color="transparent")
-        cal_row.pack(fill="x", padx=10, pady=(0, 5))
+        cal_row.pack(fill="x", pady=(0, 8))
 
         yesterday_str = get_safe_target_date(TOAST_LOCATIONS, include_today=False)
         yesterday = datetime.strptime(yesterday_str, "%Y-%m-%d")
 
         # Start Date
-        start_col = ctk.CTkFrame(cal_row, fg_color="transparent")
-        start_col.pack(side="left", padx=(0, 20))
-        ctk.CTkLabel(start_col, text="Start Date", font=ctk.CTkFont(size=12, weight="bold")).pack(anchor="w")
+        start_col = self._make_subcard(cal_row)
+        start_col.pack(side="left", padx=(0, 14), fill="y")
+        ctk.CTkLabel(start_col, text="Start Date", font=ctk.CTkFont(size=12, weight="bold"), text_color=self._heading_text).pack(anchor="w", padx=12, pady=(12, 0))
         self.start_date_var = ctk.StringVar(value=yesterday_str)
         self.start_cal_frame, self.start_cal = make_calendar(start_col, yesterday)
         start_entry_row = ctk.CTkFrame(start_col, fg_color="transparent")
-        start_entry_row.pack(fill="x", pady=(5, 0))
-        self.start_date_entry = ctk.CTkEntry(start_entry_row, textvariable=self.start_date_var, width=130)
+        start_entry_row.pack(fill="x", padx=12, pady=(8, 12))
+        self.start_date_entry = ctk.CTkEntry(start_entry_row, textvariable=self.start_date_var, width=150, fg_color="#111827", border_color="#475569")
         self.start_date_entry.pack(side="left")
         self.start_date_entry.bind("<Return>", lambda e: self._sync_start_cal())
         self.start_cal.bind("<<CalendarSelected>>", lambda e: self._on_start_date_selected())
 
         # End Date
-        end_col = ctk.CTkFrame(cal_row, fg_color="transparent")
-        end_col.pack(side="left", padx=(0, 20))
-        ctk.CTkLabel(end_col, text="End Date", font=ctk.CTkFont(size=12, weight="bold")).pack(anchor="w")
+        end_col = self._make_subcard(cal_row)
+        end_col.pack(side="left", padx=(0, 14), fill="y")
+        ctk.CTkLabel(end_col, text="End Date", font=ctk.CTkFont(size=12, weight="bold"), text_color=self._heading_text).pack(anchor="w", padx=12, pady=(12, 0))
         self.end_date_var = ctk.StringVar(value=yesterday_str)
         self.end_cal_frame, self.end_cal = make_calendar(end_col, yesterday)
         end_entry_row = ctk.CTkFrame(end_col, fg_color="transparent")
-        end_entry_row.pack(fill="x", pady=(5, 0))
-        self.end_date_entry = ctk.CTkEntry(end_entry_row, textvariable=self.end_date_var, width=130)
+        end_entry_row.pack(fill="x", padx=12, pady=(8, 12))
+        self.end_date_entry = ctk.CTkEntry(end_entry_row, textvariable=self.end_date_var, width=150, fg_color="#111827", border_color="#475569")
         self.end_date_entry.pack(side="left")
         self.end_date_entry.bind("<Return>", lambda e: self._sync_end_cal())
         self.end_cal.bind("<<CalendarSelected>>", lambda e: self._on_end_date_selected())
 
         # Date List Preview (scrollable, same height as calendar)
-        list_col = ctk.CTkFrame(cal_row, fg_color="transparent")
-        list_col.pack(side="left", padx=(20, 0), fill="y")
-        ctk.CTkLabel(list_col, text="Date List", font=ctk.CTkFont(size=12, weight="bold")).pack(anchor="w")
+        list_col = self._make_subcard(cal_row)
+        list_col.pack(side="left", padx=(0, 0), fill="y")
+        ctk.CTkLabel(list_col, text="Date List", font=ctk.CTkFont(size=12, weight="bold"), text_color=self._heading_text).pack(anchor="w", padx=12, pady=(12, 0))
         self.date_list_box = ctk.CTkTextbox(list_col, width=200, height=210,
                                             font=ctk.CTkFont(family="Consolas", size=11),
-                                            state="disabled", fg_color="#1a1a2e",
+                                            state="disabled", fg_color="#111827",
                                             text_color="#e2e8f0", border_width=1,
                                             border_color="#334155")
-        self.date_list_box.pack(pady=(5, 0), fill="y", expand=True)
+        self.date_list_box.pack(padx=12, pady=(8, 12), fill="y", expand=True)
 
-        self.date_info_label = ctk.CTkLabel(date_frame, text="", text_color="#60a5fa", font=ctk.CTkFont(size=12))
-        self.date_info_label.pack(anchor="w", padx=10, pady=(2, 0))
+        info_bar = ctk.CTkFrame(date_frame, fg_color="#101827", corner_radius=12, border_width=1, border_color="#1e3a8a")
+        info_bar.pack(fill="x", pady=(4, 8))
+        self.date_info_label = ctk.CTkLabel(info_bar, text="", text_color="#60a5fa", font=ctk.CTkFont(size=12, weight="bold"))
+        self.date_info_label.pack(anchor="w", padx=12, pady=10)
         self._update_date_info()
 
         # Quick buttons
         btn_row = ctk.CTkFrame(date_frame, fg_color="transparent")
-        btn_row.pack(fill="x", padx=10, pady=(5, 10))
+        btn_row.pack(fill="x")
 
         def set_single_date(include_today):
             d_str = self._selection_target_date(include_today=include_today)
@@ -263,86 +385,131 @@ class DownloadTab(ctk.CTkFrame):
             self.end_cal.selection_set(end)
             self._update_date_info()
 
-        ctk.CTkButton(btn_row, text="Yesterday (US)", width=110, command=lambda: set_single_date(False)).pack(side="left", padx=2)
-        ctk.CTkButton(btn_row, text="Today (US)", width=90, command=lambda: set_single_date(True)).pack(side="left", padx=2)
-        ctk.CTkButton(btn_row, text="Last 7 days", width=100, command=lambda: set_last_n_days(7)).pack(side="left", padx=2)
-        ctk.CTkButton(btn_row, text="Last 30 days", width=100, command=lambda: set_last_n_days(30)).pack(side="left", padx=2)
+        self._make_action_button(btn_row, "Yesterday (US)", lambda: set_single_date(False), tone="neutral", width=120).pack(side="left", padx=(0, 8))
+        self._make_action_button(btn_row, "Today (US)", lambda: set_single_date(True), tone="primary", width=110).pack(side="left", padx=(0, 8))
+        self._make_action_button(btn_row, "Last 7 days", lambda: set_last_n_days(7), tone="neutral", width=110).pack(side="left", padx=(0, 8))
+        self._make_action_button(btn_row, "Last 30 days", lambda: set_last_n_days(30), tone="neutral", width=118).pack(side="left")
 
         # ── Locations Section ──
-        loc_frame = ctk.CTkFrame(content)
-        loc_frame.pack(fill="x", padx=15, pady=5)
-        ctk.CTkLabel(loc_frame, text="Toast Locations", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=10, pady=(10, 5))
+        _loc_card, loc_frame = self._make_section_card(
+            content,
+            "Toast Locations",
+            "Pick the stores you want to include in the next download batch.",
+        )
 
         checks_frame = ctk.CTkFrame(loc_frame, fg_color="transparent")
-        checks_frame.pack(fill="x", padx=10, pady=(0, 5))
+        checks_frame.pack(fill="x", pady=(0, 8))
         self.loc_vars = {}
         for i, loc in enumerate(TOAST_LOCATIONS):
             var = ctk.BooleanVar(value=True)
             self.loc_vars[loc] = var
-            ctk.CTkCheckBox(checks_frame, text=loc, variable=var, width=130).grid(row=i // 4, column=i % 4, padx=5, pady=3, sticky="w")
+            chip = self._make_subcard(checks_frame)
+            chip.grid(row=i // 4, column=i % 4, padx=6, pady=6, sticky="ew")
+            ctk.CTkCheckBox(chip, text=loc, variable=var, width=130).pack(anchor="w", padx=12, pady=10)
+        for col in range(4):
+            checks_frame.grid_columnconfigure(col, weight=1)
 
         btn_row2 = ctk.CTkFrame(loc_frame, fg_color="transparent")
-        btn_row2.pack(fill="x", padx=10, pady=(0, 10))
-        ctk.CTkButton(btn_row2, text="Select All", width=90, command=lambda: [v.set(True) for v in self.loc_vars.values()]).pack(side="left", padx=2)
-        ctk.CTkButton(btn_row2, text="Deselect All", width=100, command=lambda: [v.set(False) for v in self.loc_vars.values()]).pack(side="left", padx=2)
+        btn_row2.pack(fill="x")
+        self._make_action_button(btn_row2, "Select All Stores", lambda: [v.set(True) for v in self.loc_vars.values()], tone="neutral", width=130).pack(side="left", padx=(0, 8))
+        self._make_action_button(btn_row2, "Clear Selection", lambda: [v.set(False) for v in self.loc_vars.values()], tone="amber", width=122).pack(side="left")
 
-        report_frame = ctk.CTkFrame(content)
-        report_frame.pack(fill="x", padx=15, pady=5)
-        ctk.CTkLabel(report_frame, text="Report Types", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=10, pady=(10, 5))
+        _report_card, report_frame = self._make_section_card(
+            content,
+            "Report Types",
+            "Choose the exact Toast exports you want to pull for each selected store.",
+        )
 
         report_checks = ctk.CTkFrame(report_frame, fg_color="transparent")
-        report_checks.pack(fill="x", padx=10, pady=(0, 5))
+        report_checks.pack(fill="x", pady=(0, 8))
         self.report_type_vars = {}
         for idx, report in enumerate(REPORT_TYPES.values()):
             var = ctk.BooleanVar(value=report.key in DEFAULT_REPORT_TYPE_KEYS)
             self.report_type_vars[report.key] = var
-            ctk.CTkCheckBox(report_checks, text=report.label, variable=var, width=140).grid(
-                row=idx // 4, column=idx % 4, padx=5, pady=3, sticky="w"
-            )
+            chip = self._make_subcard(report_checks)
+            chip.grid(row=idx // 4, column=idx % 4, padx=6, pady=6, sticky="ew")
+            ctk.CTkCheckBox(chip, text=report.label, variable=var, width=140).pack(anchor="w", padx=12, pady=10)
+        for col in range(4):
+            report_checks.grid_columnconfigure(col, weight=1)
 
         report_btn_row = ctk.CTkFrame(report_frame, fg_color="transparent")
-        report_btn_row.pack(fill="x", padx=10, pady=(0, 10))
-        ctk.CTkButton(report_btn_row, text="Select All", width=90, command=lambda: [v.set(True) for v in self.report_type_vars.values()]).pack(side="left", padx=2)
-        ctk.CTkButton(report_btn_row, text="Sales Summary Only", width=140, command=self._select_sales_summary_only).pack(side="left", padx=2)
-        ctk.CTkButton(
+        report_btn_row.pack(fill="x")
+        self._make_action_button(report_btn_row, "Select All Reports", lambda: [v.set(True) for v in self.report_type_vars.values()], tone="neutral", width=136).pack(side="left", padx=(0, 8))
+        self._make_action_button(report_btn_row, "Sales Summary Only", self._select_sales_summary_only, tone="neutral", width=152).pack(side="left", padx=(0, 8))
+        self._make_action_button(
             report_btn_row,
-            text="Auto Fill Missing (US Yesterday)",
-            width=190,
-            command=lambda: self._apply_auto_download_plan(False),
-            fg_color="#0f766e",
-            hover_color="#0d5f59",
-        ).pack(side="left", padx=(10, 2))
-        ctk.CTkButton(
+            "Auto Fill to Yesterday",
+            lambda: self._apply_auto_download_plan(False),
+            tone="teal",
+            width=160,
+        ).pack(side="left", padx=(8, 8))
+        self._make_action_button(
             report_btn_row,
-            text="Auto Fill Missing (US Today)",
-            width=170,
-            command=lambda: self._apply_auto_download_plan(True),
-            fg_color="#2563eb",
-            hover_color="#1d4ed8",
-        ).pack(side="left", padx=2)
+            "Auto Fill to Today",
+            lambda: self._apply_auto_download_plan(True),
+            tone="primary",
+            width=150,
+        ).pack(side="left")
 
         # ── Options ──
-        opt_frame = ctk.CTkFrame(content)
-        opt_frame.pack(fill="x", padx=15, pady=5)
+        _opt_card, opt_frame = self._make_section_card(
+            content,
+            "Run Options",
+            "Choose what should happen automatically after each download finishes.",
+        )
         self.upload_gdrive_var = ctk.BooleanVar(value=True)
-        ctk.CTkCheckBox(opt_frame, text="Upload to Google Drive after download", variable=self.upload_gdrive_var).pack(anchor="w", padx=10, pady=10)
+        option_chip = self._make_subcard(opt_frame)
+        option_chip.pack(fill="x")
+        ctk.CTkCheckBox(option_chip, text="Upload to Google Drive after download", variable=self.upload_gdrive_var).pack(anchor="w", padx=12, pady=12)
 
-        # ── Action Button ──
-        self.download_btn = ctk.CTkButton(content, text="Download Reports",
-                                            font=ctk.CTkFont(size=15, weight="bold"),
-                                            height=45, command=self.start_download,
-                                            fg_color="#2563eb", hover_color="#1d4ed8")
-        self.download_btn.pack(fill="x", padx=15, pady=10)
+        _run_card, run_frame = self._make_section_card(
+            content,
+            "Execution",
+            "Launch the batch and monitor live progress for the selected stores and report types.",
+        )
+        action_row = ctk.CTkFrame(run_frame, fg_color="transparent")
+        action_row.pack(fill="x", pady=(0, 12))
+        self.download_btn = ctk.CTkButton(
+            action_row,
+            text="Download Reports",
+            font=ctk.CTkFont(size=16, weight="bold"),
+            height=50,
+            command=self.start_download,
+            fg_color=self._accent_blue,
+            hover_color="#1d4ed8",
+            corner_radius=14,
+        )
+        self.download_btn.pack(side="left", fill="x", expand=True)
+        tip_chip = ctk.CTkFrame(action_row, fg_color="#111827", corner_radius=14, border_width=1, border_color="#334155")
+        tip_chip.pack(side="left", padx=(12, 0))
+        ctk.CTkLabel(
+            tip_chip,
+            text="Best practice: run missing dates first, then QB sync.",
+            font=ctk.CTkFont(size=10),
+            text_color="#cbd5e1",
+            wraplength=180,
+            justify="left",
+        ).pack(padx=12, pady=10)
 
         # ── Progress ──
-        self.progress_bar = ctk.CTkProgressBar(content)
-        self.progress_bar.pack(fill="x", padx=15, pady=(0, 5))
+        progress_wrap = self._make_subcard(run_frame)
+        progress_wrap.pack(fill="x")
+        self.progress_bar = ctk.CTkProgressBar(progress_wrap, progress_color=self._accent_blue, fg_color="#1e293b")
+        self.progress_bar.pack(fill="x", padx=12, pady=(12, 6))
         self.progress_bar.set(0)
-        self.progress_label = ctk.CTkLabel(content, text="Ready", text_color="gray")
-        self.progress_label.pack(anchor="w", padx=15)
+        self.progress_label = ctk.CTkLabel(progress_wrap, text="Ready", text_color="#94a3b8", font=ctk.CTkFont(size=12, weight="bold"))
+        self.progress_label.pack(anchor="w", padx=12, pady=(0, 12))
 
         # ── Log ──
-        self.log_box = make_log_box(content)
+        log_frame = ctk.CTkFrame(
+            content,
+            fg_color=self._card_fg,
+            corner_radius=18,
+            border_width=1,
+            border_color=self._card_border,
+        )
+        log_frame.pack(fill="both", expand=True, padx=15, pady=(7, 15))
+        self.log_box = make_log_box(log_frame, height=220)
 
     def log(self, msg):
         self.after(0, lambda: append_log(self.log_box, msg))
@@ -3971,27 +4138,80 @@ class App(ctk.CTk):
 
     def _build_ui(self):
         # ── Header ──
-        header = ctk.CTkFrame(self, height=50, corner_radius=0)
+        header = ctk.CTkFrame(self, height=82, corner_radius=0, fg_color="#0b1220", border_width=0)
         header.pack(fill="x")
         header.pack_propagate(False)
-        ctk.CTkLabel(header, text="Toast POS Manager",
-                      font=ctk.CTkFont(size=20, weight="bold")).pack(side="left", padx=20, pady=10)
-        ctk.CTkLabel(header, text="v2.2", text_color="gray",
-                      font=ctk.CTkFont(size=12)).pack(side="right", padx=20)
-        self.env_status_label = ctk.CTkLabel(header, text="Environment: checking...", text_color="#d97706",
-                                             font=ctk.CTkFont(size=12))
-        self.env_status_label.pack(side="right", padx=(0, 12))
-        self.clock_frame = ctk.CTkFrame(header, fg_color="transparent")
-        self.clock_frame.pack(side="right", padx=(0, 12))
+        header_inner = ctk.CTkFrame(header, fg_color="transparent")
+        header_inner.pack(fill="both", expand=True, padx=20, pady=12)
+
+        header_left = ctk.CTkFrame(header_inner, fg_color="transparent")
+        header_left.pack(side="left", fill="both", expand=True)
+        ctk.CTkLabel(
+            header_left,
+            text="Toast POS Manager",
+            font=ctk.CTkFont(size=24, weight="bold"),
+            text_color="#f8fafc",
+        ).pack(anchor="w")
+        ctk.CTkLabel(
+            header_left,
+            text="Operational control center for Toast downloads, QuickBooks sync, and recovery workflows.",
+            font=ctk.CTkFont(size=11),
+            text_color="#94a3b8",
+        ).pack(anchor="w", pady=(4, 0))
+
+        header_right = ctk.CTkFrame(header_inner, fg_color="transparent")
+        header_right.pack(side="right", anchor="e")
+        top_badges = ctk.CTkFrame(header_right, fg_color="transparent")
+        top_badges.pack(anchor="e", pady=(0, 8))
+        self.env_status_badge = ctk.CTkFrame(
+            top_badges,
+            fg_color="#3f2f12",
+            corner_radius=12,
+            border_width=1,
+            border_color="#d97706",
+        )
+        self.env_status_badge.pack(side="left", padx=(0, 8))
+        self.env_status_label = ctk.CTkLabel(
+            self.env_status_badge,
+            text="Environment: checking...",
+            text_color="#fbbf24",
+            font=ctk.CTkFont(size=11, weight="bold"),
+        )
+        self.env_status_label.pack(padx=12, pady=8)
+        version_badge = ctk.CTkFrame(
+            top_badges,
+            fg_color="#111827",
+            corner_radius=12,
+            border_width=1,
+            border_color="#334155",
+        )
+        version_badge.pack(side="left")
+        ctk.CTkLabel(
+            version_badge,
+            text="v2.2",
+            text_color="#cbd5e1",
+            font=ctk.CTkFont(size=11, weight="bold"),
+        ).pack(padx=10, pady=8)
+
+        self.clock_frame = ctk.CTkFrame(header_right, fg_color="transparent")
+        self.clock_frame.pack(anchor="e")
         self.clock_labels = {}
         for clock in get_world_clocks():
-            label = ctk.CTkLabel(
+            chip = ctk.CTkFrame(
                 self.clock_frame,
-                text="",
-                text_color="#9ca3af",
-                font=ctk.CTkFont(size=11),
+                fg_color="#111827",
+                corner_radius=14,
+                border_width=1,
+                border_color="#223049",
             )
-            label.pack(side="left", padx=8)
+            chip.pack(side="left", padx=(8, 0))
+            label = ctk.CTkLabel(
+                chip,
+                text="",
+                text_color="#cbd5e1",
+                font=ctk.CTkFont(size=11, weight="bold"),
+            )
+            label.pack(padx=12, pady=8)
             self.clock_labels[clock["key"]] = label
         self._refresh_clock_labels()
 
@@ -4189,17 +4409,17 @@ class App(ctk.CTk):
         self._apply_nav_styles()
 
         # ── Status Bar ──
-        status_bar = ctk.CTkFrame(self, height=30, corner_radius=0)
+        status_bar = ctk.CTkFrame(self, height=32, corner_radius=0, fg_color="#0b1220")
         status_bar.pack(fill="x", side="bottom")
         status_bar.pack_propagate(False)
         ctk.CTkLabel(status_bar, textvariable=self.status_var,
-                      font=ctk.CTkFont(size=11), text_color="gray").pack(side="left", padx=10)
+                      font=ctk.CTkFont(size=11), text_color="#94a3b8").pack(side="left", padx=10)
 
     def _refresh_clock_labels(self):
         for clock in get_world_clocks():
             label = self.clock_labels.get(clock["key"])
             if label:
-                label.configure(text=f"{clock['label']}: {clock['display']}")
+                label.configure(text=f"{clock['label']} · {clock['date'][5:].replace('-', '/')} {clock['time']}")
         self.after(1000, self._refresh_clock_labels)
 
     def _bind_nav_click(self, widget, key: str):
@@ -4241,7 +4461,8 @@ class App(ctk.CTk):
             )
 
     def run_diagnostics_async(self, show_popup_on_error=False):
-        self.env_status_label.configure(text="Environment: checking...", text_color="#d97706")
+        self.env_status_badge.configure(fg_color="#2f2530", border_color="#a855f7")
+        self.env_status_label.configure(text="Environment: checking...", text_color="#e9d5ff")
         threading.Thread(
             target=self._run_diagnostics_worker,
             args=(show_popup_on_error,),
@@ -4256,18 +4477,25 @@ class App(ctk.CTk):
         self.diagnostics_report = report
         if report.error_count:
             text = f"Environment: {report.error_count} error(s)"
-            color = "#dc2626"
+            text_color = "#fecaca"
+            badge_fg = "#3b1212"
+            badge_border = "#dc2626"
             self.status_var.set("Environment issues detected. Open Settings > Startup Diagnostics.")
         elif report.warning_count:
             text = f"Environment: {report.warning_count} warning(s)"
-            color = "#d97706"
+            text_color = "#fde68a"
+            badge_fg = "#3f2f12"
+            badge_border = "#d97706"
             self.status_var.set("Environment warnings detected. Open Settings > Startup Diagnostics.")
         else:
             text = "Environment: ready"
-            color = "#059669"
+            text_color = "#bbf7d0"
+            badge_fg = "#0f2f24"
+            badge_border = "#059669"
             self.status_var.set("Ready")
 
-        self.env_status_label.configure(text=text, text_color=color)
+        self.env_status_badge.configure(fg_color=badge_fg, border_color=badge_border)
+        self.env_status_label.configure(text=text, text_color=text_color)
         if hasattr(self, "settings_tab"):
             self.settings_tab.update_diagnostics(report)
 
