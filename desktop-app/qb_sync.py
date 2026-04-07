@@ -6,14 +6,14 @@ No API required - reads from downloaded Excel files.
 import csv
 import difflib
 import json
-import logging
 import os
+import re
 import sys
 import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 
 if sys.platform == "win32":
@@ -22,10 +22,6 @@ if sys.platform == "win32":
 
 import openpyxl
 from app_paths import app_path, runtime_path
-from toast_reports import build_local_report_dir
-from date_parser import parse_date as _parse_date_core, parse_toast_filename
-
-logger = logging.getLogger(__name__)
 
 # ── Paths ────────────────────────────────────────────────────────────
 MAPPING_FILE = app_path("qb-mapping.json")
@@ -262,16 +258,8 @@ def load_csv_mapping(store_name, store_config):
         report = row.get("Report", "").strip()
         note = row.get("Note", "").strip()
 
-        if not qb_item:
-            # FIX M1: Warn when QB item is blank — indistinguishable from forgotten mapping
-            logger.warning(
-                f"  CSV mapping row has blank QB item for '{report}' "
-                f"(map: {csv_path.name}). Line ignored. "
-                f"Set QB column to a valid item name or 'null' to skip intentionally."
-            )
+        if not qb_item or not report or report.lower() == "null":
             continue
-        if not report or report.lower() == "null":
-            continue  # Intentionally exclude this column
 
         is_category = False
         if "Sales Category" in note:
@@ -343,39 +331,28 @@ def load_csv_mapping(store_name, store_config):
 
 
 def parse_date(date_str):
-    """Backward-compatible date parser. Uses unified date_parser internally."""
-    return _parse_date_core(date_str)
+    if date_str == "yesterday":
+        return (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+    if date_str == "today":
+        return datetime.now().strftime("%Y-%m-%d")
+    datetime.strptime(date_str, "%Y-%m-%d")
+    return date_str
 
 
-def d(value, context: str = "") -> Decimal:
-    """
-    Convert value to Decimal with 2 decimal places.
-    FIX M2: Now logs warning on malformed input instead of silently returning 0.
-    Args:
-        value: Numeric value (str, int, float, Decimal, None)
-        context: Optional description for log messages (e.g., "Sheet:Revenue summary, Row:5")
-    """
+def d(value):
+    """Convert to Decimal, handle None/empty/string"""
     if value is None or value == "" or value == "None":
         return Decimal("0")
     try:
-        cleaned = str(value).replace(",", "").replace("$", "").strip()
-        # Catch obviously malformed numeric strings
-        if cleaned.lower() in ("n/a", "null", "-"):
-            ctx = f" in {context}" if context else ""
-            logger.warning(f"Decimal parse: got '{value}'{ctx}, treating as 0")
-            return Decimal("0")
-        return Decimal(cleaned).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-    except (InvalidOperation, ValueError) as e:
-        ctx = f" in {context}" if context else ""
-        logger.warning(f"Decimal parse error: '{value}'{ctx}: {e}")
+        return Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    except Exception:
         return Decimal("0")
 
 
 def escape_xml(text):
     if not text:
         return ""
-    import re
-    cleaned = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", str(text))
+    cleaned = re.sub(r"[\x00-\x08\x0B\x0C\x0E-\x1F]", "", str(text))
     return (
         cleaned
         .replace("&", "&amp;")
@@ -389,10 +366,13 @@ def escape_xml(text):
 ISSUE_SEVERITY = {
     "unmapped_categories": ("error", True),
     "unmapped_tax": ("error", True),
+    "unmapped_tips": ("error", True),
+    "unmapped_gratuity": ("error", True),
     "unmapped_payment_subtype": ("error", True),
     "unmapped_other_payment": ("error", True),
     "unmapped_payment_type": ("error", True),
     "unbalanced_receipt": ("error", True),
+    "over_short_applied": ("warning", False),
 }
 
 
@@ -614,7 +594,7 @@ def extract_receipt_lines(reader, store_config, issues=None):
     # 5. Tips (POSITIVE)
     tips = d(revenue.get("Tips", 0))
     gratuity_amt = d(revenue.get("Gratuity", 0))
-    gratuity_is_separate = bool(fixed.get("gratuity"))
+    gratuity_is_separate = bool(fixed.get("gratuity")) and gratuity_amt != 0
     if fixed.get("tips_includes_gratuity"):
         if gratuity_is_separate:
             log("  Gratuity is mapped separately; skipping tips_includes_gratuity merge to avoid double count")
@@ -622,10 +602,14 @@ def extract_receipt_lines(reader, store_config, issues=None):
             tips = tips + gratuity_amt
     if tips != 0 and fixed.get("tips"):
         lines.append({"item_name": fixed["tips"], "amount": tips, "desc": "Tips"})
+    elif tips != 0:
+        add_issue("unmapped_tips", "Tips amount exists but no QuickBooks mapping is configured", amount=str(tips))
 
     # 5a. Gratuity (POSITIVE, separate line)
     if gratuity_amt != 0 and fixed.get("gratuity"):
         lines.append({"item_name": fixed["gratuity"], "amount": gratuity_amt, "desc": "Gratuity"})
+    elif gratuity_amt != 0 and not fixed.get("tips_includes_gratuity"):
+        add_issue("unmapped_gratuity", "Gratuity amount exists but no QuickBooks mapping is configured", amount=str(gratuity_amt))
 
     # 5b. Deferred Gift Cards (POSITIVE)
     deferred_gc = d(revenue.get("Deferred (gift cards)", 0))
@@ -682,6 +666,12 @@ def extract_receipt_lines(reader, store_config, issues=None):
         total_negative = sum(l["amount"] for l in lines if l["amount"] < 0)
         balance = total_positive + total_negative
         if balance != 0:
+            if issues and abs(balance) >= Decimal("0.50"):
+                add_issue(
+                    "over_short_applied",
+                    f"Over/Short adjustment applied by {balance}; review unmapped or mismatched report data.",
+                    balance=str(balance),
+                )
             lines.append({"item_name": fixed["over_short"], "amount": -balance, "desc": "Over/Short adjustment"})
     else:
         total_positive = sum(l["amount"] for l in lines if l["amount"] > 0)
@@ -720,12 +710,35 @@ class QBSyncClient:
             except Exception:
                 pass
 
+    def _wrap_qb_error(self, exc, operation):
+        message = str(exc)
+        lower = message.lower()
+        guidance = "Check that QuickBooks Desktop is open, the correct company file is active, and no modal popup is blocking automation."
+        if "cannot begin session" in lower or "beginsession" in lower:
+            guidance = "QuickBooks could not start a QBXML session. Confirm the company file is open and fully loaded, then retry."
+        elif "lock" in lower or "in use" in lower:
+            guidance = "The QuickBooks company file appears locked or busy. Wait for other users/processes to finish, then retry."
+        elif "timeout" in lower or "timed out" in lower:
+            guidance = "QuickBooks took too long to respond. Close popups, let the company file settle, and retry."
+        elif "modal" in lower or "popup" in lower:
+            guidance = "A QuickBooks popup is likely blocking QBXML requests. Dismiss it and retry."
+        return RuntimeError(f"{operation} failed: {message}. {guidance}")
+
     def _send(self, qbxml):
-        ticket = self.rp.BeginSession("", 0)
         try:
-            return self.rp.ProcessRequest(ticket, qbxml)
+            ticket = self.rp.BeginSession("", 0)
+        except Exception as exc:
+            raise self._wrap_qb_error(exc, "QuickBooks session start") from exc
+        try:
+            try:
+                return self.rp.ProcessRequest(ticket, qbxml)
+            except Exception as exc:
+                raise self._wrap_qb_error(exc, "QuickBooks request") from exc
         finally:
-            self.rp.EndSession(ticket)
+            try:
+                self.rp.EndSession(ticket)
+            except Exception:
+                pass
 
     def _parse(self, response_xml):
         root = ET.fromstring(response_xml)
@@ -847,68 +860,6 @@ class QBSyncClient:
         matches = self.find_existing_sales_receipts(ref_number)
         return any(match["txn_date"] == date_str and match["ref_number"] == ref_number for match in matches)
 
-    def list_customers(self):
-        """List all customers in QB. Returns list of dicts with name and other info."""
-        qbxml = f"""<?xml version="1.0" encoding="utf-8"?>
-<?qbxml version="{self.qbxml_version}"?>
-<QBXML>
-    <QBXMLMsgsRq onError="stopOnError">
-        <CustomerQueryRq requestID="1">
-            <ActiveStatus>All</ActiveStatus>
-        </CustomerQueryRq>
-    </QBXMLMsgsRq>
-</QBXML>"""
-        resp = self._send(qbxml)
-        result = self._parse(resp)
-        customers = []
-        if result["ok"] and result.get("element") is not None:
-            for child in result["element"]:
-                if child.tag == "CustomerRet":
-                    name = child.findtext("Name", "") or child.findtext("FullName", "") or ""
-                    customers.append({
-                        "name": name.strip(),
-                        "full_name": child.findtext("FullName", "").strip() or name.strip(),
-                    })
-        return customers
-
-    def customer_exists(self, customer_name):
-        """Check if customer exists in QB."""
-        customers = self.list_customers()
-        customer_lower = customer_name.lower().strip()
-        for c in customers:
-            if c["name"].lower().strip() == customer_lower:
-                return True
-        return False
-
-    def create_customer(self, customer_name):
-        """Create a new customer in QB. Returns True on success."""
-        log(f"  Creating customer: {customer_name}")
-        qbxml = f"""<?xml version="1.0" encoding="utf-8"?>
-<?qbxml version="{self.qbxml_version}"?>
-<QBXML>
-    <QBXMLMsgsRq onError="stopOnError">
-        <CustomerAddRq requestID="1">
-            <CustomerAdd>
-                <Name>{escape_xml(customer_name)}</Name>
-            </CustomerAdd>
-        </CustomerAddRq>
-    </QBXMLMsgsRq>
-</QBXML>"""
-        resp = self._send(qbxml)
-        result = self._parse(resp)
-        if result["ok"]:
-            log(f"  Customer created successfully!")
-            return True
-        else:
-            log(f"  Failed to create customer: [{result['code']}] {result['msg']}")
-            return False
-
-    def ensure_customer(self, customer_name):
-        """Ensure customer exists in QB. Creates if not found. Returns True if exists or created."""
-        if self.customer_exists(customer_name):
-            return True
-        return self.create_customer(customer_name)
-
     def create_sales_receipt(self, txn_date, ref_number, customer_name, memo, lines, class_name=None):
         lines_xml = ""
         for line in lines:
@@ -969,47 +920,24 @@ class QBSyncClient:
 
 # ── Find Report Files ────────────────────────────────────────────────
 def find_report_file(store_name, store_config, date_str):
-    """
-    Find Toast report files matching the given date.
-    FIX C3: Now tries multiple filename patterns for resilience.
-    """
     locations = store_config.get("toast_locations", [store_config.get("toast_location", store_name)])
     if isinstance(locations, str):
         locations = [locations]
 
-    # FIX C3: Try multiple patterns (backward compatibility + flexibility)
-    # Primary: configured pattern or default; Fallback: common variants
-    configured_pattern = store_config.get("toast_filename_pattern")
-    if configured_pattern:
-        patterns = [configured_pattern.format(date=date_str)]
-    else:
-        patterns = []
-
-    # Common variant patterns (current Toast output)
-    common_patterns = [
-        f"SalesSummary_{date_str}_{date_str}.xlsx",   # current: SalesSummary_2026-03-28_2026-03-28.xlsx
-        f"SalesSummary-{date_str}-{date_str}.xlsx",   # dash separator variant
-        f"Toast_{date_str}_to_{date_str}.xlsx",       # Toast_2026-03-28_to_2026-03-28.xlsx
-        f"Toast-{date_str}-{date_str}.xlsx",          # Toast-2026-03-28-Toast-2026-03-28.xlsx
-    ]
-    # Deduplicate
-    seen = set(patterns)
-    for p in common_patterns:
-        if p not in seen:
-            patterns.append(p)
-            seen.add(p)
-
     files = []
     for loc in locations:
-        loc_dir = build_local_report_dir(REPORTS_DIR, loc, "sales_summary")
-        if not loc_dir.exists():
-            loc_dir = REPORTS_DIR / loc
-        if not loc_dir.exists():
-            continue
-        for pattern in patterns:
-            filepath = loc_dir / pattern
+        loc_dir = REPORTS_DIR / loc
+        pattern = f"SalesSummary_{date_str}_{date_str}.xlsx"
+        candidates = []
+        nested_dir = loc_dir / "Sale Summary"
+        if nested_dir.exists():
+            candidates.append(nested_dir / pattern)
+        if loc_dir.exists():
+            candidates.append(loc_dir / pattern)
+
+        for filepath in candidates:
             if filepath.exists():
                 files.append({"location": loc, "filepath": filepath})
-                break  # Found one for this location, move to next
+                break
 
     return files

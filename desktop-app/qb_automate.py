@@ -41,18 +41,44 @@ QB_EXE = os.environ.get(
 )
 QB_COMPANY_DIR = os.environ.get("QB_COMPANY_DIR", r"D:\QB")
 
+PASSWORDS = {
+    "pass1": os.environ.get("QB_PASSWORD1", ""),
+    "pass2": os.environ.get("QB_PASSWORD2", ""),
+    "pass3": os.environ.get("QB_PASSWORD3", ""),
+}
 
-def _load_passwords():
-    """Reload passwords from environment (re-reads .env.qb each time)."""
-    load_env(runtime_path(".env.qb"))
-    return {
-        "pass1": os.environ.get("QB_PASSWORD1", ""),
-        "pass2": os.environ.get("QB_PASSWORD2", ""),
-        "pass3": os.environ.get("QB_PASSWORD3", ""),
-    }
+SAFE_QB_APP_PROCESS_NAMES = {
+    "QBWEnterprise.exe",
+    "QBW32Enterprise.exe",
+    "QBW.EXE",
+}
 
-
-PASSWORDS = _load_passwords()
+KNOWN_QB_POPUP_RULES = [
+    {
+        "title_patterns": ["memorized transactions"],
+        "button_titles": ["Enter All Later", "Enter All  Later", "Later", "Close"],
+        "label": "Memorized Transactions",
+        "allow_escape": True,
+    },
+    {
+        "title_patterns": ["update", "quickbooks update", "intuit update"],
+        "button_titles": ["Remind me later", "Remind Me Later", "Skip", "Not Now", "Close"],
+        "label": "Update prompt",
+        "allow_escape": True,
+    },
+    {
+        "title_patterns": ["backup", "restore", "scheduled backup"],
+        "button_titles": ["Cancel", "Close", "No", "Not Now"],
+        "label": "Backup/restore prompt",
+        "allow_escape": True,
+    },
+    {
+        "title_patterns": ["missing checks", "payments to deposit", "accountant changes"],
+        "button_titles": ["Close", "Cancel", "No"],
+        "label": "Accounting reminder",
+        "allow_escape": False,
+    },
+]
 
 
 def _normalize_text(value):
@@ -115,18 +141,42 @@ def log(msg):
     print(f"[{timestamp}] {msg}")
 
 
-# ── Close QB ─────────────────────────────────────────────────────────
-def close_qb_completely(callback=None):
-    """Terminate QB processes, then force-kill survivors only if needed."""
-    import psutil
+def _emit(callback, msg):
     if callback:
-        callback("Closing QuickBooks...")
+        callback(msg)
     else:
-        log("Closing QuickBooks...")
+        log(msg)
+
+
+def _is_safe_popup_title(title):
+    normalized = str(title or "").strip().lower()
+    if not normalized or normalized == "workspace":
+        return False
+    if "intuit quickbooks" in normalized:
+        return False
+    return any(
+        pattern in normalized
+        for rule in KNOWN_QB_POPUP_RULES
+        for pattern in rule["title_patterns"]
+    )
+
+
+def _matching_popup_rule(title):
+    normalized = str(title or "").strip().lower()
+    for rule in KNOWN_QB_POPUP_RULES:
+        if any(pattern in normalized for pattern in rule["title_patterns"]):
+            return rule
+    return None
+
+
+# ── Close QB ─────────────────────────────────────────────────────────
+def close_qb_completely(callback=None, *, force_kill=False, kill_timeout=8):
+    """Terminate QuickBooks app processes and only force-kill survivors when explicitly allowed."""
+    import psutil
+    _emit(callback, "Closing QuickBooks...")
 
     touched = []
-    for proc_name in ["QBWEnterprise.exe", "QBW32Enterprise.exe", "QBW.EXE",
-                       "qbupdate.exe", "QBCFMonitorService.exe"]:
+    for proc_name in SAFE_QB_APP_PROCESS_NAMES:
         for proc in psutil.process_iter(["name"]):
             try:
                 if proc.info["name"] and proc.info["name"].lower() == proc_name.lower():
@@ -136,21 +186,29 @@ def close_qb_completely(callback=None):
                 pass
 
     if touched:
-        gone, alive = psutil.wait_procs(touched, timeout=8)
-        for proc in alive:
-            try:
-                proc.kill()
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                pass
-        time.sleep(2)
-        msg = "QB closed"
+        _, alive = psutil.wait_procs(touched, timeout=max(1, int(kill_timeout)))
+        if alive and force_kill:
+            for proc in alive:
+                try:
+                    proc.kill()
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+            time.sleep(2)
+            msg = "QB closed after force-killing stuck QuickBooks process(es)"
+        elif alive:
+            survivor_names = ", ".join(sorted({proc.name() for proc in alive if proc.is_running()})) or "QuickBooks"
+            msg = (
+                f"QuickBooks did not close cleanly ({survivor_names}). "
+                "Please close it manually, then retry. Force-kill is disabled by default for safety."
+            )
+        else:
+            time.sleep(2)
+            msg = "QB closed"
     else:
         msg = "QB was not running"
 
-    if callback:
-        callback(msg)
-    else:
-        log(msg)
+    _emit(callback, msg)
+    return "did not close cleanly" not in msg
 
 
 # ── Open QB with file ────────────────────────────────────────────────
@@ -166,74 +224,14 @@ def open_qb_with_file(qbw_path, password_key="pass1", callback=None, expected_ma
     Returns:
         True if QB is open and ready, False otherwise
     """
-    from pywinauto import Application
-
-    def _log(msg):
-        if callback:
-            callback(msg)
-        else:
-            log(msg)
-
-    passwords = _load_passwords()
-    password_key = password_key or "pass1"
-    password = passwords.get(password_key, "")
-    if not password:
-        _log(f"Warning: Password '{password_key}' is empty. Check .env.qb file at {runtime_path('.env.qb')}")
-    qb_exe = resolve_qb_executable()
-
-    valid_file, file_msg = validate_company_file_path(qbw_path, expected_match, store_name)
-    if not valid_file:
-        _log(file_msg)
-        return False
-    if not qb_exe:
-        _log("QuickBooks executable not found. Check QB_EXE_PATH or install path.")
-        return False
-
-    _log(file_msg)
-    _log(f"Opening QB with: {os.path.basename(qbw_path)}")
-
-    # Launch QB with company file
-    subprocess.Popen([str(qb_exe), qbw_path])
-    time.sleep(10)
-
-    # Connect to QB window
-    app = None
-    for attempt in range(15):
-        for title_re in [".*QuickBooks Desktop Login.*", ".*QuickBooks.*", ".*Intuit.*"]:
-            try:
-                app = Application(backend="uia").connect(title_re=title_re, timeout=3)
-                break
-            except Exception:
-                pass
-        if app:
-            break
-        _log(f"  Waiting for QB... ({(attempt + 1) * 5}s)")
-        time.sleep(5)
-
-    if not app:
-        _log("Failed to connect to QB window")
-        return False
-
-    _log("Connected to QB window")
-
-    # Login
-    time.sleep(3)
-    _log(f"Using password key: {password_key} (length={len(password)})")
-    logged_in = _do_login(app, password, _log)
-    if not logged_in:
-        _log("Login failed")
-        return False
-
-    # Wait for QB to be ready
-    _wait_for_ready(app, _log)
-    if expected_match:
-        _warn_if_window_title_mismatch(app, expected_match, _log)
-
-    # Dismiss popups
-    _dismiss_all_popups(app, _log)
-
-    _log("QB is ready!")
-    return True
+    return _open_qb_company_file(
+        qbw_path,
+        password_key=password_key,
+        callback=callback,
+        expected_match=expected_match,
+        store_name=store_name,
+        opened_label=os.path.basename(qbw_path),
+    )
 
 
 # ── Open store (used by QB sync tab) ─────────────────────────────────
@@ -244,29 +242,37 @@ def open_store(store_name, store_paths, qbw_match=None, password_key="pass1"):
         return False
 
     qbw_path = store_paths[store_name]
-    passwords = _load_passwords()
-    password_key = password_key or "pass1"
-    password = passwords.get(password_key, "")
-    if not password:
-        log(f"Warning: Password '{password_key}' is empty. Check .env.qb file at {runtime_path('.env.qb')}")
-    qb_exe = resolve_qb_executable()
-
-    valid_file, file_msg = validate_company_file_path(qbw_path, qbw_match, store_name)
-    if not valid_file:
-        log(file_msg)
-        return False
-    if not qb_exe:
-        log("QuickBooks executable not found. Check QB_EXE_PATH or install path.")
-        return False
-
-    log(file_msg)
     log(f"Opening store: {store_name}")
     log(f"  File: {qbw_path}")
+    return _open_qb_company_file(
+        qbw_path,
+        password_key=password_key,
+        callback=log,
+        expected_match=qbw_match,
+        store_name=store_name,
+        opened_label=store_name,
+    )
 
+
+def _open_qb_company_file(qbw_path, *, password_key="pass1", callback=None, expected_match=None, store_name=None, opened_label=None):
+    from pywinauto import Application
+
+    password = PASSWORDS.get(password_key, "")
+    qb_exe = resolve_qb_executable()
+
+    valid_file, file_msg = validate_company_file_path(qbw_path, expected_match, store_name)
+    if not valid_file:
+        _emit(callback, file_msg)
+        return False
+    if not qb_exe:
+        _emit(callback, "QuickBooks executable not found. Check QB_EXE_PATH or install path.")
+        return False
+
+    _emit(callback, file_msg)
+    _emit(callback, f"Opening QB with: {opened_label or os.path.basename(qbw_path)}")
     subprocess.Popen([str(qb_exe), qbw_path])
     time.sleep(10)
 
-    from pywinauto import Application
     app = None
     for attempt in range(15):
         for title_re in [".*QuickBooks Desktop Login.*", ".*QuickBooks.*", ".*Intuit.*"]:
@@ -277,28 +283,25 @@ def open_store(store_name, store_paths, qbw_match=None, password_key="pass1"):
                 pass
         if app:
             break
-        log(f"  Waiting for QB... ({(attempt + 1) * 5}s)")
+        _emit(callback, f"  Waiting for QB... ({(attempt + 1) * 5}s)")
         time.sleep(5)
 
     if not app:
-        log("Failed to connect to QB")
+        _emit(callback, "Failed to connect to QB window")
         return False
 
-    log("Connected to QB")
-
+    _emit(callback, "Connected to QB window")
     time.sleep(3)
-    log(f"Using password key: {password_key} (length={len(password)})")
-    logged_in = _do_login(app, password, log)
+    logged_in = _do_login(app, password, lambda msg: _emit(callback, msg))
     if not logged_in:
-        log("Login failed")
+        _emit(callback, "Login failed")
         return False
 
-    _wait_for_ready(app, log)
-    if qbw_match:
-        _warn_if_window_title_mismatch(app, qbw_match, log)
-    _dismiss_all_popups(app, log)
-
-    log(f"{store_name} is ready!")
+    _wait_for_ready(app, lambda msg: _emit(callback, msg))
+    if expected_match:
+        _warn_if_window_title_mismatch(app, expected_match, lambda msg: _emit(callback, msg))
+    _dismiss_all_popups(app, lambda msg: _emit(callback, msg))
+    _emit(callback, "QB is ready!")
     return True
 
 
@@ -323,26 +326,7 @@ def _do_login(app, password, _log):
 
         pwd_field.click_input()
         time.sleep(0.3)
-
-        # Clear any existing text first
-        import pywinauto.keyboard as kb
-        kb.send_keys("^a")
-        time.sleep(0.1)
-        kb.send_keys("{DELETE}")
-        time.sleep(0.1)
-
-        # Use type_keys instead of set_edit_text — set_edit_text often fails
-        # on masked password fields (ES_PASSWORD style) due to Windows security
-        if password:
-            # Escape special pywinauto type_keys chars
-            safe_pw = ""
-            special = set("{}+^%()~")
-            for ch in password:
-                if ch in special:
-                    safe_pw += "{" + ch + "}"
-                else:
-                    safe_pw += ch
-            pwd_field.type_keys(safe_pw, with_spaces=True, pause=0.02)
+        pwd_field.set_edit_text(password)
         time.sleep(0.5)
 
         ok_btn = dlg.child_window(title="OK", auto_id="51")
@@ -418,7 +402,7 @@ def _warn_if_window_title_mismatch(app, expected_match, _log):
 
 
 def _dismiss_all_popups(app, _log):
-    """Close all popups/dialogs after login."""
+    """Close only known low-risk popups after login and leave unknown dialogs alone."""
     import pywinauto.keyboard as kb
     import pywinauto.mouse as mouse
 
@@ -426,62 +410,11 @@ def _dismiss_all_popups(app, _log):
     closed = 0
     time.sleep(3)
 
-    for attempt in range(20):
+    for attempt in range(10):
         found = False
         try:
             win = app.top_window()
 
-            # Check for Memorized Transactions dialog
-            for search_root in [win]:
-                try:
-                    memo = search_root.child_window(title_re=".*Memorized Transactions.*")
-                    if memo.exists(timeout=1):
-                        clicked = False
-                        for btn_title in ["Enter All Later", "Enter All  Later"]:
-                            try:
-                                btn = memo.child_window(title_re=f".*{btn_title}.*")
-                                if btn.exists(timeout=1):
-                                    btn.click_input()
-                                    clicked = True
-                                    break
-                            except Exception:
-                                pass
-
-                        if not clicked:
-                            try:
-                                all_btns = memo.descendants(control_type="Button") + memo.descendants(control_type="Pane")
-                                for b in all_btns:
-                                    bt = b.window_text()
-                                    if bt and "Later" in bt:
-                                        b.click_input()
-                                        clicked = True
-                                        break
-                            except Exception:
-                                pass
-
-                        if not clicked:
-                            try:
-                                rect = memo.rectangle()
-                                mouse.click(coords=(rect.right - 15, rect.top + 15))
-                                clicked = True
-                            except Exception:
-                                pass
-
-                        if not clicked:
-                            kb.send_keys("{ESCAPE}")
-
-                        _log("  Closed: Memorized Transactions")
-                        closed += 1
-                        found = True
-                        time.sleep(2)
-                        break
-                except Exception:
-                    pass
-
-            if found:
-                continue
-
-            # Check for any other popup
             children = []
             try:
                 children = win.children()
@@ -501,11 +434,13 @@ def _dismiss_all_popups(app, _log):
                     continue
                 if "Intuit QuickBooks" in ctitle:
                     continue
+                rule = _matching_popup_rule(ctitle)
+                if not rule:
+                    _log(f"  Leaving unknown popup open for review: '{ctitle}'")
+                    continue
 
                 clicked = False
-                for btn_title in ["Enter All Later", "Remind me later",
-                                  "Remind Me Later", "Cancel", "Close", "No",
-                                  "Not Now", "Skip", "Later", "No Thanks", "OK"]:
+                for btn_title in rule["button_titles"]:
                     try:
                         for ct in ["Button", "Pane"]:
                             try:
@@ -529,8 +464,23 @@ def _dismiss_all_popups(app, _log):
                     except Exception:
                         pass
 
+                if not clicked and rule.get("allow_escape"):
+                    try:
+                        rect = child.rectangle()
+                        mouse.click(coords=(rect.right - 15, rect.top + 15))
+                        clicked = True
+                    except Exception:
+                        pass
+
+                if not clicked and rule.get("allow_escape"):
+                    try:
+                        kb.send_keys("{ESCAPE}")
+                        clicked = True
+                    except Exception:
+                        pass
+
                 if clicked:
-                    _log(f"  Closed popup: '{ctitle}'")
+                    _log(f"  Closed popup: {rule['label']} -> '{ctitle}'")
                     closed += 1
                     found = True
                     time.sleep(2)
