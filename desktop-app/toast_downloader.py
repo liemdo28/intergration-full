@@ -229,6 +229,24 @@ class ToastDownloader:
             self.page.wait_for_timeout(500)
         try:
             self.page.evaluate("""() => {
+                const clickByText = (pattern) => {
+                    const nodes = Array.from(document.querySelectorAll('button, [role="button"], a, span, div'));
+                    for (const node of nodes) {
+                        const text = (node.innerText || node.textContent || '').replace(/\\s+/g, ' ').trim();
+                        if (!text || text.length > 120) continue;
+                        if (!pattern.test(text)) continue;
+                        const target = node.closest('button, [role="button"], a') || node;
+                        try {
+                            target.click();
+                            return true;
+                        } catch (_err) {}
+                    }
+                    return false;
+                };
+                clickByText(/^opt out of all$/i);
+                clickByText(/^save$/i);
+                clickByText(/^accept all$/i);
+                clickByText(/^close$/i);
                 const checklist = document.querySelector('#single-spa-application\\\\:toast-onboarding-checklist-spa');
                 if (checklist) {
                     checklist.style.display = 'none';
@@ -292,8 +310,13 @@ class ToastDownloader:
         try:
             visible_text = self.page.evaluate(
                 """() => {
-                    const text = (document.body?.innerText || '').replace(/\\s+/g, ' ').trim();
-                    return text.slice(0, 4000);
+                    const headerNodes = Array.from(document.querySelectorAll('header *, nav *, [role="banner"] *, [data-testid*="restaurant" i], [aria-label*="location" i]'));
+                    const headerText = headerNodes
+                        .map((node) => (node.innerText || node.textContent || '').replace(/\\s+/g, ' ').trim())
+                        .filter(Boolean)
+                        .join(' ');
+                    const bodyText = (document.body?.innerText || '').replace(/\\s+/g, ' ').trim();
+                    return `${headerText} ${bodyText}`.slice(0, 6000);
                 }"""
             )
         except Exception:
@@ -337,6 +360,7 @@ class ToastDownloader:
             matched = self.page.evaluate(
                 """(knownStores) => {
                     const normalizedStores = knownStores.map((item) => item.toLowerCase());
+                    const blockedText = /(essential|vendors|functional|analytics|marketing|save|opt out of all|opt in to all|live chat)/i;
                     const clickable = Array.from(
                         document.querySelectorAll(
                             'button, [role="button"], [role="combobox"], [aria-haspopup], a'
@@ -346,6 +370,7 @@ class ToastDownloader:
                     for (const el of clickable) {
                         const text = (el.innerText || el.textContent || '').replace(/\\s+/g, ' ').trim();
                         if (!text || text.length > 120) continue;
+                        if (blockedText.test(text)) continue;
                         if (normalizedStores.some((store) => text.toLowerCase().includes(store))) {
                             el.click();
                             return text;
@@ -369,11 +394,32 @@ class ToastDownloader:
                     for (const el of anyElements) {
                         const text = (el.innerText || el.textContent || '').replace(/\\s+/g, ' ').trim();
                         if (!text || text.length > 120) continue;
+                        if (blockedText.test(text)) continue;
                         if (!normalizedStores.some((store) => text.toLowerCase().includes(store))) continue;
                         const target = el.closest('button, [role="button"], [role="combobox"], [aria-haspopup], a, div, span');
                         if (!target) continue;
                         target.click();
                         return text;
+                    }
+
+                    const topStripNodes = Array.from(document.querySelectorAll('body *')).filter((node) => {
+                        const rect = node.getBoundingClientRect?.();
+                        if (!rect) return false;
+                        if (rect.width < 40 || rect.height < 18) return false;
+                        if (rect.top < -10 || rect.top > 220) return false;
+                        if (rect.left < -10 || rect.left > 900) return false;
+                        const text = (node.innerText || node.textContent || '').replace(/\\s+/g, ' ').trim();
+                        if (!text || text.length > 140) return false;
+                        if (blockedText.test(text)) return false;
+                        return /,\\s*[A-Z]{2}|raw sushi bistro|bakudan/i.test(text) || normalizedStores.some((store) => text.toLowerCase().includes(store));
+                    });
+                    for (const node of topStripNodes) {
+                        const text = (node.innerText || node.textContent || '').replace(/\\s+/g, ' ').trim();
+                        const target = node.closest('button, [role="button"], [role="combobox"], [aria-haspopup], a, div, span') || node;
+                        try {
+                            target.click();
+                            return text || '__location_top_strip__';
+                        } catch (_err) {}
                     }
                     return null;
                 }""",
@@ -491,6 +537,8 @@ class ToastDownloader:
                 '[aria-haspopup="menu"]',
                 '[data-testid*="date" i]',
                 '[class*="date" i]',
+                'div',
+                'span',
             ];
             const seen = new Set();
             const nodes = [];
@@ -511,6 +559,12 @@ class ToastDownloader:
                 if (!text) continue;
                 if (text.includes('Custom hours')) continue;
                 if (text.length > 140) continue;
+                const rect = node.getBoundingClientRect?.();
+                if (rect) {
+                    if (rect.width < 40 || rect.height < 18) continue;
+                    if (rect.top < -10 || rect.top > 320) continue;
+                    if (rect.left < 120 || rect.left > 1200) continue;
+                }
                 for (const label of labels) {
                     if (text.includes(label) && (hasDatePattern(text) || label === 'Custom')) {
                         node.click();
@@ -539,6 +593,93 @@ class ToastDownloader:
             return True
 
         self.log("    Could not find date picker button")
+        return False
+
+    def _locate_date_inputs(self):
+        selectors = [
+            '[role="dialog"] input',
+            '[aria-modal="true"] input',
+            'input[placeholder*="Start" i]',
+            'input[placeholder*="End" i]',
+            'input[aria-label*="Start" i]',
+            'input[aria-label*="End" i]',
+            'input[name*="start" i]',
+            'input[name*="end" i]',
+            'input[data-testid*="start" i]',
+            'input[data-testid*="end" i]',
+            'input',
+        ]
+        seen = []
+        for sel in selectors:
+            try:
+                for locator in self.page.locator(sel).all():
+                    try:
+                        if not locator.is_visible(timeout=300):
+                            continue
+                        text = ""
+                        try:
+                            text = (locator.get_attribute("type") or "").lower()
+                        except Exception:
+                            text = ""
+                        if text in {"hidden", "checkbox", "radio"}:
+                            continue
+                        seen.append(locator)
+                    except Exception:
+                        continue
+            except Exception:
+                continue
+        unique = []
+        dedupe = set()
+        for locator in seen:
+            key = id(locator)
+            if key in dedupe:
+                continue
+            dedupe.add(key)
+            unique.append(locator)
+        return unique[:4]
+
+    def _fill_custom_date_inputs(self, date_str):
+        inputs = self._locate_date_inputs()
+        if len(inputs) < 2:
+            return False
+        try:
+            inputs[0].click()
+            inputs[0].fill(date_str)
+            self.log(f"    Start date: {date_str}")
+            self.page.wait_for_timeout(250)
+            inputs[1].click()
+            inputs[1].fill(date_str)
+            self.log(f"    End date: {date_str}")
+            self.page.wait_for_timeout(350)
+        except Exception:
+            return False
+
+        applied = self._click_first_visible(
+            [
+                'button:text-is("Apply")',
+                'button:text-is("Update")',
+                'button:text-is("Done")',
+                '[role="button"]:text-is("Apply")',
+                '[role="button"]:text-is("Update")',
+                '[role="button"]:text-is("Done")',
+            ],
+            timeout=1200,
+        )
+        if not applied:
+            try:
+                inputs[1].press("Enter")
+                applied = True
+            except Exception:
+                applied = False
+        if applied:
+            self.log(f"    Applied date: {date_str}")
+            self.page.wait_for_timeout(3000)
+            try:
+                self.page.wait_for_load_state("networkidle", timeout=30000)
+            except Exception:
+                pass
+            self.page.wait_for_timeout(1500)
+            return True
         return False
 
     def _select_custom_date(self, date_str):
@@ -580,13 +721,24 @@ class ToastDownloader:
 
         # Step 2: Click "Custom date" in dropdown
         # (works whether current mode is Yesterday, Today, Custom, etc.)
-        custom_clicked = False
         custom_clicked = self._click_first_visible(
             [
                 '[role="option"]:text-is("Custom date")',
+                '[role="option"]:text-is("Custom dates")',
+                '[role="option"]:text-is("Custom range")',
+                '[role="option"]:text-is("Custom")',
                 '[role="menuitem"]:text-is("Custom date")',
+                '[role="menuitem"]:text-is("Custom dates")',
+                '[role="menuitem"]:text-is("Custom range")',
+                '[role="menuitem"]:text-is("Custom")',
                 'button:text-is("Custom date")',
+                'button:text-is("Custom dates")',
+                'button:text-is("Custom range")',
+                'button:text-is("Custom")',
                 'text="Custom date"',
+                'text="Custom dates"',
+                'text="Custom range"',
+                'text="Custom"',
             ],
             timeout=3000,
             log_msg="    Clicked 'Custom date'",
@@ -595,9 +747,14 @@ class ToastDownloader:
             self.page.wait_for_timeout(1000)
 
         if not custom_clicked:
+            if self._fill_custom_date_inputs(date_str):
+                return True
             self.log("    'Custom date' not found in dropdown")
             self.page.keyboard.press("Escape")
             return False
+
+        if self._fill_custom_date_inputs(date_str):
+            return True
 
         # Step 3: Tab 4 times to reach Start date input
         for _ in range(4):
