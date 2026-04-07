@@ -34,7 +34,7 @@ class ToastLoginRequiredError(RuntimeError):
 class ToastDownloader:
     def __init__(self, download_dir=None, headless=False, session_file=None,
                  on_log=None, on_progress=None, on_report_file=None, max_download_attempts=3,
-                 keep_browser_open_on_failure=None):
+                 keep_browser_open_on_failure=None, should_stop=None):
         self.download_dir = download_dir or DEFAULT_DOWNLOAD_DIR
         self.headless = headless
         self.session_file = session_file or DEFAULT_SESSION_FILE
@@ -43,6 +43,7 @@ class ToastDownloader:
         self.on_report_file = on_report_file or (lambda item: None)
         self.max_download_attempts = max(1, int(max_download_attempts))
         self.keep_browser_open_on_failure = (not self.headless) if keep_browser_open_on_failure is None else bool(keep_browser_open_on_failure)
+        self.should_stop = should_stop or (lambda: False)
         self.playwright = None
         self.browser = None
         self.context = None
@@ -57,6 +58,12 @@ class ToastDownloader:
             self.on_report_file(dict(payload))
         except Exception as exc:
             self.log(f"    Report file callback failed: {exc}")
+
+    def _stop_requested(self):
+        try:
+            return bool(self.should_stop())
+        except Exception:
+            return False
 
     @staticmethod
     def _to_business_date(date_str):
@@ -874,7 +881,7 @@ class ToastDownloader:
         if not dates:
             dates = [None]  # None = Yesterday
 
-        results = {"success": 0, "fail": 0, "skipped": 0, "total": 0, "files": []}
+        results = {"success": 0, "fail": 0, "skipped": 0, "total": 0, "files": [], "stopped": False}
         total_tasks = len(locations) * len(dates) * len(reports)
         had_unhandled_error = False
 
@@ -890,6 +897,10 @@ class ToastDownloader:
             task_num = 0
 
             for i, loc_name in enumerate(locations):
+                if self._stop_requested():
+                    results["stopped"] = True
+                    self.log("Stop requested. Ending download batch after current item.")
+                    break
                 self.log(f"\n[Location {i+1}/{len(locations)}] {loc_name}")
 
                 # Switch location
@@ -903,9 +914,17 @@ class ToastDownloader:
 
                 # Loop through each date
                 for j, date_str in enumerate(dates):
+                    if self._stop_requested():
+                        results["stopped"] = True
+                        self.log("Stop requested. Ending download batch after current item.")
+                        break
                     date_label = date_str or "Yesterday"
                     self.log(f"  [{j+1}/{len(dates)}] Date: {date_label}")
                     for report in reports:
+                        if self._stop_requested():
+                            results["stopped"] = True
+                            self.log("Stop requested. Ending download batch after current item.")
+                            break
                         task_num += 1
                         results["total"] += 1
                         self.on_progress(task_num, total_tasks, f"{loc_name} - {date_label} - {report.label}")
@@ -986,6 +1005,10 @@ class ToastDownloader:
                         download_info = None
                         last_error = None
                         for attempt in range(1, self.max_download_attempts + 1):
+                            if self._stop_requested():
+                                results["stopped"] = True
+                                self.log("    Stop requested before next download attempt.")
+                                break
                             if attempt > 1:
                                 backoff = min(2 ** (attempt - 1), 8)
                                 self.log(f"    Retry {attempt}/{self.max_download_attempts} after {backoff}s backoff")
@@ -1010,6 +1033,9 @@ class ToastDownloader:
                                 break
                             last_error = "download validation failed or file was not saved"
 
+                        if results.get("stopped") and not download_info:
+                            break
+
                         if download_info:
                             results["success"] += 1
                             results["files"].append(
@@ -1028,8 +1054,15 @@ class ToastDownloader:
                             results["fail"] += 1
                             if last_error:
                                 self.log(f"    Final failure: {last_error}")
+                    if results.get("stopped"):
+                        break
+                if results.get("stopped"):
+                    break
 
-            self.on_progress(total_tasks, total_tasks, "Done")
+            if results.get("stopped"):
+                self.on_progress(task_num, total_tasks, "Stopped")
+            else:
+                self.on_progress(total_tasks, total_tasks, "Done")
 
             # Save session after successful run
             try:
@@ -1051,7 +1084,13 @@ class ToastDownloader:
             else:
                 self.log("Browser left open for inspection because the download run failed.")
 
-        self.log(f"\nDone! {results['success']}/{results['total']} successful, {results['fail']} failed")
+        if results.get("stopped"):
+            self.log(
+                f"\nStopped! {results['success']}/{results['total']} successful so far, "
+                f"{results['fail']} failed"
+            )
+        else:
+            self.log(f"\nDone! {results['success']}/{results['total']} successful, {results['fail']} failed")
         return results
 
     def close(self):

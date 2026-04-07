@@ -405,6 +405,15 @@ class GDriveService:
         self.log(f"  Uploaded: {'/'.join([*relative_parts, filename])}")
         return result["id"]
 
+    def delete_file(self, file_id):
+        if not self.service:
+            raise RuntimeError("Not authenticated")
+        self._execute_with_retry(
+            lambda: self.service.files().delete(fileId=file_id).execute(),
+            operation=f"Delete Drive file '{file_id}'",
+        )
+        return True
+
     def scan_report_inventory(self, store_names=None, report_types=None):
         if not self.service:
             raise RuntimeError("Not authenticated")

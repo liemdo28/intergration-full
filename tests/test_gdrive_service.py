@@ -69,3 +69,40 @@ def test_get_report_folder_can_add_year_month_when_enabled(monkeypatch):
     ]
     assert folder_id == "root-123/Stockton/2026/04/Payment Details"
     assert relative_parts == ["id:root-123", "Stockton", "2026", "04", "Payment Details"]
+
+
+class _FakeDeleteRequest:
+    def __init__(self, calls, file_id):
+        self.calls = calls
+        self.file_id = file_id
+
+    def execute(self):
+        self.calls.append(self.file_id)
+        return {}
+
+
+class _FakeFilesApi:
+    def __init__(self, calls):
+        self.calls = calls
+
+    def delete(self, fileId):
+        return _FakeDeleteRequest(self.calls, fileId)
+
+
+class _FakeDriveService:
+    def __init__(self, calls):
+        self.calls = calls
+
+    def files(self):
+        return _FakeFilesApi(self.calls)
+
+
+def test_delete_file_calls_drive_delete_api():
+    calls = []
+    service = GDriveService(config={"google_drive": {"root_folder_id": "root-123"}})
+    service.service = _FakeDriveService(calls)
+
+    ok = service.delete_file("drive-file-123")
+
+    assert ok is True
+    assert calls == ["drive-file-123"]

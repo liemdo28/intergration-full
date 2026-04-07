@@ -330,6 +330,10 @@ class DownloadTab(ctk.CTkFrame):
         self.status_var = status_var
         self._running = False
         self._run_completion_callback = None
+        self._stop_event = threading.Event()
+        self._stop_mode = None
+        self._current_run_downloaded_files = []
+        self._current_run_uploaded_files = []
         self._card_fg = "#111827"
         self._card_border = "#1f2a3b"
         self._subcard_fg = "#0f172a"
@@ -628,6 +632,32 @@ class DownloadTab(ctk.CTkFrame):
             corner_radius=14,
         )
         self.download_btn.pack(side="left", fill="x", expand=True)
+        self.stop_save_btn = ctk.CTkButton(
+            action_row,
+            text="Stop + Save",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            width=130,
+            height=50,
+            command=self.stop_and_save,
+            fg_color="#0f766e",
+            hover_color="#0f5f59",
+            corner_radius=14,
+            state="disabled",
+        )
+        self.stop_save_btn.pack(side="left", padx=(12, 0))
+        self.stop_unsave_btn = ctk.CTkButton(
+            action_row,
+            text="Stop + Unsave",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            width=140,
+            height=50,
+            command=self.stop_and_unsave,
+            fg_color="#b45309",
+            hover_color="#92400e",
+            corner_radius=14,
+            state="disabled",
+        )
+        self.stop_unsave_btn.pack(side="left", padx=(12, 0))
         tip_chip = ctk.CTkFrame(action_row, fg_color="#111827", corner_radius=14, border_width=1, border_color="#334155")
         tip_chip.pack(side="left", padx=(12, 0))
         ctk.CTkLabel(
@@ -792,6 +822,78 @@ class DownloadTab(ctk.CTkFrame):
         locations = self._selected_locations() or TOAST_LOCATIONS
         return get_safe_target_date(locations, include_today=include_today)
 
+    def _remember_downloaded_file(self, filepath):
+        file_path = Path(filepath)
+        if not file_path.exists():
+            return
+        if file_path not in self._current_run_downloaded_files:
+            self._current_run_downloaded_files.append(file_path)
+
+    def _remember_uploaded_file(self, *, file_id, filepath, store_name, report_key):
+        if not file_id:
+            return
+        record = {
+            "file_id": str(file_id),
+            "filepath": str(filepath),
+            "store_name": store_name,
+            "report_key": report_key,
+        }
+        if record not in self._current_run_uploaded_files:
+            self._current_run_uploaded_files.append(record)
+
+    def _set_download_controls(self, *, running):
+        if running:
+            self.download_btn.configure(state="disabled", text="Downloading...")
+            self.stop_save_btn.configure(state="normal")
+            self.stop_unsave_btn.configure(state="normal")
+        else:
+            self.download_btn.configure(state="normal", text="Download Reports")
+            self.stop_save_btn.configure(state="disabled")
+            self.stop_unsave_btn.configure(state="disabled")
+
+    def stop_and_save(self):
+        if not self._running:
+            return
+        if not self._stop_event.is_set():
+            self._stop_mode = "save"
+            self._stop_event.set()
+            self.log("Stop requested. The app will finish the current item, keep saved files, then stop the batch.")
+            self.status_var.set("Stopping after current item...")
+
+    def stop_and_unsave(self):
+        if not self._running:
+            return
+        if not self._stop_event.is_set():
+            self._stop_mode = "unsave"
+            self._stop_event.set()
+            self.log("Stop + Unsave requested. The app will finish the current item, then roll back files saved in this batch.")
+            self.status_var.set("Stopping and rolling back current batch...")
+
+    def _rollback_current_run(self, gdrive=None):
+        removed_drive = 0
+        removed_local = 0
+        if gdrive:
+            for item in reversed(self._current_run_uploaded_files):
+                try:
+                    gdrive.delete_file(item["file_id"])
+                    removed_drive += 1
+                    self.log(
+                        f"  Removed Drive file: {item['store_name']} / "
+                        f"{REPORT_TYPES.get(item['report_key'], REPORT_TYPES['sales_summary']).label} / "
+                        f"{Path(item['filepath']).name}"
+                    )
+                except Exception as exc:
+                    self.log(f"  Could not remove Drive file {item['file_id']}: {exc}")
+        for file_path in reversed(self._current_run_downloaded_files):
+            try:
+                if file_path.exists():
+                    file_path.unlink()
+                    removed_local += 1
+                    self.log(f"  Removed local file: {file_path.name}")
+            except Exception as exc:
+                self.log(f"  Could not remove local file {file_path.name}: {exc}")
+        return {"removed_local": removed_local, "removed_drive": removed_drive}
+
     def queue_download_run(
         self,
         *,
@@ -857,7 +959,11 @@ class DownloadTab(ctk.CTkFrame):
         if not dates:
             return
         self._running = True
-        self.download_btn.configure(state="disabled", text="Downloading...")
+        self._stop_event.clear()
+        self._stop_mode = None
+        self._current_run_downloaded_files = []
+        self._current_run_uploaded_files = []
+        self._set_download_controls(running=True)
         threading.Thread(target=self._download_worker, args=(locations, dates, report_types), daemon=True).start()
 
     def _download_worker(self, locations, dates, report_types):
@@ -907,14 +1013,16 @@ class DownloadTab(ctk.CTkFrame):
             def _handle_report_file(file_info):
                 if not file_info:
                     return
+                filepath = file_info.get("filepath")
+                status = file_info.get("status") or file_info.get("source") or ""
+                if status == "downloaded" and filepath:
+                    self._remember_downloaded_file(filepath)
                 if not gdrive_ready or not gdrive:
                     return
-                filepath = file_info.get("filepath")
                 if not filepath or not Path(filepath).exists():
                     return
                 store_name = file_info.get("location") or file_info.get("store")
                 report_key = file_info.get("report_key", "sales_summary")
-                status = file_info.get("status") or file_info.get("source") or ""
                 try:
                     if status == "existing_local":
                         existing_drive = gdrive.report_exists(store_name, Path(filepath).name, report_key)
@@ -922,9 +1030,15 @@ class DownloadTab(ctk.CTkFrame):
                             self.log(
                                 f"  Drive already has {store_name} / {file_info.get('report_label', report_key)} / "
                                 f"{Path(filepath).name}"
-                            )
+                                )
                             return
-                    gdrive.upload_report(filepath, store_name, report_type=report_key)
+                    uploaded_id = gdrive.upload_report(filepath, store_name, report_type=report_key)
+                    self._remember_uploaded_file(
+                        file_id=uploaded_id,
+                        filepath=filepath,
+                        store_name=store_name,
+                        report_key=report_key,
+                    )
                 except Exception as upload_error:
                     self.log(
                         f"  Upload error for {store_name} / {file_info.get('report_label', report_key)}: {upload_error}"
@@ -936,6 +1050,7 @@ class DownloadTab(ctk.CTkFrame):
                 on_log=self.log,
                 on_progress=self.update_progress,
                 on_report_file=_handle_report_file,
+                should_stop=self._stop_event.is_set,
             )
 
             toast_dates = []
@@ -945,14 +1060,27 @@ class DownloadTab(ctk.CTkFrame):
 
             results = downloader.download_reports_daterange(locations=locations, dates=toast_dates, report_types=report_types)
             completion_payload = {
-                "ok": results["success"] == results["total"],
+                "ok": results["success"] == results["total"] and not results.get("stopped"),
                 "message": f"Prepared {results['success']} of {results['total']} files.",
                 "success": results["success"],
                 "failed": max(results["total"] - results["success"], 0),
                 "total": results["total"],
+                "stopped": bool(results.get("stopped")),
             }
             if results.get("skipped"):
                 completion_payload["message"] += f" Skipped {results['skipped']} existing file(s)."
+            if results.get("stopped"):
+                rollback_result = {"removed_local": 0, "removed_drive": 0}
+                if self._stop_mode == "unsave":
+                    rollback_result = self._rollback_current_run(gdrive if gdrive_ready else None)
+                    completion_payload["message"] = (
+                        f"Stopped and rolled back current batch. Removed {rollback_result['removed_local']} local file(s)"
+                        f" and {rollback_result['removed_drive']} Drive file(s)."
+                    )
+                else:
+                    completion_payload["message"] = (
+                        f"Stopped after current item. Kept {len(self._current_run_downloaded_files)} downloaded file(s)."
+                    )
 
             self.log(
                 f"All done! {results['success']}/{results['total']} prepared "
@@ -977,7 +1105,7 @@ class DownloadTab(ctk.CTkFrame):
             if completion_callback:
                 self.after(0, lambda payload=completion_payload, cb=completion_callback: cb(payload))
             self._running = False
-            self.after(0, lambda: self.download_btn.configure(state="normal", text="Download Reports"))
+            self.after(0, lambda: self._set_download_controls(running=False))
             self.after(0, lambda: self.status_var.set("Ready"))
             self.after(0, lambda: self.progress_bar.set(0))
             self.after(0, lambda: self.progress_label.configure(text="Ready", text_color="gray"))

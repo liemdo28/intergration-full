@@ -113,6 +113,13 @@ class _DatePickerPage(_RoutePage):
         return None
 
 
+class _RunPage:
+    url = "https://www.toasttab.com/restaurants/admin/reports/sales/sales-summary"
+
+    def wait_for_timeout(self, timeout_ms):
+        return None
+
+
 def test_wait_for_manual_login_logs_progress_and_succeeds():
     logs = []
     progress = []
@@ -257,6 +264,37 @@ def test_dismiss_overlays_clicks_cookie_popup_actions_when_visible():
 
     assert 'button:text-is("Opt out of all")' in page.clicked_selectors
     assert any("Dismissed consent popup" in line for line in logs)
+
+
+def test_download_reports_daterange_honors_stop_request_after_current_item():
+    stop_state = {"value": False}
+    downloader = toast_downloader.ToastDownloader(should_stop=lambda: stop_state["value"])
+    downloader.page = _RunPage()
+    downloader.context = _FakeContext()
+    downloader._start_browser = lambda: None
+    downloader._login = lambda: None
+    downloader._switch_location = lambda _loc: True
+    downloader._dismiss_overlays = lambda: None
+    downloader._wait_for_report_ready = lambda: None
+    downloader._open_report_view = lambda _report: None
+    downloader._select_custom_date = lambda _date: True
+    downloader.close = lambda: None
+
+    def fake_download_report(*args, **kwargs):
+        stop_state["value"] = True
+        return {"filepath": "E:/fake.xlsx", "filename": "fake.xlsx"}
+
+    downloader._download_report = fake_download_report
+
+    results = downloader.download_reports_daterange(
+        locations=["Stockton"],
+        dates=["03/20/2026", "03/21/2026"],
+        report_types=["sales_summary"],
+    )
+
+    assert results["success"] == 1
+    assert results["total"] == 1
+    assert results["stopped"] is True
 
 
 def test_should_close_browser_keeps_gui_window_open_on_failure():
