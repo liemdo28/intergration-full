@@ -201,6 +201,23 @@ class ToastDownloader:
 
     def _dismiss_overlays(self):
         """Dismiss onboarding checklist and other overlays."""
+        clicked_label = self._click_first_visible(
+            [
+                'button:text-is("Opt out of all")',
+                'button:text-is("Save")',
+                'button:text-is("Accept all")',
+                'button:text-is("Accept All")',
+                'button:text-is("Close")',
+                '[role="button"]:text-is("Opt out of all")',
+                '[role="button"]:text-is("Save")',
+                '[aria-label*="close" i]',
+                '[data-testid*="close" i]',
+            ],
+            timeout=900,
+        )
+        if clicked_label:
+            self.log("  Dismissed consent popup")
+            self.page.wait_for_timeout(500)
         try:
             self.page.evaluate("""() => {
                 const checklist = document.querySelector('#single-spa-application\\\\:toast-onboarding-checklist-spa');
@@ -214,6 +231,31 @@ class ToastDownloader:
                 });
                 const toastIq = document.querySelector('[aria-label="Ask Toast IQ"]');
                 if (toastIq) toastIq.style.pointerEvents = 'none';
+                const overlaySelectors = [
+                    '#onetrust-consent-sdk',
+                    '#onetrust-banner-sdk',
+                    '.onetrust-pc-dark-filter',
+                    '.ot-sdk-container',
+                    '[aria-label*="cookie" i]',
+                    '[id*="cookie" i]',
+                    '[class*="cookie" i]',
+                    '[id*="consent" i]',
+                    '[class*="consent" i]',
+                ];
+                overlaySelectors.forEach((selector) => {
+                    document.querySelectorAll(selector).forEach((el) => {
+                        el.style.display = 'none';
+                        el.style.pointerEvents = 'none';
+                        el.setAttribute('aria-hidden', 'true');
+                    });
+                });
+                document.querySelectorAll('body *').forEach((el) => {
+                    const text = (el.innerText || el.textContent || '').replace(/\\s+/g, ' ').trim();
+                    if (!text) return;
+                    if (/opt out of all|opt in to all|functional|vendors|analytics|essential/i.test(text) && text.length < 200) {
+                        el.style.pointerEvents = 'none';
+                    }
+                });
             }""")
         except Exception:
             pass

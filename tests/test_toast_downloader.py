@@ -51,7 +51,8 @@ class _FakeLocator:
 
     def is_visible(self, timeout=None):
         self.page.visible_selectors.append((self.selector, timeout))
-        return False
+        visible = getattr(self.page, "selector_visibility", {})
+        return bool(visible.get(self.selector, False))
 
     def click(self):
         self.page.clicked_selectors.append(self.selector)
@@ -68,6 +69,7 @@ class _RoutePage:
         self.visible_selectors = []
         self.clicked_selectors = []
         self.evaluated_selectors = []
+        self.selector_visibility = {}
 
     def goto(self, url, **kwargs):
         self.goto_urls.append((url, kwargs))
@@ -207,3 +209,16 @@ def test_build_saved_filename_normalizes_download_name():
     )
 
     assert filename == "2026-04-07_OrderDetails_Stone Oak.xlsx"
+
+
+def test_dismiss_overlays_clicks_cookie_popup_actions_when_visible():
+    logs = []
+    downloader = toast_downloader.ToastDownloader(on_log=logs.append)
+    page = _RoutePage()
+    page.selector_visibility['button:text-is("Opt out of all")'] = True
+    downloader.page = page
+
+    downloader._dismiss_overlays()
+
+    assert 'button:text-is("Opt out of all")' in page.clicked_selectors
+    assert any("Dismissed consent popup" in line for line in logs)
