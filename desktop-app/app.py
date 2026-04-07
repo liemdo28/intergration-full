@@ -875,13 +875,20 @@ class DownloadTab(ctk.CTkFrame):
             from toast_downloader import ToastDownloader, ToastLoginRequiredError
             app_root = self.winfo_toplevel()
             headless_downloads = bool(getattr(app_root, "headless_downloads", False))
+            runtime_mode = str(getattr(app_root, "runtime_mode", "gui") or "gui")
             silent_mode = bool(getattr(app_root, "silent_mode", False))
+            if runtime_mode != "headless_worker":
+                headless_downloads = False
 
             selected_report_names = [REPORT_TYPES[key].label for key in report_types]
             self.log(
                 f"Starting download for {len(locations)} locations, {len(dates)} day(s), "
                 f"{len(report_types)} report type(s): {', '.join(selected_report_names)}"
             )
+            if headless_downloads:
+                self.log("Download browser mode: headless worker")
+            else:
+                self.log("Download browser mode: interactive window")
 
             if self.upload_gdrive_var.get():
                 try:
