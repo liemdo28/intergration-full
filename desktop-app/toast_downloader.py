@@ -49,6 +49,8 @@ class ToastDownloader:
         self.context = None
         self.page = None
         self.run_audit = []
+        self.active_report_key = None
+        self.legacy_sales_summary_active = False
 
     def log(self, msg):
         self.on_log(msg)
@@ -77,6 +79,105 @@ class ToastDownloader:
             return datetime.strptime(date_str, "%m/%d/%Y").strftime("%Y-%m-%d")
         except ValueError:
             return None
+
+    @staticmethod
+    def _normalize_store_text(text):
+        normalized = re.sub(r"[^a-z0-9]+", " ", str(text or "").lower())
+        return re.sub(r"\s+", " ", normalized).strip()
+
+    def _store_aliases(self, store_name):
+        canonical = self._normalize_store_text(store_name)
+        aliases = {
+            "stockton": {
+                "stockton",
+                "stockton ca",
+                "stockton raw sushi bistro",
+                "stockton ca raw sushi bistro",
+                "raw sushi bistro",
+            },
+            "the rim": {
+                "the rim",
+                "rim",
+                "bakudan the rim",
+                "bakudan ramen the rim",
+            },
+            "stone oak": {
+                "stone oak",
+                "bakudan stone oak",
+                "stone oak bakudan",
+            },
+            "bandera": {
+                "bandera",
+                "bakudan bandera",
+                "bandera bakudan",
+            },
+            "wa1": {"wa1", "wa 1"},
+            "wa2": {"wa2", "wa 2"},
+            "wa3": {"wa3", "wa 3"},
+        }
+        values = set(aliases.get(canonical, set()))
+        if canonical:
+            values.add(canonical)
+        return tuple(sorted(values, key=len, reverse=True))
+
+    def _text_matches_store(self, text, store_name):
+        normalized_text = self._normalize_store_text(text)
+        if not normalized_text:
+            return False
+        padded = f" {normalized_text} "
+        for alias in self._store_aliases(store_name):
+            if not alias:
+                continue
+            if normalized_text == alias or normalized_text.startswith(f"{alias} ") or f" {alias} " in padded:
+                return True
+        return False
+
+    def _resolve_known_store_from_text(self, text):
+        best_store = None
+        best_score = -1
+        normalized_text = self._normalize_store_text(text)
+        if not normalized_text:
+            return None
+        padded = f" {normalized_text} "
+        for store in TOAST_LOCATIONS:
+            for alias in self._store_aliases(store):
+                if not alias:
+                    continue
+                score = -1
+                if normalized_text == alias:
+                    score = 100 + len(alias)
+                elif normalized_text.startswith(f"{alias} "):
+                    score = 80 + len(alias)
+                elif f" {alias} " in padded:
+                    score = 60 + len(alias)
+                if score > best_score:
+                    best_store = store
+                    best_score = score
+        return best_store
+
+    def _location_verified(self, expected_store):
+        detected = self._detect_current_location()
+        if not detected:
+            return False
+        return self._normalize_store_text(detected) == self._normalize_store_text(expected_store)
+
+    def _verified_report_state(self, report_state, expected_store, report_label, date_label):
+        if report_state != "no_data":
+            return report_state
+        if self._location_verified(expected_store):
+            return report_state
+        detected = self._detect_current_location()
+        if detected:
+            self.log(
+                f"    Toast showed a no-data state for {report_label} / {date_label}, "
+                f"but the active store appears to be '{detected}', not '{expected_store}'. Treating this as a failure."
+            )
+        else:
+            self.log(
+                f"    Toast showed a no-data state for {report_label} / {date_label}, "
+                f"but the active store could not be verified as '{expected_store}'. Treating this as a failure."
+            )
+        return "error"
 
     @staticmethod
     def _canonical_report_stem(report_type):
@@ -313,13 +414,19 @@ class ToastDownloader:
     def _current_location_matches(self, search_term):
         current_location = self._detect_current_location()
         if current_location:
-            return current_location.lower() == search_term.lower()
+            return self._normalize_store_text(current_location) == self._normalize_store_text(search_term)
         try:
             visible_text = self.page.evaluate(
                 """() => {
-                    const headerNodes = Array.from(document.querySelectorAll('header *, nav *, [role="banner"] *, [data-testid*="restaurant" i], [aria-label*="location" i]'));
+                    const headerNodes = Array.from(document.querySelectorAll('header *, nav *, [role="banner"] *, [data-testid*="restaurant" i], [aria-label*="location" i], button, [role="button"], [role="combobox"]'));
                     const headerText = headerNodes
-                        .map((node) => (node.innerText || node.textContent || '').replace(/\\s+/g, ' ').trim())
+                        .map((node) => {
+                            const rect = node.getBoundingClientRect?.();
+                            if (!rect) return '';
+                            if (rect.top < -10 || rect.top > 260) return '';
+                            if (rect.left < -10 || rect.left > 1000) return '';
+                            return (node.innerText || node.textContent || '').replace(/\\s+/g, ' ').trim();
+                        })
                         .filter(Boolean)
                         .join(' ');
                     const bodyText = (document.body?.innerText || '').replace(/\\s+/g, ' ').trim();
@@ -330,50 +437,62 @@ class ToastDownloader:
             return False
         if not visible_text:
             return False
-        lowered = visible_text.lower()
-        return search_term.lower() in lowered
+        return self._text_matches_store(visible_text, search_term)
 
     def _detect_current_location(self):
         try:
-            matched = self.page.evaluate(
-                """(knownStores) => {
-                    const normalized = knownStores.map((store) => ({ raw: store, key: store.toLowerCase() }));
-                    const candidates = Array.from(document.querySelectorAll('body *')).map((node) => {
-                        const text = (node.innerText || node.textContent || '').replace(/\\s+/g, ' ').trim();
-                        if (!text || text.length > 140) return null;
-                        const rect = node.getBoundingClientRect?.();
-                        return { text, rect };
-                    }).filter(Boolean);
-
-                    const scoreFor = (candidate, key) => {
-                        if (!candidate.text.toLowerCase().includes(key)) return -1;
-                        let score = 1;
-                        const rect = candidate.rect;
-                        if (rect) {
-                            if (rect.top >= -10 && rect.top <= 220) score += 3;
-                            if (rect.left >= -10 && rect.left <= 900) score += 3;
-                            if (rect.width >= 40 && rect.height >= 18) score += 1;
-                        }
-                        if (/,\\s*[A-Z]{2}/.test(candidate.text)) score += 2;
-                        if (/raw sushi bistro|bakudan/i.test(candidate.text)) score += 2;
-                        return score;
+            candidate_texts = self.page.evaluate(
+                """() => {
+                    const texts = [];
+                    const seen = new Set();
+                    const pushText = (value) => {
+                        const text = (value || '').replace(/\\s+/g, ' ').trim();
+                        if (!text || text.length > 180) return;
+                        if (seen.has(text)) return;
+                        seen.add(text);
+                        texts.push(text);
                     };
 
-                    let best = null;
-                    for (const store of normalized) {
-                        for (const candidate of candidates) {
-                            const score = scoreFor(candidate, store.key);
-                            if (score < 0) continue;
-                            if (!best || score > best.score) {
-                                best = { store: store.raw, score };
-                            }
-                        }
-                    }
-                    return best ? best.store : null;
-                }""",
-                TOAST_LOCATIONS,
+                    const collectFrom = (selector, topMax, leftMax) => {
+                        document.querySelectorAll(selector).forEach((node) => {
+                            const rect = node.getBoundingClientRect?.();
+                            if (!rect) return;
+                            if (rect.width < 24 || rect.height < 16) return;
+                            if (rect.top < -10 || rect.top > topMax) return;
+                            if (rect.left < -10 || rect.left > leftMax) return;
+                            pushText(node.innerText || node.textContent || '');
+                        });
+                    };
+
+                    collectFrom('header *, nav *, [role="banner"] *', 260, 1000);
+                    collectFrom('button, [role="button"], [role="combobox"], [aria-haspopup], [data-testid*="restaurant" i], [aria-label*="location" i]', 260, 1000);
+                    collectFrom('body *', 240, 900);
+
+                    const bodyText = (document.body?.innerText || '').replace(/\\s+/g, ' ').trim();
+                    if (bodyText) pushText(bodyText.slice(0, 1200));
+                    return texts;
+                }"""
             )
-            return matched or None
+            best_store = None
+            best_score = -1
+            for text in candidate_texts or []:
+                matched = self._resolve_known_store_from_text(text)
+                if not matched:
+                    continue
+                normalized_text = self._normalize_store_text(text)
+                padded = f" {normalized_text} "
+                score = 1
+                for alias in self._store_aliases(matched):
+                    if normalized_text == alias:
+                        score = max(score, 100 + len(alias))
+                    elif normalized_text.startswith(f"{alias} "):
+                        score = max(score, 80 + len(alias))
+                    elif f" {alias} " in padded:
+                        score = max(score, 60 + len(alias))
+                if best_store is None or score > best_score:
+                    best_store = matched
+                    best_score = score
+            return best_store
         except Exception:
             return None
 
@@ -418,12 +537,25 @@ class ToastDownloader:
                         )
                     );
 
+                    const findClickable = (node) => {
+                        let current = node;
+                        for (let depth = 0; current && depth < 5; depth += 1, current = current.parentElement) {
+                            if (current.matches?.('button, [role="button"], [role="combobox"], [aria-haspopup], a')) {
+                                return current;
+                            }
+                            const nested = current.querySelector?.('button, [role="button"], [role="combobox"], [aria-haspopup], a');
+                            if (nested) return nested;
+                        }
+                        return null;
+                    };
+
                     for (const el of clickable) {
                         const text = (el.innerText || el.textContent || '').replace(/\\s+/g, ' ').trim();
                         if (!text || text.length > 120) continue;
                         if (blockedText.test(text)) continue;
                         if (normalizedStores.some((store) => text.toLowerCase().includes(store))) {
-                            el.click();
+                            const target = findClickable(el) || el;
+                            target.click();
                             return text;
                         }
                     }
@@ -447,7 +579,7 @@ class ToastDownloader:
                         if (!text || text.length > 120) continue;
                         if (blockedText.test(text)) continue;
                         if (!normalizedStores.some((store) => text.toLowerCase().includes(store))) continue;
-                        const target = el.closest('button, [role="button"], [role="combobox"], [aria-haspopup], a, div, span');
+                        const target = findClickable(el);
                         if (!target) continue;
                         target.click();
                         return text;
@@ -466,7 +598,8 @@ class ToastDownloader:
                     });
                     for (const node of topStripNodes) {
                         const text = (node.innerText || node.textContent || '').replace(/\\s+/g, ' ').trim();
-                        const target = node.closest('button, [role="button"], [role="combobox"], [aria-haspopup], a, div, span') || node;
+                        const target = findClickable(node);
+                        if (!target) continue;
                         try {
                             target.click();
                             return text || '__location_top_strip__';
@@ -501,14 +634,58 @@ class ToastDownloader:
 
         return False
 
+    def _click_location_option(self, search_term):
+        option_selectors = [
+            f'[role="option"]:text-is("{search_term}")',
+            f'[role="menuitem"]:text-is("{search_term}")',
+            f'button:text-is("{search_term}")',
+            f'text="{search_term}"',
+        ]
+        if self._click_first_visible(option_selectors, timeout=1500):
+            self.log(f"  Switching to: {search_term}")
+            return True
+
+        try:
+            matched = self.page.evaluate(
+                """({ searchTerm, aliases }) => {
+                    const normalize = (value) => (value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\\s+/g, ' ').trim();
+                    const aliasList = (aliases || []).map(normalize).filter(Boolean);
+                    const candidates = Array.from(document.querySelectorAll(
+                        '[role="option"], [role="menuitem"], [role="dialog"] *, [role="listbox"] *, [aria-modal="true"] *, button, a, div, span'
+                    ));
+                    const blocked = /(essential|vendors|functional|analytics|marketing|save|opt out of all|opt in to all|live chat)/i;
+                    for (const node of candidates) {
+                        const text = (node.innerText || node.textContent || '').replace(/\\s+/g, ' ').trim();
+                        if (!text || text.length > 120) continue;
+                        if (blocked.test(text)) continue;
+                        const normalizedText = normalize(text);
+                        const isMatch = aliasList.some((alias) => normalizedText === alias || normalizedText.startsWith(`${alias} `) || normalizedText.includes(` ${alias} `));
+                        if (!isMatch) continue;
+                        const target = node.closest('[role="option"], [role="menuitem"], button, a, div, span') || node;
+                        try {
+                            target.click();
+                            return text;
+                        } catch (_err) {}
+                    }
+                    return null;
+                }""",
+                {"searchTerm": search_term, "aliases": list(self._store_aliases(search_term))},
+            )
+            if matched:
+                self.log(f"  Switching to: {matched}")
+                return True
+        except Exception:
+            pass
+        return False
+
     def _switch_location(self, search_term):
         """Switch to a specific restaurant location."""
-        if self._current_location_matches(search_term):
+        if self._location_verified(search_term):
             self.log(f"  Already on location: {search_term}")
             return True
 
         if not self._open_location_dropdown():
-            if self._current_location_matches(search_term):
+            if self._location_verified(search_term):
                 self.log(f"  Already on location: {search_term}")
                 return True
             return False
@@ -539,19 +716,9 @@ class ToastDownloader:
             self.page.keyboard.type(search_term, delay=50)
             self.page.wait_for_timeout(1000)
 
-        option_selectors = [
-            f'[role="option"]:text-is("{search_term}")',
-            f'[role="menuitem"]:text-is("{search_term}")',
-            f'button:text-is("{search_term}")',
-            f'text="{search_term}"',
-        ]
-        if self._click_first_visible(option_selectors, timeout=1500):
-            self.log(f"  Switching to: {search_term}")
-        else:
-            self.page.keyboard.press("Tab")
-            self.page.wait_for_timeout(300)
-            self.page.keyboard.press("Enter")
-            self.log(f"  Switching to: {search_term} (keyboard fallback)")
+        if not self._click_location_option(search_term):
+            self.log(f"  Could not find an exact location option for {search_term}")
+            return False
 
         self.page.wait_for_timeout(2000)
         try:
@@ -559,13 +726,30 @@ class ToastDownloader:
         except Exception:
             pass
         self.page.wait_for_timeout(1000)
-        if self._current_location_matches(search_term):
+        if self._location_verified(search_term):
             return True
         detected = self._detect_current_location()
         if detected:
             self.log(f"  Switch verification failed. Current location appears to be: {detected}")
         else:
             self.log("  Switch verification failed. Current location is still unknown.")
+        return False
+
+    def _switch_location_with_retries(self, search_term, attempts=3):
+        last_detected = None
+        for attempt in range(1, max(1, attempts) + 1):
+            if self._location_verified(search_term):
+                self.log(f"  Already on location: {search_term}")
+                return True
+            if attempt > 1:
+                self.log(f"  Retry switch {attempt}/{attempts} for {search_term}")
+                self._dismiss_overlays()
+                self.page.wait_for_timeout(1000)
+            if self._switch_location(search_term):
+                return True
+            last_detected = self._detect_current_location()
+        if last_detected:
+            self.log(f"  Final switch check still shows location: {last_detected}")
         return False
 
     def _open_date_picker(self):
@@ -577,6 +761,23 @@ class ToastDownloader:
         It's located in the report header, NOT the "Custom hours" button.
         """
         self.page.wait_for_timeout(1000)
+
+        if self.legacy_sales_summary_active:
+            legacy_selectors = [
+                'main button:text-matches("Today|Yesterday|Custom|Last 7 days|This month|Last month", "i")',
+                'main [role="button"]:text-matches("Today|Yesterday|Custom|Last 7 days|This month|Last month", "i")',
+                'main [role="combobox"]:text-matches("Today|Yesterday|Custom|Last 7 days|This month|Last month", "i")',
+                'main button:text-matches("\\d{1,2}/\\d{1,2}/\\d{4}|[A-Z][a-z]{2}\\s+\\d{1,2},\\s+\\d{4}", "i")',
+                'main [role="button"]:text-matches("\\d{1,2}/\\d{1,2}/\\d{4}|[A-Z][a-z]{2}\\s+\\d{1,2},\\s+\\d{4}", "i")',
+                'main [role="combobox"]:text-matches("\\d{1,2}/\\d{1,2}/\\d{4}|[A-Z][a-z]{2}\\s+\\d{1,2},\\s+\\d{4}", "i")',
+                'main button:has([data-icon*="calendar" i])',
+                'main button:has([aria-label*="calendar" i])',
+                'main [role="button"]:has([data-icon*="calendar" i])',
+            ]
+            if self._click_first_visible(legacy_selectors, timeout=1200):
+                self.log("    Opened date picker: [legacy sales summary]")
+                self.page.wait_for_timeout(1000)
+                return True
 
         # The date picker button is in the report controls area.
         # It contains a calendar icon and date range text.
@@ -866,31 +1067,48 @@ class ToastDownloader:
 
         return True
 
-    def _wait_for_report_ready(self):
-        """Wait for report data and download button."""
-        try:
-            self.page.wait_for_function("""() => {
-                const candidates = [
-                    '[aria-label="Download report"]',
-                    'button[aria-label*="Download" i]',
-                    'button[title*="Download" i]',
-                    '[data-testid*="download" i]',
-                    'button:has-text("Download")',
-                    'button:has-text("Export")',
-                ];
-                for (const selector of candidates) {
-                    const nodes = Array.from(document.querySelectorAll(selector));
-                    for (const node of nodes) {
-                        const btn = node.closest('button') || node.closest('a') || node;
-                        if (!btn) continue;
-                        const disabled = btn.disabled || btn.hasAttribute('disabled') || btn.classList.contains('disabled');
-                        if (!disabled) return true;
+    def _wait_for_report_ready(self, timeout_ms=20000):
+        """Wait for report data and classify the page as ready, no_data, error, or unknown."""
+        deadline = time.time() + (max(1000, int(timeout_ms)) / 1000)
+        while time.time() < deadline:
+            try:
+                state = self.page.evaluate("""() => {
+                    const extractText = () => (document.body?.innerText || '').replace(/\\s+/g, ' ').trim();
+                    const text = extractText();
+                    const readySelectors = [
+                        '[aria-label="Download report"]',
+                        'button[aria-label*="Download" i]',
+                        'button[title*="Download" i]',
+                        '[data-testid*="download" i]',
+                        'button',
+                        'a',
+                    ];
+                    for (const selector of readySelectors) {
+                        const nodes = Array.from(document.querySelectorAll(selector));
+                        for (const node of nodes) {
+                            const label = (node.innerText || node.textContent || '').replace(/\\s+/g, ' ').trim();
+                            if (!label) continue;
+                            if (!/download|export|excel|csv|xlsx/i.test(label) && !/aria-label="Download report"/i.test(selector)) continue;
+                            const btn = node.closest('button') || node.closest('a') || node;
+                            if (!btn) continue;
+                            const disabled = btn.disabled || btn.hasAttribute('disabled') || btn.classList.contains('disabled');
+                            if (!disabled) return 'ready';
+                        }
                     }
-                }
-                return false;
-            }""", timeout=20000)
-        except Exception:
-            self.page.wait_for_timeout(5000)
+                    if (/no data|no results|no records|nothing to show|no orders|no payments|no items|there are no .* for this period|there aren't any .* for this period|no sales/i.test(text)) {
+                        return 'no_data';
+                    }
+                    if (/unable to load this table|try changing your filters or refreshing the page|something went wrong|failed to load|we are unable to load/i.test(text)) {
+                        return 'error';
+                    }
+                    return null;
+                }""")
+                if state in {"ready", "no_data", "error"}:
+                    return state
+            except Exception:
+                pass
+            self.page.wait_for_timeout(750)
+        return "unknown"
 
     def _wait_for_report_context(self, report):
         expected_path = report.report_path or ""
@@ -920,9 +1138,36 @@ class ToastDownloader:
 
         self.page.wait_for_timeout(1500)
 
+    def _wait_for_legacy_sales_summary_ready(self, timeout_ms=30000):
+        try:
+            self.page.wait_for_function(
+                """() => {
+                    const text = (document.body?.innerText || '').replace(/\\s+/g, ' ').trim();
+                    const hasReadyControls = Array.from(
+                        document.querySelectorAll('main button, main [role="button"], main [role="combobox"], main a')
+                    ).some((node) => {
+                        const value = (node.innerText || node.textContent || '').replace(/\\s+/g, ' ').trim();
+                        if (!value || value.length > 160) return false;
+                        return /today|yesterday|custom|last 7 days|this month|last month|\\d{1,2}\\/\\d{1,2}\\/\\d{4}|[A-Z][a-z]{2}\\s+\\d{1,2},\\s+\\d{4}/i.test(value);
+                    });
+                    const hasDownload = Array.from(document.querySelectorAll('button, a')).some((node) => {
+                        const value = (node.innerText || node.textContent || '').replace(/\\s+/g, ' ').trim();
+                        return /download|export|excel|csv|xlsx/i.test(value);
+                    });
+                    const hasTerminalState = /no data|no results|no records|nothing to show|unable to load this table/i.test(text);
+                    return hasReadyControls || hasDownload || hasTerminalState;
+                }""",
+                timeout=timeout_ms,
+            )
+            self.page.wait_for_timeout(1000)
+            return True
+        except Exception:
+            return False
+
     def _maybe_open_legacy_sales_summary(self, report):
         if report.key != "sales_summary":
-            return
+            self.legacy_sales_summary_active = False
+            return False
 
         legacy_selectors = [
             'a:text-matches("legacy\\s+Sales\\s+summary", "i")',
@@ -935,7 +1180,8 @@ class ToastDownloader:
             log_msg="    Switching to legacy Sales Summary",
         )
         if not opened:
-            return
+            self.legacy_sales_summary_active = False
+            return False
 
         self.page.wait_for_timeout(2000)
         try:
@@ -943,7 +1189,11 @@ class ToastDownloader:
         except Exception:
             pass
         self.page.wait_for_timeout(1000)
+        self.legacy_sales_summary_active = True
+        if not self._wait_for_legacy_sales_summary_ready():
+            self.log("    Legacy Sales Summary toolbar did not fully load yet")
         self._dismiss_overlays()
+        return True
 
     def _open_report_view(self, report_type):
         report = get_report_type(report_type)
@@ -952,6 +1202,8 @@ class ToastDownloader:
                 f"Toast downloader does not have a verified navigation flow for '{report.label}' yet. "
                 "Use manual export + Google Drive upload for this report type."
             )
+        self.active_report_key = report.key
+        self.legacy_sales_summary_active = False
         self.log(f"    Opening report: {report.label}")
         self.page.goto(f"{REPORTS_BASE}/{report.report_path}", wait_until="domcontentloaded", timeout=60000)
         self.page.wait_for_timeout(3000)
@@ -1126,7 +1378,7 @@ class ToastDownloader:
                 self.log(f"\n[Location {i+1}/{len(locations)}] {loc_name}")
 
                 # Switch location
-                if not self._switch_location(loc_name):
+                if not self._switch_location_with_retries(loc_name):
                     self.log(f"  Could not switch to {loc_name}, skipping")
                     skipped = len(dates) * len(reports)
                     results["fail"] += skipped
@@ -1185,8 +1437,39 @@ class ToastDownloader:
                                 continue
 
                         self._dismiss_overlays()
-                        self._wait_for_report_ready()
+                        report_state = self._wait_for_report_ready()
+                        report_state = self._verified_report_state(report_state, loc_name, report.label, date_label)
                         self._dismiss_overlays()
+                        if report_state == "no_data":
+                            self.log(f"    No data returned for {loc_name} / {report.label} / {date_label}. Skipping cleanly.")
+                            results["success"] += 1
+                            results["skipped"] += 1
+                            results["files"].append(
+                                {
+                                    "location": loc_name,
+                                    "report_key": report.key,
+                                    "report_label": report.label,
+                                    "report_folder": report.folder_name,
+                                    "business_date": self._to_business_date(date_str),
+                                    "status": "no_data",
+                                    "reason": "Toast reported no data for this date filter.",
+                                }
+                            )
+                            self.run_audit.append(
+                                {
+                                    "location": loc_name,
+                                    "date": date_label,
+                                    "report_type": report.key,
+                                    "attempt": 0,
+                                    "success": True,
+                                    "skipped": True,
+                                    "reason": "no_data",
+                                    "business_date": self._to_business_date(date_str),
+                                }
+                            )
+                            continue
+                        if report_state == "error":
+                            self.log("    Report page loaded with an error state. This is not a no-data skip; download will still retry.")
 
                         report_dir = build_local_report_dir(self.download_dir, self._sanitize(loc_name), report.key)
                         os.makedirs(report_dir, exist_ok=True)
@@ -1239,7 +1522,12 @@ class ToastDownloader:
                                 self.log(f"    Retry {attempt}/{self.max_download_attempts} after {backoff}s backoff")
                                 self.page.wait_for_timeout(backoff * 1000)
                                 self._dismiss_overlays()
-                                self._wait_for_report_ready()
+                                report_state = self._wait_for_report_ready()
+                                report_state = self._verified_report_state(report_state, loc_name, report.label, date_label)
+                                if report_state == "no_data":
+                                    last_error = None
+                                    self.log(f"    No data returned for {loc_name} / {report.label} / {date_label}. Skipping cleanly.")
+                                    break
                             download_info = self._download_report(
                                 str(report_dir),
                                 report_type=report.key,
@@ -1254,12 +1542,30 @@ class ToastDownloader:
                                 "success": bool(download_info),
                                 "business_date": business_date,
                             })
+                            if report_state == "no_data":
+                                break
                             if download_info:
                                 break
                             last_error = "download validation failed or file was not saved"
 
                         if results.get("stopped") and not download_info:
                             break
+
+                        if report_state == "no_data" and not download_info:
+                            results["success"] += 1
+                            results["skipped"] += 1
+                            results["files"].append(
+                                {
+                                    "location": loc_name,
+                                    "report_key": report.key,
+                                    "report_label": report.label,
+                                    "report_folder": report.folder_name,
+                                    "business_date": business_date,
+                                    "status": "no_data",
+                                    "reason": "Toast reported no data for this date filter.",
+                                }
+                            )
+                            continue
 
                         if download_info:
                             results["success"] += 1

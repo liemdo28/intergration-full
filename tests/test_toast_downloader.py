@@ -100,8 +100,8 @@ class _FallbackLocationPage(_RoutePage):
 class _CurrentLocationPage(_RoutePage):
     def evaluate(self, script, arg=None):
         self.function_calls.append({"script": script, "arg": arg, "timeout": None})
-        if "let best = null" in script:
-            return "Stockton"
+        if "collectFrom" in script:
+            return ["Stockton, CA", "Raw Sushi Bistro", "Sales Summary"]
         if "document.body?.innerText" in script:
             return "Reports Stockton, CA Raw Sushi Bistro Sales Summary"
         return None
@@ -114,8 +114,8 @@ class _WrongSwitchPage(_RoutePage):
 
     def evaluate(self, script, arg=None):
         self.function_calls.append({"script": script, "arg": arg, "timeout": None})
-        if "let best = null" in script:
-            return "Bandera"
+        if "collectFrom" in script:
+            return ["Bandera", "Bakudan - Bandera"]
         if "document.body?.innerText" in script:
             return "Reports Bandera Bakudan - Bandera Sales Summary"
         return None
@@ -132,6 +132,14 @@ class _DatePickerPage(_RoutePage):
         self.function_calls.append({"script": script, "arg": arg, "timeout": None})
         if "const selectors =" in script:
             return "Custom | Mar 22, 2026 - Mar 22, 2026"
+        return None
+
+
+class _NoDataPage(_RoutePage):
+    def evaluate(self, script, arg=None):
+        self.function_calls.append({"script": script, "arg": arg, "timeout": None})
+        if "const extractText" in script:
+            return "no_data"
         return None
 
 
@@ -260,19 +268,19 @@ def test_detect_current_location_returns_best_known_store():
     assert current == "Stockton"
 
 
-def test_switch_location_fails_if_keyboard_fallback_lands_on_wrong_store():
+def test_switch_location_fails_without_exact_location_option_match():
     logs = []
     downloader = toast_downloader.ToastDownloader(on_log=logs.append)
     page = _WrongSwitchPage()
     downloader.page = page
     downloader._open_location_dropdown = lambda: True
     downloader._dismiss_overlays = lambda: None
-    downloader._click_first_visible = lambda *args, **kwargs: False
+    downloader._click_location_option = lambda *_args, **_kwargs: False
 
     ok = downloader._switch_location("WA2")
 
     assert ok is False
-    assert any("Switch verification failed" in line for line in logs)
+    assert any("Could not find an exact location option for WA2" in line for line in logs)
 
 
 def test_build_saved_filename_normalizes_download_name():
@@ -299,6 +307,26 @@ def test_open_date_picker_supports_legacy_style_picker_targets():
     assert any("Opened date picker" in line for line in logs)
 
 
+def test_wait_for_report_ready_returns_no_data_state():
+    downloader = toast_downloader.ToastDownloader()
+    downloader.page = _NoDataPage()
+
+    state = downloader._wait_for_report_ready(timeout_ms=1000)
+
+    assert state == "no_data"
+
+
+def test_verified_report_state_rejects_no_data_when_store_cannot_be_confirmed():
+    logs = []
+    downloader = toast_downloader.ToastDownloader(on_log=logs.append)
+    downloader.page = _WrongSwitchPage()
+
+    state = downloader._verified_report_state("no_data", "WA2", "Sale Summary", "03/20/2026")
+
+    assert state == "error"
+    assert any("Treating this as a failure" in line for line in logs)
+
+
 def test_dismiss_overlays_clicks_cookie_popup_actions_when_visible():
     logs = []
     downloader = toast_downloader.ToastDownloader(on_log=logs.append)
@@ -319,7 +347,7 @@ def test_download_reports_daterange_honors_stop_request_after_current_item():
     downloader.context = _FakeContext()
     downloader._start_browser = lambda: None
     downloader._login = lambda: None
-    downloader._switch_location = lambda _loc: True
+    downloader._switch_location_with_retries = lambda _loc: True
     downloader._dismiss_overlays = lambda: None
     downloader._wait_for_report_ready = lambda: None
     downloader._open_report_view = lambda _report: None
@@ -350,7 +378,7 @@ def test_download_reports_daterange_skips_date_entry_for_wa1():
     downloader.context = _FakeContext()
     downloader._start_browser = lambda: None
     downloader._login = lambda: None
-    downloader._switch_location = lambda _loc: True
+    downloader._switch_location_with_retries = lambda _loc: True
     downloader._dismiss_overlays = lambda: None
     downloader._wait_for_report_ready = lambda: None
     downloader._open_report_view = lambda _report: None
