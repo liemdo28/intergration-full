@@ -343,6 +343,35 @@ def test_download_reports_daterange_honors_stop_request_after_current_item():
     assert results["stopped"] is True
 
 
+def test_download_reports_daterange_skips_date_entry_for_wa1():
+    logs = []
+    downloader = toast_downloader.ToastDownloader(on_log=logs.append)
+    downloader.page = _RunPage()
+    downloader.context = _FakeContext()
+    downloader._start_browser = lambda: None
+    downloader._login = lambda: None
+    downloader._switch_location = lambda _loc: True
+    downloader._dismiss_overlays = lambda: None
+    downloader._wait_for_report_ready = lambda: None
+    downloader._open_report_view = lambda _report: None
+    downloader.close = lambda: None
+
+    def fail_if_called(_date):
+        raise AssertionError("WA1 should skip date entry")
+
+    downloader._select_custom_date = fail_if_called
+    downloader._download_report = lambda *args, **kwargs: {"filepath": "E:/fake.xlsx", "filename": "fake.xlsx"}
+
+    results = downloader.download_reports_daterange(
+        locations=["WA1"],
+        dates=["03/20/2026"],
+        report_types=["sales_summary"],
+    )
+
+    assert results["success"] == 1
+    assert any("Skipping date entry for WA1" in line for line in logs)
+
+
 def test_should_close_browser_keeps_gui_window_open_on_failure():
     downloader = toast_downloader.ToastDownloader(headless=False)
 

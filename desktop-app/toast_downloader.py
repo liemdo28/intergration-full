@@ -66,6 +66,10 @@ class ToastDownloader:
             return False
 
     @staticmethod
+    def _skip_date_selection_for_location(location_name):
+        return str(location_name or "").strip().upper() == "WA1"
+
+    @staticmethod
     def _to_business_date(date_str):
         if not date_str:
             return None
@@ -1156,10 +1160,13 @@ class ToastDownloader:
                             continue
 
                         if date_str:
-                            if not self._select_custom_date(date_str):
-                                self.log(f"    Could not set date {date_str}, skipping")
-                                results["fail"] += 1
-                                continue
+                            if self._skip_date_selection_for_location(loc_name):
+                                self.log(f"    Skipping date entry for {loc_name}; using the page's current date filter.")
+                            else:
+                                if not self._select_custom_date(date_str):
+                                    self.log(f"    Could not set date {date_str}, skipping")
+                                    results["fail"] += 1
+                                    continue
                         else:
                             if not self._open_date_picker():
                                 results["fail"] += 1
