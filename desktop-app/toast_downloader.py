@@ -549,17 +549,6 @@ class ToastDownloader:
                         return null;
                     };
 
-                    for (const el of clickable) {
-                        const text = (el.innerText || el.textContent || '').replace(/\\s+/g, ' ').trim();
-                        if (!text || text.length > 120) continue;
-                        if (blockedText.test(text)) continue;
-                        if (normalizedStores.some((store) => text.toLowerCase().includes(store))) {
-                            const target = findClickable(el) || el;
-                            target.click();
-                            return text;
-                        }
-                    }
-
                     const iconCandidate = Array.from(
                         document.querySelectorAll(
                             '[data-icon*="location" i], [aria-label*="location" i], [class*="location" i]'
@@ -571,18 +560,6 @@ class ToastDownloader:
                         const text = (iconCandidate.innerText || iconCandidate.textContent || '').replace(/\\s+/g, ' ').trim();
                         iconCandidate.click();
                         return text || '__location_icon__';
-                    }
-
-                    const anyElements = Array.from(document.querySelectorAll('body *'));
-                    for (const el of anyElements) {
-                        const text = (el.innerText || el.textContent || '').replace(/\\s+/g, ' ').trim();
-                        if (!text || text.length > 120) continue;
-                        if (blockedText.test(text)) continue;
-                        if (!normalizedStores.some((store) => text.toLowerCase().includes(store))) continue;
-                        const target = findClickable(el);
-                        if (!target) continue;
-                        target.click();
-                        return text;
                     }
 
                     const topStripNodes = Array.from(document.querySelectorAll('body *')).filter((node) => {
@@ -634,50 +611,6 @@ class ToastDownloader:
 
         return False
 
-    def _click_location_option(self, search_term):
-        option_selectors = [
-            f'[role="option"]:text-is("{search_term}")',
-            f'[role="menuitem"]:text-is("{search_term}")',
-            f'button:text-is("{search_term}")',
-            f'text="{search_term}"',
-        ]
-        if self._click_first_visible(option_selectors, timeout=1500):
-            self.log(f"  Switching to: {search_term}")
-            return True
-
-        try:
-            matched = self.page.evaluate(
-                """({ searchTerm, aliases }) => {
-                    const normalize = (value) => (value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\\s+/g, ' ').trim();
-                    const aliasList = (aliases || []).map(normalize).filter(Boolean);
-                    const candidates = Array.from(document.querySelectorAll(
-                        '[role="option"], [role="menuitem"], [role="dialog"] *, [role="listbox"] *, [aria-modal="true"] *, button, a, div, span'
-                    ));
-                    const blocked = /(essential|vendors|functional|analytics|marketing|save|opt out of all|opt in to all|live chat)/i;
-                    for (const node of candidates) {
-                        const text = (node.innerText || node.textContent || '').replace(/\\s+/g, ' ').trim();
-                        if (!text || text.length > 120) continue;
-                        if (blocked.test(text)) continue;
-                        const normalizedText = normalize(text);
-                        const isMatch = aliasList.some((alias) => normalizedText === alias || normalizedText.startsWith(`${alias} `) || normalizedText.includes(` ${alias} `));
-                        if (!isMatch) continue;
-                        const target = node.closest('[role="option"], [role="menuitem"], button, a, div, span') || node;
-                        try {
-                            target.click();
-                            return text;
-                        } catch (_err) {}
-                    }
-                    return null;
-                }""",
-                {"searchTerm": search_term, "aliases": list(self._store_aliases(search_term))},
-            )
-            if matched:
-                self.log(f"  Switching to: {matched}")
-                return True
-        except Exception:
-            pass
-        return False
-
     def _switch_location(self, search_term):
         """Switch to a specific restaurant location."""
         if self._location_verified(search_term):
@@ -706,19 +639,27 @@ class ToastDownloader:
                 search_input = self.page.locator(sel).first
                 if search_input.is_visible(timeout=1000):
                     search_input.click()
+                    try:
+                        search_input.press("Control+a")
+                    except Exception:
+                        pass
                     search_input.fill(search_term)
                     self.log(f"  Searched location: {search_term}")
                     self.page.wait_for_timeout(800)
+                    try:
+                        search_input.press("Enter")
+                    except Exception:
+                        self.page.keyboard.press("Enter")
+                    self.log(f"  Submitted location search: {search_term}")
+                    self.page.wait_for_timeout(1200)
                     break
             except Exception:
                 continue
         else:
             self.page.keyboard.type(search_term, delay=50)
             self.page.wait_for_timeout(1000)
-
-        if not self._click_location_option(search_term):
-            self.log(f"  Could not find an exact location option for {search_term}")
-            return False
+            self.page.keyboard.press("Enter")
+            self.log(f"  Submitted location search: {search_term}")
 
         self.page.wait_for_timeout(2000)
         try:

@@ -127,6 +127,33 @@ class _WrongSwitchPage(_RoutePage):
         self.clicked_selectors.append(f"type:{text}")
 
 
+class _SearchSubmitPage(_RoutePage):
+    def __init__(self):
+        super().__init__()
+        self.keyboard = self
+        self.current_store = "Bandera"
+
+    def evaluate(self, script, arg=None):
+        self.function_calls.append({"script": script, "arg": arg, "timeout": None})
+        if "collectFrom" in script:
+            if self.current_store == "Stockton":
+                return ["Stockton, CA", "Raw Sushi Bistro"]
+            return ["Bandera", "Bakudan - Bandera"]
+        if "document.body?.innerText" in script:
+            if self.current_store == "Stockton":
+                return "Reports Stockton, CA Raw Sushi Bistro Sales Summary"
+            return "Reports Bandera Bakudan - Bandera Sales Summary"
+        return None
+
+    def press(self, key):
+        self.clicked_selectors.append(f"keyboard:{key}")
+        if key == "Enter":
+            self.current_store = "Stockton"
+
+    def type(self, text, delay=0):
+        self.clicked_selectors.append(f"type:{text}")
+
+
 class _DatePickerPage(_RoutePage):
     def evaluate(self, script, arg=None):
         self.function_calls.append({"script": script, "arg": arg, "timeout": None})
@@ -268,19 +295,36 @@ def test_detect_current_location_returns_best_known_store():
     assert current == "Stockton"
 
 
-def test_switch_location_fails_without_exact_location_option_match():
+def test_switch_location_fails_when_enter_flow_lands_on_wrong_store():
     logs = []
     downloader = toast_downloader.ToastDownloader(on_log=logs.append)
     page = _WrongSwitchPage()
     downloader.page = page
     downloader._open_location_dropdown = lambda: True
     downloader._dismiss_overlays = lambda: None
-    downloader._click_location_option = lambda *_args, **_kwargs: False
 
     ok = downloader._switch_location("WA2")
 
     assert ok is False
-    assert any("Could not find an exact location option for WA2" in line for line in logs)
+    assert "type:WA2" in page.clicked_selectors
+    assert "keyboard:Enter" in page.clicked_selectors
+    assert any("Switch verification failed" in line for line in logs)
+
+
+def test_switch_location_uses_search_then_enter_flow():
+    logs = []
+    downloader = toast_downloader.ToastDownloader(on_log=logs.append)
+    page = _SearchSubmitPage()
+    downloader.page = page
+    downloader._open_location_dropdown = lambda: True
+    downloader._dismiss_overlays = lambda: None
+
+    ok = downloader._switch_location("Stockton")
+
+    assert ok is True
+    assert "type:Stockton" in page.clicked_selectors
+    assert "keyboard:Enter" in page.clicked_selectors
+    assert any("Submitted location search: Stockton" in line for line in logs)
 
 
 def test_build_saved_filename_normalizes_download_name():
