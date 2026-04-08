@@ -162,6 +162,14 @@ class _DatePickerPage(_RoutePage):
         return None
 
 
+class _LegacyDatePickerPage(_RoutePage):
+    def evaluate(self, script, arg=None):
+        self.function_calls.append({"script": script, "arg": arg, "timeout": None})
+        if "const normalize = (value)" in script:
+            return "Custom Mar 22, 2026 - Mar 22, 2026"
+        return None
+
+
 class _NoDataPage(_RoutePage):
     def evaluate(self, script, arg=None):
         self.function_calls.append({"script": script, "arg": arg, "timeout": None})
@@ -344,6 +352,18 @@ def test_open_date_picker_supports_legacy_style_picker_targets():
     logs = []
     downloader = toast_downloader.ToastDownloader(on_log=logs.append)
     downloader.page = _DatePickerPage()
+
+    ok = downloader._open_date_picker()
+
+    assert ok is True
+    assert any("Opened date picker" in line for line in logs)
+
+
+def test_open_date_picker_supports_legacy_sales_summary_header_control():
+    logs = []
+    downloader = toast_downloader.ToastDownloader(on_log=logs.append)
+    downloader.page = _LegacyDatePickerPage()
+    downloader.legacy_sales_summary_active = True
 
     ok = downloader._open_date_picker()
 

@@ -704,21 +704,46 @@ class ToastDownloader:
         self.page.wait_for_timeout(1000)
 
         if self.legacy_sales_summary_active:
-            legacy_selectors = [
-                'main button:text-matches("Today|Yesterday|Custom|Last 7 days|This month|Last month", "i")',
-                'main [role="button"]:text-matches("Today|Yesterday|Custom|Last 7 days|This month|Last month", "i")',
-                'main [role="combobox"]:text-matches("Today|Yesterday|Custom|Last 7 days|This month|Last month", "i")',
-                'main button:text-matches("\\d{1,2}/\\d{1,2}/\\d{4}|[A-Z][a-z]{2}\\s+\\d{1,2},\\s+\\d{4}", "i")',
-                'main [role="button"]:text-matches("\\d{1,2}/\\d{1,2}/\\d{4}|[A-Z][a-z]{2}\\s+\\d{1,2},\\s+\\d{4}", "i")',
-                'main [role="combobox"]:text-matches("\\d{1,2}/\\d{1,2}/\\d{4}|[A-Z][a-z]{2}\\s+\\d{1,2},\\s+\\d{4}", "i")',
-                'main button:has([data-icon*="calendar" i])',
-                'main button:has([aria-label*="calendar" i])',
-                'main [role="button"]:has([data-icon*="calendar" i])',
-            ]
-            if self._click_first_visible(legacy_selectors, timeout=1200):
-                self.log("    Opened date picker: [legacy sales summary]")
-                self.page.wait_for_timeout(1000)
-                return True
+            try:
+                found = self.page.evaluate("""() => {
+                    const normalize = (value) => (value || '').replace(/\\s+/g, ' ').trim();
+                    const hasDateText = (text) =>
+                        /today|yesterday|custom|last 7 days|this month|last month/i.test(text) ||
+                        /\\d{1,2}\\/\\d{1,2}\\/\\d{4}/.test(text) ||
+                        /[A-Z][a-z]{2}\\s+\\d{1,2},\\s+\\d{4}/.test(text);
+                    const blocked = /(show percentages|leave feedback|sales summary|raw sushi bistro|bakudan|stockton|bandera|the rim|stone oak|wa1|wa2|wa3)/i;
+                    const candidates = Array.from(document.querySelectorAll('main button, main [role="button"], main [role="combobox"], main a, main div, main span'));
+                    let best = null;
+                    for (const node of candidates) {
+                        const text = normalize(node.innerText || node.textContent || '');
+                        if (!text || text.length > 160) continue;
+                        if (!hasDateText(text)) continue;
+                        if (blocked.test(text) && !/^custom/i.test(text)) continue;
+                        const rect = node.getBoundingClientRect?.();
+                        if (!rect) continue;
+                        if (rect.width < 60 || rect.height < 24) continue;
+                        if (rect.top < 80 || rect.top > 280) continue;
+                        if (rect.left < 180 || rect.left > 900) continue;
+                        const target = node.closest('button, [role="button"], [role="combobox"], a') || node;
+                        const score = (text.toLowerCase().includes('custom') ? 30 : 0) + (/[A-Z][a-z]{2}\\s+\\d{1,2},\\s+\\d{4}|\\d{1,2}\\/\\d{1,2}\\/\\d{4}/.test(text) ? 20 : 0) - Math.abs(rect.left - 420);
+                        if (!best || score > best.score) {
+                            best = { target, text, score };
+                        }
+                    }
+                    if (!best) return null;
+                    try {
+                        best.target.click();
+                        return best.text;
+                    } catch (_err) {
+                        return null;
+                    }
+                }""")
+                if found:
+                    self.log(f"    Opened date picker: [{found}]")
+                    self.page.wait_for_timeout(1000)
+                    return True
+            except Exception:
+                pass
 
         # The date picker button is in the report controls area.
         # It contains a calendar icon and date range text.
