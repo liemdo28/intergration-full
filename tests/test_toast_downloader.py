@@ -100,9 +100,31 @@ class _FallbackLocationPage(_RoutePage):
 class _CurrentLocationPage(_RoutePage):
     def evaluate(self, script, arg=None):
         self.function_calls.append({"script": script, "arg": arg, "timeout": None})
+        if "let best = null" in script:
+            return "Stockton"
         if "document.body?.innerText" in script:
             return "Reports Stockton, CA Raw Sushi Bistro Sales Summary"
         return None
+
+
+class _WrongSwitchPage(_RoutePage):
+    def __init__(self):
+        super().__init__()
+        self.keyboard = self
+
+    def evaluate(self, script, arg=None):
+        self.function_calls.append({"script": script, "arg": arg, "timeout": None})
+        if "let best = null" in script:
+            return "Bandera"
+        if "document.body?.innerText" in script:
+            return "Reports Bandera Bakudan - Bandera Sales Summary"
+        return None
+
+    def press(self, key):
+        self.clicked_selectors.append(f"keyboard:{key}")
+
+    def type(self, text, delay=0):
+        self.clicked_selectors.append(f"type:{text}")
 
 
 class _DatePickerPage(_RoutePage):
@@ -227,6 +249,30 @@ def test_switch_location_short_circuits_when_store_already_visible():
 
     assert ok is True
     assert any("Already on location: Stockton" in line for line in logs)
+
+
+def test_detect_current_location_returns_best_known_store():
+    downloader = toast_downloader.ToastDownloader()
+    downloader.page = _CurrentLocationPage()
+
+    current = downloader._detect_current_location()
+
+    assert current == "Stockton"
+
+
+def test_switch_location_fails_if_keyboard_fallback_lands_on_wrong_store():
+    logs = []
+    downloader = toast_downloader.ToastDownloader(on_log=logs.append)
+    page = _WrongSwitchPage()
+    downloader.page = page
+    downloader._open_location_dropdown = lambda: True
+    downloader._dismiss_overlays = lambda: None
+    downloader._click_first_visible = lambda *args, **kwargs: False
+
+    ok = downloader._switch_location("WA2")
+
+    assert ok is False
+    assert any("Switch verification failed" in line for line in logs)
 
 
 def test_build_saved_filename_normalizes_download_name():

@@ -307,6 +307,9 @@ class ToastDownloader:
         self.page.wait_for_timeout(1000)
 
     def _current_location_matches(self, search_term):
+        current_location = self._detect_current_location()
+        if current_location:
+            return current_location.lower() == search_term.lower()
         try:
             visible_text = self.page.evaluate(
                 """() => {
@@ -325,6 +328,50 @@ class ToastDownloader:
             return False
         lowered = visible_text.lower()
         return search_term.lower() in lowered
+
+    def _detect_current_location(self):
+        try:
+            matched = self.page.evaluate(
+                """(knownStores) => {
+                    const normalized = knownStores.map((store) => ({ raw: store, key: store.toLowerCase() }));
+                    const candidates = Array.from(document.querySelectorAll('body *')).map((node) => {
+                        const text = (node.innerText || node.textContent || '').replace(/\\s+/g, ' ').trim();
+                        if (!text || text.length > 140) return null;
+                        const rect = node.getBoundingClientRect?.();
+                        return { text, rect };
+                    }).filter(Boolean);
+
+                    const scoreFor = (candidate, key) => {
+                        if (!candidate.text.toLowerCase().includes(key)) return -1;
+                        let score = 1;
+                        const rect = candidate.rect;
+                        if (rect) {
+                            if (rect.top >= -10 && rect.top <= 220) score += 3;
+                            if (rect.left >= -10 && rect.left <= 900) score += 3;
+                            if (rect.width >= 40 && rect.height >= 18) score += 1;
+                        }
+                        if (/,\\s*[A-Z]{2}/.test(candidate.text)) score += 2;
+                        if (/raw sushi bistro|bakudan/i.test(candidate.text)) score += 2;
+                        return score;
+                    };
+
+                    let best = null;
+                    for (const store of normalized) {
+                        for (const candidate of candidates) {
+                            const score = scoreFor(candidate, store.key);
+                            if (score < 0) continue;
+                            if (!best || score > best.score) {
+                                best = { store: store.raw, score };
+                            }
+                        }
+                    }
+                    return best ? best.store : null;
+                }""",
+                TOAST_LOCATIONS,
+            )
+            return matched or None
+        except Exception:
+            return None
 
     def _open_location_dropdown(self):
         """Open the restaurant location dropdown."""
@@ -508,7 +555,14 @@ class ToastDownloader:
         except Exception:
             pass
         self.page.wait_for_timeout(1000)
-        return True
+        if self._current_location_matches(search_term):
+            return True
+        detected = self._detect_current_location()
+        if detected:
+            self.log(f"  Switch verification failed. Current location appears to be: {detected}")
+        else:
+            self.log("  Switch verification failed. Current location is still unknown.")
+        return False
 
     def _open_date_picker(self):
         """
@@ -553,6 +607,9 @@ class ToastDownloader:
             const hasDatePattern = (text) =>
                 /\\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\\b/.test(text) ||
                 /\\d{1,2}\\/\\d{1,2}\\/\\d{4}/.test(text);
+            const hasDateRangePattern = (text) =>
+                /\\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\\s+\\d{1,2},\\s+\\d{4}\\s*[-–]\\s*\\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\\s+\\d{1,2},\\s+\\d{4}/i.test(text) ||
+                /\\d{1,2}\\/\\d{1,2}\\/\\d{4}\\s*[-–]\\s*\\d{1,2}\\/\\d{1,2}\\/\\d{4}/.test(text);
 
             for (const node of nodes) {
                 const text = (node.innerText || node.textContent || '').trim();
@@ -571,6 +628,10 @@ class ToastDownloader:
                         return text.replace(/\\n/g, ' | ');
                     }
                 }
+                if (hasDateRangePattern(text)) {
+                    node.click();
+                    return text.replace(/\\n/g, ' | ');
+                }
             }
 
             const calendarTargets = Array.from(document.querySelectorAll('[data-icon*="calendar" i], [aria-label*="calendar" i], [class*="calendar" i]'))
@@ -579,7 +640,7 @@ class ToastDownloader:
             for (const target of calendarTargets) {
                 const text = (target.innerText || target.textContent || '').trim();
                 if (!text || text.includes('Custom hours')) continue;
-                if (!hasDatePattern(text) && !labels.some((label) => text.includes(label))) continue;
+                if (!hasDatePattern(text) && !hasDateRangePattern(text) && !labels.some((label) => text.includes(label))) continue;
                 target.click();
                 return text.replace(/\\n/g, ' | ');
             }
