@@ -1490,19 +1490,28 @@ class ToastDownloader:
 
         self.page.wait_for_timeout(1000)
 
-        # Wait for download event
+        # Wait for download event.
+        # After clicking the download icon, a dropdown appears with
+        # "Download CSV file" and "Download Excel file".  Prefer Excel.
+        # Flow: Tab once (skip CSV → land on Excel) → Enter.
         try:
             with self.page.expect_download(timeout=30000) as download_info:
+                # Prefer Excel over CSV — try Excel-specific selectors first
                 explicit_clicked = self._click_first_visible(
                     [
-                        '[role="menuitem"]:text-matches("Excel|CSV|XLSX|Export|Download", "i")',
-                        'button:text-matches("Excel|CSV|XLSX|Export|Download", "i")',
-                        '[role="option"]:text-matches("Excel|CSV|XLSX|Export|Download", "i")',
-                        'text=/Excel|CSV|XLSX|Export|Download/i',
+                        '[role="menuitem"]:text-is("Download Excel file")',
+                        'button:text-is("Download Excel file")',
+                        'text="Download Excel file"',
+                        '[role="menuitem"]:text-matches("Excel", "i")',
+                        'button:text-matches("Excel", "i")',
+                        'text=/Excel/i',
+                        '[role="menuitem"]:text-matches("Export|Download", "i")',
+                        'button:text-matches("Export|Download", "i")',
                     ],
                     timeout=1200,
                 )
                 if not explicit_clicked:
+                    # Fallback: Tab to Excel option, Enter to download
                     self.page.keyboard.press("Tab")
                     self.page.wait_for_timeout(300)
                     self.page.keyboard.press("Enter")
