@@ -612,7 +612,10 @@ class DownloadTab(ctk.CTkFrame):
         self.upload_gdrive_var = ctk.BooleanVar(value=True)
         option_chip = self._make_subcard(opt_frame)
         option_chip.pack(fill="x")
-        ctk.CTkCheckBox(option_chip, text="Upload to Google Drive after download", variable=self.upload_gdrive_var).pack(anchor="w", padx=12, pady=12)
+        gdrive_row = ctk.CTkFrame(option_chip, fg_color="transparent")
+        gdrive_row.pack(fill="x", padx=12, pady=12)
+        ctk.CTkCheckBox(gdrive_row, text="Upload to Google Drive after download", variable=self.upload_gdrive_var).pack(side="left")
+        make_action_button(gdrive_row, "Open Google Drive", self._open_gdrive_toast_folder, tone="neutral", width=150).pack(side="right")
 
         _run_card, run_frame = self._make_section_card(
             content,
