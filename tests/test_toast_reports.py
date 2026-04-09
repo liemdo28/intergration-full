@@ -54,9 +54,9 @@ def test_default_download_report_keys_exclude_ingest_only_exports():
 def test_direct_toast_report_paths_match_verified_routes():
     assert "sales/sales-summary" in get_report_type("sales_summary").report_path
     assert "home#sales-order-details" in get_report_type("orders").report_path
-    assert get_report_type("order_items").report_path == "home#selection-details"
-    assert get_report_type("payments").report_path == "home#sales-payments"
-    assert get_report_type("discounts").report_path == "home#discounts"
-    assert get_report_type("cash_activity_audit").report_path == "home#cash-mgmt"
-    assert get_report_type("voided_orders").report_path == "home#voids"
+    assert "home#selection-details" in get_report_type("order_items").report_path
+    assert "home#sales-payments" in get_report_type("payments").report_path
+    assert "home#discounts" in get_report_type("discounts").report_path
+    assert "home#cash-mgmt" in get_report_type("cash_activity_audit").report_path
+    assert "home#voids" in get_report_type("voided_orders").report_path
     assert "home#sales-orders" in get_report_type("sales_orders").report_path

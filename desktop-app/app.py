@@ -4268,7 +4268,8 @@ class SettingsTab(ctk.CTkFrame):
         gdrive_btns.pack(fill="x", pady=(5, 0))
         make_action_button(gdrive_btns, "Connect Google Drive", self._connect_gdrive, tone="primary", width=180).pack(side="left", padx=(0, 8))
         make_action_button(gdrive_btns, "Setup Folders", self._setup_folders, tone="neutral", width=130).pack(side="left", padx=(0, 8))
-        make_action_button(gdrive_btns, "Clear Token", self._clear_token, tone="danger", width=110).pack(side="left")
+        make_action_button(gdrive_btns, "Clear Token", self._clear_token, tone="danger", width=110).pack(side="left", padx=(0, 8))
+        make_action_button(gdrive_btns, "Open Toast Folder", self._open_gdrive_toast_folder, tone="neutral", width=150).pack(side="left")
 
         _drive_inventory_card, drive_inventory_frame = make_section_card(
             content,
@@ -4573,6 +4574,26 @@ class SettingsTab(ctk.CTkFrame):
             token_file.unlink()
             self._set_gdrive_status("Token cleared. Reconnect to authenticate.", "gray")
         self._refresh_recovery_status()
+
+    def _open_gdrive_toast_folder(self):
+        """Open the Toast root folder in Google Drive in the default browser."""
+        def _worker():
+            try:
+                from gdrive_service import GDriveService
+                gdrive = GDriveService()
+                if not gdrive.authenticate():
+                    self.after(0, lambda: messagebox.showerror("Error", "Google Drive auth failed. Connect first."))
+                    return
+                root_id = gdrive._get_primary_root_folder()
+                if root_id:
+                    import webbrowser
+                    url = f"https://drive.google.com/drive/folders/{root_id}"
+                    webbrowser.open(url)
+                else:
+                    self.after(0, lambda: messagebox.showinfo("Info", "Toast folder not found on Drive. Run 'Setup Folders' first."))
+            except Exception as e:
+                self.after(0, lambda: messagebox.showerror("Error", str(e)))
+        threading.Thread(target=_worker, daemon=True).start()
 
     def _clear_session(self):
         session_file = runtime_path(".toast-session.json")
