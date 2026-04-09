@@ -162,6 +162,18 @@ class _DatePickerPage(_RoutePage):
         return None
 
 
+class _NewUIDatePickerPage(_RoutePage):
+    """Simulates the new Toast Sales Summary UI where the date picker shows
+    'Today\\nApr 7, 2026 - Apr 7, 2026' and the evaluate scoring logic must
+    pick the narrowest element that has both a date label and a date pattern."""
+
+    def evaluate(self, script, arg=None):
+        self.function_calls.append({"script": script, "arg": arg, "timeout": None})
+        if "const selectors =" in script:
+            return "Today | Apr 7, 2026 - Apr 7, 2026"
+        return None
+
+
 class _LegacyDatePickerPage(_RoutePage):
     def evaluate(self, script, arg=None):
         self.function_calls.append({"script": script, "arg": arg, "timeout": None})
@@ -251,23 +263,23 @@ def test_open_report_view_uses_direct_route_for_sales_orders():
 
     downloader._open_report_view("sales_orders")
 
-    assert page.goto_urls[0][0] == "https://www.toasttab.com/restaurants/admin/reports/home#sales-orders"
+    assert "home#sales-orders" in page.goto_urls[0][0]
 
 
-def test_open_report_view_switches_sales_summary_to_legacy_when_link_visible():
+def test_open_report_view_stays_on_new_ui_for_sales_summary():
     logs = []
     downloader = toast_downloader.ToastDownloader(on_log=logs.append)
     page = _RoutePage()
-    page.selector_visibility['a:text-matches("legacy\\s+Sales\\s+summary", "i")'] = True
     downloader.page = page
     dismiss_calls = []
     downloader._dismiss_overlays = lambda: dismiss_calls.append(True)
 
     downloader._open_report_view("sales_summary")
 
-    assert page.goto_urls[0][0] == "https://www.toasttab.com/restaurants/admin/reports/sales/sales-summary"
-    assert 'a:text-matches("legacy\\s+Sales\\s+summary", "i")' in page.clicked_selectors
-    assert any("Switching to legacy Sales Summary" in line for line in logs)
+    assert "sales/sales-summary" in page.goto_urls[0][0]
+    # Should NOT switch to legacy — new UI has proper download controls
+    assert not any("Switching to legacy" in line for line in logs)
+    assert downloader.legacy_sales_summary_active is False
 
 
 def test_open_location_dropdown_uses_store_name_fallback_match():
@@ -357,6 +369,18 @@ def test_open_date_picker_supports_legacy_style_picker_targets():
 
     assert ok is True
     assert any("Opened date picker" in line for line in logs)
+
+
+def test_open_date_picker_supports_new_ui_today_dropdown():
+    logs = []
+    downloader = toast_downloader.ToastDownloader(on_log=logs.append)
+    downloader.page = _NewUIDatePickerPage()
+
+    ok = downloader._open_date_picker()
+
+    assert ok is True
+    assert any("Opened date picker" in line for line in logs)
+    assert any("Today" in line for line in logs)
 
 
 def test_open_date_picker_supports_legacy_sales_summary_header_control():

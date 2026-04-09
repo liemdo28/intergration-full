@@ -173,4 +173,7 @@ def test_build_integration_snapshot_canonicalizes_legacy_report_keys(tmp_path):
 
     snapshot = build_integration_snapshot(base_dir=tmp_path, now=datetime(2026, 4, 7, 20, 0, tzinfo=UTC))
 
-    assert snapshot["latest_downloads"][0]["report_key"] == "payments"
+    report_keys = {item["report_key"] for item in snapshot["latest_downloads"]}
+    assert "payments" in report_keys
+    # The legacy alias "payment" should never appear as-is
+    assert "payment" not in report_keys

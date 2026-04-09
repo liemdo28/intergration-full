@@ -4,8 +4,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-ROOT_FOLDER_NAME = "Toasttab"
-LEGACY_ROOT_FOLDER_NAMES = ("Toast Reports", "ToastUploads")
+ROOT_FOLDER_NAME = "Toast"
+LEGACY_ROOT_FOLDER_NAMES = ("Toasttab", "Toast Reports", "ToastUploads")
 
 
 @dataclass(frozen=True)
@@ -28,7 +28,7 @@ REPORT_TYPES: dict[str, ToastReportType] = {
         key="sales_summary",
         label="Sale Summary",
         folder_name="Sale Summary",
-        report_path="sales/sales-summary",
+        report_path="https://www.toasttab.com/restaurants/admin/reports/sales/sales-summary?utm_content=subnav",
         ready_markers=("Sales Summary",),
         validation_profile="sales_summary",
         aliases=("salessummary",),
@@ -39,7 +39,7 @@ REPORT_TYPES: dict[str, ToastReportType] = {
         key="orders",
         label="Order Details",
         folder_name="Order Details",
-        report_path="home#sales-order-details",
+        report_path="https://www.toasttab.com/restaurants/admin/reports/home#sales-order-details",
         ready_markers=("Order Details", "Orders"),
         aliases=("order", "order_details", "orderdetails"),
         folder_aliases=("Order", "Orders"),
@@ -143,7 +143,7 @@ REPORT_TYPES: dict[str, ToastReportType] = {
         key="sales_orders",
         label="Order",
         folder_name="Order",
-        report_path="home#sales-orders",
+        report_path="https://www.toasttab.com/restaurants/admin/reports/home#sales-orders",
         ready_markers=("Orders", "Order"),
         aliases=("sales_order", "salesorders", "order_report"),
         folder_aliases=("Sales Orders",),

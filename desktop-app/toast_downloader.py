@@ -315,23 +315,45 @@ class ToastDownloader:
 
     def _dismiss_overlays(self):
         """Dismiss onboarding checklist and other overlays."""
-        clicked_label = self._click_first_visible(
+        # Cookie consent banners often have a two-step flow:
+        #   1. Click "Opt out of all" (deselect categories)
+        #   2. Click "Save" (confirm the choice)
+        # Try both in sequence so the banner fully closes.
+        clicked_opt_out = self._click_first_visible(
             [
                 'button:text-is("Opt out of all")',
-                'button:text-is("Save")',
+                '[role="button"]:text-is("Opt out of all")',
                 'button:text-is("Accept all")',
                 'button:text-is("Accept All")',
-                'button:text-is("Close")',
-                '[role="button"]:text-is("Opt out of all")',
-                '[role="button"]:text-is("Save")',
-                '[aria-label*="close" i]',
-                '[data-testid*="close" i]',
             ],
             timeout=900,
         )
-        if clicked_label:
-            self.log("  Dismissed consent popup")
+        if clicked_opt_out:
+            self.log("  Dismissed consent popup (opt-out)")
+            self.page.wait_for_timeout(600)
+            # Now confirm by clicking Save
+            self._click_first_visible(
+                [
+                    'button:text-is("Save")',
+                    '[role="button"]:text-is("Save")',
+                    'button:text-is("Confirm")',
+                    'button:text-is("Done")',
+                ],
+                timeout=1500,
+            )
             self.page.wait_for_timeout(500)
+        else:
+            clicked_label = self._click_first_visible(
+                [
+                    'button:text-is("Close")',
+                    '[aria-label*="close" i]',
+                    '[data-testid*="close" i]',
+                ],
+                timeout=500,
+            )
+            if clicked_label:
+                self.log("  Dismissed consent popup")
+                self.page.wait_for_timeout(500)
         try:
             self.page.evaluate("""() => {
                 const clickByText = (pattern) => {
@@ -514,6 +536,12 @@ class ToastDownloader:
             '[role="combobox"][aria-haspopup="listbox"]',
             '[aria-haspopup="listbox"]',
             '[aria-haspopup="menu"]',
+            # New Toast header: location picker shows as a clickable div/button
+            # with a location pin icon and store name (e.g. "@The Rim")
+            'header [data-testid*="location" i]',
+            'header [class*="location" i]',
+            'nav [data-testid*="location" i]',
+            'nav [class*="location" i]',
         ]
 
         for sel in selectors:
@@ -539,27 +567,51 @@ class ToastDownloader:
 
                     const findClickable = (node) => {
                         let current = node;
+                        let bestDiv = null;
                         for (let depth = 0; current && depth < 5; depth += 1, current = current.parentElement) {
                             if (current.matches?.('button, [role="button"], [role="combobox"], [aria-haspopup], a')) {
                                 return current;
                             }
                             const nested = current.querySelector?.('button, [role="button"], [role="combobox"], [aria-haspopup], a');
                             if (nested) return nested;
+                            // Accept clickable div/span as fallback (new Toast UI uses
+                            // div elements with onClick instead of proper buttons).
+                            if (!bestDiv && current.matches?.('div, span') && current !== document.body) {
+                                bestDiv = current;
+                            }
                         }
-                        return null;
+                        return bestDiv;
                     };
 
-                    const iconCandidate = Array.from(
+                    // Strategy 1: find location icon and walk up to clickable parent.
+                    // In newer Toast UI the picker may be a <div> with click handler
+                    // rather than a <button>, so also accept plain div/span ancestors.
+                    const iconNodes = Array.from(
                         document.querySelectorAll(
-                            '[data-icon*="location" i], [aria-label*="location" i], [class*="location" i]'
+                            '[data-icon*="location" i], [aria-label*="location" i], ' +
+                            '[class*="location" i], [class*="restaurant-picker" i], ' +
+                            '[data-testid*="restaurant" i], [data-testid*="location" i], ' +
+                            'svg[class*="pin" i], svg[class*="map" i]'
                         )
-                    )
-                        .map((node) => node.closest('button, [role="button"], [role="combobox"], [aria-haspopup], a'))
-                        .find(Boolean);
-                    if (iconCandidate) {
-                        const text = (iconCandidate.innerText || iconCandidate.textContent || '').replace(/\\s+/g, ' ').trim();
-                        iconCandidate.click();
-                        return text || '__location_icon__';
+                    );
+                    for (const iconNode of iconNodes) {
+                        const candidate =
+                            iconNode.closest('button, [role="button"], [role="combobox"], [aria-haspopup], a') ||
+                            iconNode.closest('[class*="picker" i], [class*="selector" i], [class*="dropdown" i]') ||
+                            iconNode.parentElement;
+                        if (!candidate) continue;
+                        const text = (candidate.innerText || candidate.textContent || '').replace(/\\s+/g, ' ').trim();
+                        // Verify this is really the location picker: must contain a
+                        // known store name or the "@" prefix pattern Toast uses.
+                        if (!text) continue;
+                        const lower = text.toLowerCase();
+                        const looksLikeLocation =
+                            lower.startsWith('@') ||
+                            /,\\s*[A-Z]{2}/i.test(text) ||
+                            normalizedStores.some((store) => lower.includes(store));
+                        if (!looksLikeLocation) continue;
+                        candidate.click();
+                        return text;
                     }
 
                     const topStripNodes = Array.from(document.querySelectorAll('body *')).filter((node) => {
@@ -571,7 +623,7 @@ class ToastDownloader:
                         const text = (node.innerText || node.textContent || '').replace(/\\s+/g, ' ').trim();
                         if (!text || text.length > 140) return false;
                         if (blockedText.test(text)) return false;
-                        return /,\\s*[A-Z]{2}|raw sushi bistro|bakudan/i.test(text) || normalizedStores.some((store) => text.toLowerCase().includes(store));
+                        return /^@|,\\s*[A-Z]{2}|raw sushi bistro|bakudan/i.test(text) || normalizedStores.some((store) => text.toLowerCase().includes(store));
                     });
                     for (const node of topStripNodes) {
                         const text = (node.innerText || node.textContent || '').replace(/\\s+/g, ' ').trim();
@@ -748,6 +800,16 @@ class ToastDownloader:
         # The date picker button is in the report controls area.
         # It contains a calendar icon and date range text.
         # We need to find the button that has date-related text but is NOT "Custom hours".
+        #
+        # New Toast Sales Summary UI structure:
+        #   [ < ]  [ 📅 Today  ▼ ]  [ > ]  [ 📍 Location ▼ ]  [ Custom hours ▼ ]
+        #              Apr 7, 2026 - Apr 7, 2026
+        # The date picker dropdown is a clickable element containing a date label
+        # ("Today", "Yesterday", "Custom", etc.) AND a date range subtitle.
+        # It sits between left/right arrow navigation buttons.
+        # The parent filter bar container also contains "Custom hours" and location
+        # text, so we must find the NARROWEST element that contains a date label
+        # and date pattern without also containing "Custom hours" or location info.
         date_labels = [
             "Yesterday", "Today", "This week", "Last week",
             "Last 7 days", "This month", "Last month", "Custom",
@@ -782,10 +844,14 @@ class ToastDownloader:
                 /\\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\\s+\\d{1,2},\\s+\\d{4}\\s*[-–]\\s*\\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\\s+\\d{1,2},\\s+\\d{4}/i.test(text) ||
                 /\\d{1,2}\\/\\d{1,2}\\/\\d{4}\\s*[-–]\\s*\\d{1,2}\\/\\d{1,2}\\/\\d{4}/.test(text);
 
+            // Score candidates by specificity: prefer the narrowest element that
+            // contains a date label + date pattern.  Skip elements whose own text
+            // also includes "Custom hours" (that's the separate hours dropdown).
+            let best = null;
+
             for (const node of nodes) {
                 const text = (node.innerText || node.textContent || '').trim();
                 if (!text) continue;
-                if (text.includes('Custom hours')) continue;
                 if (text.length > 140) continue;
                 const rect = node.getBoundingClientRect?.();
                 if (rect) {
@@ -793,27 +859,58 @@ class ToastDownloader:
                     if (rect.top < -10 || rect.top > 320) continue;
                     if (rect.left < 120 || rect.left > 1200) continue;
                 }
+
+                // Check if this element's own text (NOT children) includes
+                // "Custom hours" — if so, it's too broad a container.
+                if (text.includes('Custom hours')) continue;
+
+                let matchesLabel = false;
+                let matchesDate = hasDatePattern(text) || hasDateRangePattern(text);
                 for (const label of labels) {
-                    if (text.includes(label) && (hasDatePattern(text) || label === 'Custom')) {
-                        node.click();
-                        return text.replace(/\\n/g, ' | ');
+                    if (text.includes(label)) {
+                        matchesLabel = true;
+                        break;
                     }
                 }
-                if (hasDateRangePattern(text)) {
-                    node.click();
-                    return text.replace(/\\n/g, ' | ');
+
+                if (!matchesLabel && !matchesDate) continue;
+
+                // Prefer elements that match BOTH a label and a date pattern.
+                // Among those, prefer narrower elements (smaller text length and
+                // smaller bounding box area) to avoid clicking a large container.
+                const hasBoth = matchesLabel && matchesDate;
+                const area = rect ? rect.width * rect.height : 999999;
+                const score = (hasBoth ? 10000 : 0) - text.length - area / 1000;
+
+                if (!best || score > best.score) {
+                    best = { node, text, score };
                 }
             }
 
-            const calendarTargets = Array.from(document.querySelectorAll('[data-icon*="calendar" i], [aria-label*="calendar" i], [class*="calendar" i]'))
+            if (best) {
+                best.node.click();
+                return best.text.replace(/\\n/g, ' | ');
+            }
+
+            // Fallback: look for calendar icon elements and walk up to their
+            // clickable ancestor.
+            const calendarTargets = Array.from(document.querySelectorAll(
+                'svg[data-icon*="calendar" i], [aria-label*="calendar" i], ' +
+                '[class*="calendar" i], [data-testid*="calendar" i], ' +
+                'svg[class*="calendar" i]'
+            ))
                 .map((node) => node.closest('button, [role="button"], [role="combobox"], [aria-haspopup], div'))
                 .filter(Boolean);
             for (const target of calendarTargets) {
                 const text = (target.innerText || target.textContent || '').trim();
-                if (!text || text.includes('Custom hours')) continue;
-                if (!hasDatePattern(text) && !hasDateRangePattern(text) && !labels.some((label) => text.includes(label))) continue;
+                if (text.includes('Custom hours')) continue;
+                // Accept the calendar icon's parent if it contains any date text
+                // or a known label.
+                const relevant = hasDatePattern(text) || hasDateRangePattern(text) ||
+                    labels.some((label) => text.includes(label));
+                if (!relevant && text.length > 0) continue;
                 target.click();
-                return text.replace(/\\n/g, ' | ');
+                return text ? text.replace(/\\n/g, ' | ') : '[calendar icon]';
             }
 
             return null;
@@ -951,8 +1048,12 @@ class ToastDownloader:
 
         self.page.wait_for_timeout(500)
 
-        # Step 2: Click "Custom date" in dropdown
-        # (works whether current mode is Yesterday, Today, Custom, etc.)
+        # Step 2: Click "Custom date" / "Custom" in the opened dropdown.
+        # The dropdown may be a React listbox, a native <select>, an <a>-list,
+        # or plain <div>/<span> items. Try multiple strategies:
+        #   A) Playwright selector matching (fast, works for role-based dropdowns)
+        #   B) JavaScript DOM scan (catches any element with matching text)
+        #   C) Keyboard navigation (arrow-down through items, press Enter on Custom)
         custom_clicked = self._click_first_visible(
             [
                 '[role="option"]:text-is("Custom date")',
@@ -963,6 +1064,10 @@ class ToastDownloader:
                 '[role="menuitem"]:text-is("Custom dates")',
                 '[role="menuitem"]:text-is("Custom range")',
                 '[role="menuitem"]:text-is("Custom")',
+                'li:text-is("Custom date")',
+                'li:text-is("Custom dates")',
+                'li:text-is("Custom range")',
+                'li:text-is("Custom")',
                 'button:text-is("Custom date")',
                 'button:text-is("Custom dates")',
                 'button:text-is("Custom range")',
@@ -972,11 +1077,83 @@ class ToastDownloader:
                 'text="Custom range"',
                 'text="Custom"',
             ],
-            timeout=3000,
-            log_msg="    Clicked 'Custom date'",
+            timeout=800,
+            log_msg="    Clicked 'Custom date' (selector)",
         )
         if custom_clicked:
             self.page.wait_for_timeout(1000)
+
+        # Strategy B: JavaScript DOM scan — finds any visible element whose
+        # trimmed text starts with "Custom" and is inside a dropdown / overlay
+        # that appeared after opening the date picker.
+        if not custom_clicked:
+            custom_clicked = bool(self.page.evaluate("""() => {
+                const customLabels = [
+                    'custom date', 'custom dates', 'custom range', 'custom'
+                ];
+                // Gather candidate elements from overlays, popovers, dropdowns, lists
+                const candidates = Array.from(document.querySelectorAll(
+                    '[role="listbox"] *, [role="menu"] *, [role="dialog"] *, ' +
+                    '[class*="dropdown" i] *, [class*="popover" i] *, ' +
+                    '[class*="overlay" i] *, [class*="picker" i] *, ' +
+                    '[class*="select" i] *, [class*="menu" i] *, ' +
+                    'ul *, ol *, select option, ' +
+                    'a, div, span, li, button, option'
+                ));
+                const seen = new Set();
+                for (const node of candidates) {
+                    if (seen.has(node)) continue;
+                    seen.add(node);
+                    const text = (node.innerText || node.textContent || '').trim();
+                    if (!text || text.length > 40) continue;
+                    const lower = text.toLowerCase();
+                    if (!customLabels.some(label => lower === label)) continue;
+                    const rect = node.getBoundingClientRect();
+                    if (rect.width < 10 || rect.height < 10) continue;
+                    if (rect.top < 0 || rect.bottom > window.innerHeight) continue;
+                    // Scroll into view if needed, then click
+                    node.scrollIntoView?.({block: 'nearest'});
+                    node.click();
+                    return text;
+                }
+                // Also try native <select> elements: if the date picker is a
+                // <select>, set its value to the Custom option.
+                for (const sel of document.querySelectorAll('select')) {
+                    for (const opt of sel.options) {
+                        const optText = opt.text.trim().toLowerCase();
+                        if (customLabels.some(label => optText === label)) {
+                            sel.value = opt.value;
+                            sel.dispatchEvent(new Event('change', {bubbles: true}));
+                            return opt.text.trim();
+                        }
+                    }
+                }
+                return null;
+            }"""))
+            if custom_clicked:
+                self.log(f"    Clicked 'Custom date' (JS scan)")
+                self.page.wait_for_timeout(1000)
+
+        # Strategy C: Keyboard navigation — arrow-down through the dropdown
+        # items until "Custom" is reached, then press Enter.
+        if not custom_clicked:
+            try:
+                for _ in range(10):
+                    self.page.keyboard.press("ArrowDown")
+                    self.page.wait_for_timeout(150)
+                    focused_text = self.page.evaluate("""() => {
+                        const el = document.activeElement;
+                        if (!el) return '';
+                        return (el.innerText || el.textContent || el.value || '').trim().toLowerCase();
+                    }""")
+                    if focused_text and focused_text.startswith("custom"):
+                        self.page.keyboard.press("Enter")
+                        custom_clicked = True
+                        self.log(f"    Clicked 'Custom date' (keyboard nav)")
+                        self.page.wait_for_timeout(1000)
+                        break
+            except Exception:
+                pass
 
         if not custom_clicked:
             if self._fill_custom_date_inputs(date_str):
@@ -985,11 +1162,46 @@ class ToastDownloader:
             self.page.keyboard.press("Escape")
             return False
 
+        # After selecting "Custom" in the dropdown, the legacy report home
+        # page (<select>-based) requires clicking "Update" to show the date
+        # input fields.  Without Update, Tab would land on other toolbar
+        # buttons (e.g. "Email Export") instead of date inputs.
+        if self.legacy_sales_summary_active:
+            update_clicked = self._click_first_visible(
+                [
+                    'button:text-is("Update")',
+                    'input[value="Update"]',
+                    '[role="button"]:text-is("Update")',
+                ],
+                timeout=2000,
+                log_msg="    Clicked 'Update' to show date inputs",
+            )
+            if update_clicked:
+                self.page.wait_for_timeout(2000)
+                try:
+                    self.page.wait_for_load_state("networkidle", timeout=15000)
+                except Exception:
+                    pass
+                self.page.wait_for_timeout(1000)
+
+        # After clicking "Custom date", we need to enter the date range.
+        # Two strategies:
+        #   - For new Toast UI: use _fill_custom_date_inputs (programmatic fill)
+        #   - For legacy Toast UI: MUST use keyboard Tab approach because
+        #     legacy inputs don't respond properly to programmatic fill().
+        if not self.legacy_sales_summary_active:
+            if self._fill_custom_date_inputs(date_str):
+                return True
+
+        # Try programmatic fill first (works if date inputs are visible).
         if self._fill_custom_date_inputs(date_str):
             return True
 
-        # Step 3: Tab 4 times to reach Start date input
-        for _ in range(4):
+        # Keyboard approach: Tab to Start date → type → Tab to End date → type → Tab → Enter.
+        # Legacy UI after Update click: date inputs should be right after the
+        # select dropdowns. Try a smaller tab count first.
+        tab_count = 4 if self.legacy_sales_summary_active else 2
+        for _ in range(tab_count):
             self.page.keyboard.press("Tab")
             self.page.wait_for_timeout(200)
 
@@ -1015,7 +1227,7 @@ class ToastDownloader:
         self.log(f"    End date: {date_str}")
         self.page.wait_for_timeout(500)
 
-        # Step 7: Tab to Apply button
+        # Step 7: Tab to Apply/Update button
         self.page.keyboard.press("Tab")
         self.page.wait_for_timeout(200)
 
@@ -1077,7 +1289,13 @@ class ToastDownloader:
         return "unknown"
 
     def _wait_for_report_context(self, report):
-        expected_path = report.report_path or ""
+        raw_path = report.report_path or ""
+        # Strip full URL prefix to get the path portion for matching.
+        expected_path = raw_path
+        if expected_path.startswith("http"):
+            from urllib.parse import urlparse
+            parsed = urlparse(expected_path)
+            expected_path = parsed.path + (f"#{parsed.fragment}" if parsed.fragment else "")
         expected_fragment = expected_path.split("#", 1)[1] if "#" in expected_path else ""
         markers = tuple(marker for marker in report.ready_markers if marker)
 
@@ -1131,6 +1349,14 @@ class ToastDownloader:
             return False
 
     def _maybe_open_legacy_sales_summary(self, report):
+        # The new Sales Summary UI has a proper download icon (↓) with
+        # "Download CSV file" / "Download Excel file" dropdown — no need
+        # to switch to legacy anymore.  Staying on the new UI gives us
+        # cleaner date picker and download controls.
+        self.legacy_sales_summary_active = False
+        return False
+
+        # Legacy switch kept for reference but disabled:
         if report.key != "sales_summary":
             self.legacy_sales_summary_active = False
             return False
@@ -1171,36 +1397,25 @@ class ToastDownloader:
         self.active_report_key = report.key
         self.legacy_sales_summary_active = False
         self.log(f"    Opening report: {report.label}")
-        self.page.goto(f"{REPORTS_BASE}/{report.report_path}", wait_until="domcontentloaded", timeout=60000)
+
+        # Navigate: use the URL directly if report_path is a full URL,
+        # otherwise prefix with REPORTS_BASE.
+        url = report.report_path
+        if not url.startswith("http"):
+            url = f"{REPORTS_BASE}/{url}"
+        self.page.goto(url, wait_until="domcontentloaded", timeout=60000)
         self.page.wait_for_timeout(3000)
         self._dismiss_overlays()
         self._wait_for_report_context(report)
-        self._maybe_open_legacy_sales_summary(report)
 
-        if report.tab_label:
-            opened = self._click_first_visible(
-                [
-                    f'[role="tab"]:text-is("{report.tab_label}")',
-                    f'[role="menuitem"]:text-is("{report.tab_label}")',
-                    f'button:text-is("{report.tab_label}")',
-                    f'a:text-is("{report.tab_label}")',
-                    f'text="{report.tab_label}"',
-                ],
-                timeout=2500,
-                log_msg=f"    Opened tab: {report.tab_label}",
-            )
-            if not opened:
-                raise RuntimeError(f"Could not open Toast report tab '{report.tab_label}'")
-            self.page.wait_for_timeout(2000)
-            try:
-                self.page.wait_for_load_state("networkidle", timeout=30000)
-            except Exception:
-                pass
-            self.page.wait_for_timeout(1000)
-            self._dismiss_overlays()
+        # For Sales Summary with direct URL (?utm_content=subnav), the page
+        # loads the new UI directly.  Try the legacy link if available, but
+        # don't fail if it's not — the new UI date picker also works now.
+        self._maybe_open_legacy_sales_summary(report)
 
     def _click_download_icon(self):
         """Click the download icon using JS click."""
+        # Try Playwright selectors first (fast path for known attributes).
         selectors = [
             '[aria-label="Download report"]',
             'button[aria-label*="Download" i]',
@@ -1208,11 +1423,13 @@ class ToastDownloader:
             'i[aria-label*="Download" i]',
             '[aria-label*="download" i]',
             '[data-testid*="download" i]',
+            '[aria-label*="export" i]',
+            '[data-testid*="export" i]',
         ]
         for sel in selectors:
             el = self.page.locator(sel).first
             try:
-                if el.is_visible(timeout=2000):
+                if el.is_visible(timeout=1500):
                     el.evaluate("""node => {
                         const target = node.closest('button') || node.closest('a') || node;
                         target.click();
@@ -1220,6 +1437,49 @@ class ToastDownloader:
                     return True
             except Exception:
                 pass
+
+        # Fallback: JS scan for download/export icons by SVG path or class
+        # name.  Legacy Toast toolbar uses <svg> icons without aria-labels.
+        found = self.page.evaluate("""() => {
+            // Look for SVG download icons (arrow-down-to-tray pattern)
+            const svgCandidates = Array.from(document.querySelectorAll(
+                'svg[class*="download" i], svg[class*="export" i], ' +
+                'svg[data-icon*="download" i], svg[data-icon*="export" i], ' +
+                '[class*="download" i] svg, [class*="export" i] svg'
+            ));
+            for (const svg of svgCandidates) {
+                const target = svg.closest('button, [role="button"], a') || svg.parentElement;
+                if (!target) continue;
+                const rect = target.getBoundingClientRect();
+                if (rect.width < 10 || rect.height < 10) continue;
+                target.click();
+                return 'svg-icon';
+            }
+
+            // Look for buttons/links with download-related text or title
+            const btns = Array.from(document.querySelectorAll(
+                'button, [role="button"], a, [role="menuitem"]'
+            ));
+            for (const btn of btns) {
+                const text = (btn.innerText || btn.textContent || '').trim().toLowerCase();
+                const title = (btn.getAttribute('title') || '').toLowerCase();
+                const ariaLabel = (btn.getAttribute('aria-label') || '').toLowerCase();
+                const combined = text + ' ' + title + ' ' + ariaLabel;
+                if (/\\bdownload\\b|\\bexport\\b/.test(combined)) {
+                    // Exclude "Email Export" button
+                    if (/email/i.test(combined)) continue;
+                    const rect = btn.getBoundingClientRect();
+                    if (rect.width < 10 || rect.height < 10) continue;
+                    btn.click();
+                    return text || title || ariaLabel;
+                }
+            }
+            return null;
+        }""")
+        if found:
+            self.log(f"    Found download trigger: {found}")
+            return True
+
         return False
 
     def _download_report(self, save_dir, report_type="sales_summary", store_name=None, business_date=None):
@@ -1352,30 +1612,37 @@ class ToastDownloader:
                     continue
                 self._dismiss_overlays()
 
-                # Loop through each date
-                for j, date_str in enumerate(dates):
-                    if self._stop_requested():
-                        results["stopped"] = True
-                        self.log("Stop requested. Ending download batch after current item.")
-                        break
-                    date_label = date_str or "Yesterday"
-                    self.log(f"  [{j+1}/{len(dates)}] Date: {date_label}")
-                    for report in reports:
+                # Loop through each report type, then each date.
+                # We open the report view ONCE per report type and stay on
+                # that page while iterating dates — only changing the date
+                # picker each time.  This avoids the slow
+                # navigate→legacy→date cycle on every single date.
+                for report in reports:
+                    report_view_opened = False
+
+                    for j, date_str in enumerate(dates):
                         if self._stop_requested():
                             results["stopped"] = True
                             self.log("Stop requested. Ending download batch after current item.")
                             break
+                        date_label = date_str or "Yesterday"
                         task_num += 1
                         results["total"] += 1
                         self.on_progress(task_num, total_tasks, f"{loc_name} - {date_label} - {report.label}")
+                        self.log(f"  [{j+1}/{len(dates)}] Date: {date_label}")
                         self.log(f"    Report: {report.label}")
 
-                        try:
-                            self._open_report_view(report.key)
-                        except Exception as exc:
-                            self.log(f"    Could not open report view: {exc}")
-                            results["fail"] += 1
-                            continue
+                        # Open the report view only on the first date (or
+                        # after a navigation failure).  For subsequent dates
+                        # we stay on the same page and just change the date.
+                        if not report_view_opened:
+                            try:
+                                self._open_report_view(report.key)
+                                report_view_opened = True
+                            except Exception as exc:
+                                self.log(f"    Could not open report view: {exc}")
+                                results["fail"] += 1
+                                continue
 
                         if date_str:
                             if self._skip_date_selection_for_location(loc_name):
@@ -1384,10 +1651,14 @@ class ToastDownloader:
                                 if not self._select_custom_date(date_str):
                                     self.log(f"    Could not set date {date_str}, skipping")
                                     results["fail"] += 1
+                                    # The page may have ended up in a bad
+                                    # state — force re-open on next date.
+                                    report_view_opened = False
                                     continue
                         else:
                             if not self._open_date_picker():
                                 results["fail"] += 1
+                                report_view_opened = False
                                 continue
                             yesterday_opt = self.page.locator('text="Yesterday"').first
                             try:
@@ -1400,6 +1671,7 @@ class ToastDownloader:
                                         pass
                             except Exception:
                                 results["fail"] += 1
+                                report_view_opened = False
                                 continue
 
                         self._dismiss_overlays()
