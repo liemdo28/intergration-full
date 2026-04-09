@@ -50,6 +50,7 @@ class ToastDownloader:
         self.page = None
         self.run_audit = []
         self.active_report_key = None
+        self.active_location = None
         self.legacy_sales_summary_active = False
 
     def log(self, msg):
@@ -1032,9 +1033,13 @@ class ToastDownloader:
                 except Exception:
                     applied = False
         else:
-            # Legacy report home: Tab 4 times from End date → Update button → Enter
+            # Legacy report home: Tab from End date → Update button → Enter.
+            # Stockton needs 4 tabs; other stores (The Rim, Stone Oak, Bandera,
+            # WA1, WA2, WA3) have an extra filter field and need 5 tabs.
+            loc = (self.active_location or "").strip()
+            tab_to_update = 4 if loc == "Stockton" else 5
             try:
-                for _ in range(4):
+                for _ in range(tab_to_update):
                     self.page.keyboard.press("Tab")
                     self.page.wait_for_timeout(150)
                 self.page.keyboard.press("Enter")
@@ -1661,6 +1666,7 @@ class ToastDownloader:
                 self.log(f"\n[Location {i+1}/{len(locations)}] {loc_name}")
 
                 # Switch location
+                self.active_location = loc_name
                 if not self._switch_location_with_retries(loc_name):
                     self.log(f"  Could not switch to {loc_name}, skipping")
                     skipped = len(dates) * len(reports)
