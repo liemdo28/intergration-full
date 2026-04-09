@@ -675,6 +675,27 @@ class DownloadTab(ctk.CTkFrame):
             state="disabled",
         )
         self.stop_unsave_btn.pack(side="left", padx=(12, 0))
+
+        def _exit_app():
+            try:
+                self._stop_event.set()
+            except Exception:
+                pass
+            root = self.winfo_toplevel()
+            root.after(200, root.destroy)
+
+        ctk.CTkButton(
+            action_row,
+            text="Exit App",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            width=100,
+            height=50,
+            command=_exit_app,
+            fg_color="#dc2626",
+            hover_color="#991b1b",
+            corner_radius=14,
+        ).pack(side="right")
+
         tip_chip = ctk.CTkFrame(action_row, fg_color="#111827", corner_radius=14, border_width=1, border_color="#334155")
         tip_chip.pack(side="left", padx=(12, 0))
         ctk.CTkLabel(
