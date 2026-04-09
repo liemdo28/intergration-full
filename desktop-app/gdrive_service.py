@@ -483,7 +483,32 @@ class GDriveService:
         if not self.service:
             raise RuntimeError("Not authenticated")
 
+        # Try exact filename match first
         file_info, root_name, relative_parts = self._find_report_file_across_roots(store_name, filename, report_type)
+
+        # Fallback: search by date pattern in filename.
+        # Download creates files like "2026-04-01_SalesSummary_Stockton.xlsx"
+        # but QB sync looks for "SalesSummary_2026-04-01_2026-04-01.xlsx".
+        # Match any file in the report folder that contains the business date.
+        if not file_info:
+            from report_inventory import extract_business_dates_from_name
+            target_dates = extract_business_dates_from_name(filename)
+            if target_dates:
+                target_date = target_dates[0]  # e.g. "2026-04-01"
+                for folder_id, rn, rp in self._iter_report_folder_candidates(store_name, filename, report_type):
+                    for item in self._list_folder_items(folder_id):
+                        if item.get("mimeType", "").startswith("application/vnd.google-apps.folder"):
+                            continue
+                        item_dates = extract_business_dates_from_name(item["name"])
+                        if target_date in item_dates:
+                            file_info = item
+                            root_name = rn
+                            relative_parts = rp
+                            filename = item["name"]  # Use actual Drive filename
+                            break
+                    if file_info:
+                        break
+
         if not file_info:
             report = get_report_type(report_type)
             raise FileNotFoundError(f"File not found: {ROOT_FOLDER_NAME}/{store_name}/{report.folder_name}/{filename}")

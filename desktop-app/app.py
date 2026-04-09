@@ -2103,7 +2103,7 @@ class QBSyncTab(ctk.CTkFrame):
                                     try:
                                         filepath = gdrive.download_report(toast_loc, filename, local_dir, report_type="sales_summary")
                                     except FileNotFoundError:
-                                        self.log(f"  File not found on Drive: Toasttab/{toast_loc}/Sale Summary/{filename}")
+                                        self.log(f"  File not found on Drive: Toast/{toast_loc}/Sale Summary/{filename}")
                                         fail_count += 1
                                         continue
                                 else:
