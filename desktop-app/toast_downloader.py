@@ -1055,12 +1055,19 @@ class ToastDownloader:
                 )
         if applied:
             self.log(f"    Applied date: {date_str}")
+            # Wait for the report to reload after date change.
+            # Legacy pages may take longer to load data for some stores.
             self.page.wait_for_timeout(3000)
             try:
                 self.page.wait_for_load_state("networkidle", timeout=30000)
             except Exception:
                 pass
-            self.page.wait_for_timeout(1500)
+            # Extra wait for legacy report home — the table reloads via AJAX
+            # and may not trigger networkidle consistently.
+            if not is_new_ui:
+                self.page.wait_for_timeout(5000)
+            else:
+                self.page.wait_for_timeout(1500)
             return True
         return False
 
@@ -1551,9 +1558,14 @@ class ToastDownloader:
 
     def _download_report(self, save_dir, report_type="sales_summary", store_name=None, business_date=None):
         """Click download icon -> Tab -> Enter. Returns file metadata or None."""
+        # Try to find and click the download icon.  On legacy report home
+        # the table may still be loading after a date change, so retry once
+        # after a short wait if the first attempt fails.
         if not self._click_download_icon():
-            self.log("    Download button not found")
-            return None
+            self.page.wait_for_timeout(3000)
+            if not self._click_download_icon():
+                self.log("    Download button not found")
+                return None
 
         self.page.wait_for_timeout(1000)
 
