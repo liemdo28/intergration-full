@@ -988,8 +988,8 @@ class ToastDownloader:
             # New UI auto-formats: type raw digits MMDDYYYY
             type_value = f"{month:02d}{day:02d}{year:04d}"
         else:
-            # Legacy report home: type MM/DD/YYYY with slashes
-            type_value = f"{month:02d}/{day:02d}/{year:04d}"
+            # Legacy report home (Orders, etc.): type MM-DD-YYYY with dashes
+            type_value = f"{month:02d}-{day:02d}-{year:04d}"
 
         try:
             inputs[0].click()
@@ -1014,23 +1014,40 @@ class ToastDownloader:
         except Exception:
             return False
 
-        applied = self._click_first_visible(
-            [
-                'button:text-is("Apply")',
-                'button:text-is("Update")',
-                'button:text-is("Done")',
-                '[role="button"]:text-is("Apply")',
-                '[role="button"]:text-is("Update")',
-                '[role="button"]:text-is("Done")',
-            ],
-            timeout=1200,
-        )
-        if not applied:
+        if is_new_ui:
+            # New UI: click Apply button directly
+            applied = self._click_first_visible(
+                [
+                    'button:text-is("Apply")',
+                    'button:text-is("Done")',
+                    '[role="button"]:text-is("Apply")',
+                    '[role="button"]:text-is("Done")',
+                ],
+                timeout=1200,
+            )
+            if not applied:
+                try:
+                    inputs[1].press("Enter")
+                    applied = True
+                except Exception:
+                    applied = False
+        else:
+            # Legacy report home: Tab 4 times from End date → Update button → Enter
             try:
-                inputs[1].press("Enter")
+                for _ in range(4):
+                    self.page.keyboard.press("Tab")
+                    self.page.wait_for_timeout(150)
+                self.page.keyboard.press("Enter")
                 applied = True
             except Exception:
-                applied = False
+                applied = self._click_first_visible(
+                    [
+                        'button:text-is("Update")',
+                        'input[value="Update"]',
+                        '[role="button"]:text-is("Update")',
+                    ],
+                    timeout=1500,
+                )
         if applied:
             self.log(f"    Applied date: {date_str}")
             self.page.wait_for_timeout(3000)
