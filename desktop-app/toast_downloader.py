@@ -1306,27 +1306,41 @@ class ToastDownloader:
                 state = self.page.evaluate("""() => {
                     const extractText = () => (document.body?.innerText || '').replace(/\\s+/g, ' ').trim();
                     const text = extractText();
+                    // Detect "ready" state: look for an enabled download/export trigger.
+                    // New Sales Summary UI uses SVG icons without text labels.
                     const readySelectors = [
                         '[aria-label="Download report"]',
                         'button[aria-label*="Download" i]',
                         'button[title*="Download" i]',
                         '[data-testid*="download" i]',
-                        'button',
-                        'a',
+                        '[aria-label*="export" i]',
                     ];
                     for (const selector of readySelectors) {
-                        const nodes = Array.from(document.querySelectorAll(selector));
-                        for (const node of nodes) {
-                            const label = (node.innerText || node.textContent || '').replace(/\\s+/g, ' ').trim();
-                            if (!label) continue;
-                            if (!/download|export|excel|csv|xlsx/i.test(label) && !/aria-label="Download report"/i.test(selector)) continue;
-                            const btn = node.closest('button') || node.closest('a') || node;
-                            if (!btn) continue;
-                            const disabled = btn.disabled || btn.hasAttribute('disabled') || btn.classList.contains('disabled');
-                            if (!disabled) return 'ready';
+                        const node = document.querySelector(selector);
+                        if (node) {
+                            const btn = node.closest('button, a') || node;
+                            if (!btn.disabled && !btn.hasAttribute('disabled')) return 'ready';
                         }
                     }
-                    if (/no data|no results|no records|nothing to show|no orders|no payments|no items|there are no .* for this period|there aren't any .* for this period|no sales/i.test(text)) {
+                    // Also detect SVG download icons (new UI toolbar)
+                    const svgIcons = document.querySelectorAll(
+                        'svg[class*="download" i], svg[class*="export" i], ' +
+                        '[class*="download" i] svg, [class*="export" i] svg'
+                    );
+                    if (svgIcons.length > 0) return 'ready';
+                    // Fallback: any visible button with download/export text
+                    for (const btn of document.querySelectorAll('button, a')) {
+                        const label = (btn.innerText || btn.textContent || '').trim();
+                        if (/download|export|excel|csv|xlsx/i.test(label)) {
+                            if (!btn.disabled && !btn.hasAttribute('disabled')) return 'ready';
+                        }
+                    }
+                    // Check for no-data state.  Patterns must be specific enough
+                    // to avoid false positives on pages that contain partial text
+                    // like "no sales trends" in chart labels while still having data.
+                    const noDataPatterns = /^no data available|no results found|no records found|nothing to show|there are no .* for this period|there aren't any .* for this period/i;
+                    const noDataExact = /\bno data\b(?! available)/i;
+                    if (noDataPatterns.test(text) || (noDataExact.test(text) && text.length < 2000)) {
                         return 'no_data';
                     }
                     if (/unable to load this table|try changing your filters or refreshing the page|something went wrong|failed to load|we are unable to load/i.test(text)) {
