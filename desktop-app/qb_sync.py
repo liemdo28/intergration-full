@@ -856,6 +856,50 @@ class QBSyncClient:
                 })
         return receipts
 
+    def ensure_customer(self, customer_name):
+        """Ensure a Customer exists in QB. Creates it if missing. Returns True on success."""
+        if not customer_name:
+            return False
+        try:
+            # Query for existing customer
+            query_xml = f"""<?qbxml version="{self.qbxml_version}"?>
+            <QBXML>
+            <QBXMLMsgsRq onError="continueOnError">
+                <CustomerQueryRq requestID="1">
+                    <FullName>{escape_xml(customer_name)}</FullName>
+                </CustomerQueryRq>
+            </QBXMLMsgsRq>
+            </QBXML>"""
+            resp = self._send(query_xml)
+            if f"<FullName>{escape_xml(customer_name)}</FullName>" in resp:
+                return True
+        except Exception:
+            pass
+
+        # Customer not found — create it
+        try:
+            add_xml = f"""<?qbxml version="{self.qbxml_version}"?>
+            <QBXML>
+            <QBXMLMsgsRq onError="continueOnError">
+                <CustomerAddRq requestID="1">
+                    <CustomerAdd>
+                        <Name>{escape_xml(customer_name)}</Name>
+                    </CustomerAdd>
+                </CustomerAddRq>
+            </QBXMLMsgsRq>
+            </QBXML>"""
+            resp = self._send(add_xml)
+            if "statusCode" in resp and 'statusCode="0"' in resp:
+                log(f"Created QB customer: {customer_name}")
+                return True
+            if "already in use" in resp.lower() or "already exists" in resp.lower():
+                return True
+            log(f"Could not create customer '{customer_name}': {resp[:200]}")
+            return False
+        except Exception as e:
+            log(f"Error creating customer '{customer_name}': {e}")
+            return False
+
     def check_exists(self, date_str, ref_number):
         matches = self.find_existing_sales_receipts(ref_number)
         return any(match["txn_date"] == date_str and match["ref_number"] == ref_number for match in matches)
