@@ -971,13 +971,37 @@ class ToastDownloader:
         inputs = self._locate_date_inputs()
         if len(inputs) < 2:
             return False
+
+        # Extract raw digits MMDDYYYY for character-by-character typing.
+        # Playwright fill() doesn't trigger React onChange reliably on
+        # controlled inputs, so we click → select all → type each digit.
+        parts = date_str.strip().split("/")
+        if len(parts) != 3:
+            return False
+        try:
+            month, day, year = int(parts[0]), int(parts[1]), int(parts[2])
+            date_raw = f"{month:02d}{day:02d}{year:04d}"
+        except (ValueError, IndexError):
+            return False
+
         try:
             inputs[0].click()
-            inputs[0].fill(date_str)
+            self.page.wait_for_timeout(200)
+            self.page.keyboard.press("Control+a")
+            self.page.wait_for_timeout(100)
+            for ch in date_raw:
+                self.page.keyboard.press(ch)
+                self.page.wait_for_timeout(60)
             self.log(f"    Start date: {date_str}")
-            self.page.wait_for_timeout(250)
+            self.page.wait_for_timeout(300)
+
             inputs[1].click()
-            inputs[1].fill(date_str)
+            self.page.wait_for_timeout(200)
+            self.page.keyboard.press("Control+a")
+            self.page.wait_for_timeout(100)
+            for ch in date_raw:
+                self.page.keyboard.press(ch)
+                self.page.wait_for_timeout(60)
             self.log(f"    End date: {date_str}")
             self.page.wait_for_timeout(350)
         except Exception:
