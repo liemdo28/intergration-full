@@ -615,7 +615,21 @@ class DownloadTab(ctk.CTkFrame):
         gdrive_row = ctk.CTkFrame(option_chip, fg_color="transparent")
         gdrive_row.pack(fill="x", padx=12, pady=12)
         ctk.CTkCheckBox(gdrive_row, text="Upload to Google Drive after download", variable=self.upload_gdrive_var).pack(side="left")
-        make_action_button(gdrive_row, "Open Google Drive", self._open_gdrive_toast_folder, tone="neutral", width=150).pack(side="right")
+        def _open_drive():
+            import threading, webbrowser
+            def _worker():
+                try:
+                    from gdrive_service import GDriveService
+                    gdrive = GDriveService()
+                    if not gdrive.authenticate():
+                        return
+                    root_id = gdrive._get_primary_root_folder()
+                    if root_id:
+                        webbrowser.open(f"https://drive.google.com/drive/folders/{root_id}")
+                except Exception:
+                    pass
+            threading.Thread(target=_worker, daemon=True).start()
+        make_action_button(gdrive_row, "Open Google Drive", _open_drive, tone="neutral", width=150).pack(side="right")
 
         _run_card, run_frame = self._make_section_card(
             content,
