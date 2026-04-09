@@ -904,7 +904,7 @@ class QBSyncClient:
         matches = self.find_existing_sales_receipts(ref_number)
         return any(match["txn_date"] == date_str and match["ref_number"] == ref_number for match in matches)
 
-    def create_sales_receipt(self, txn_date, ref_number, customer_name, memo, lines, class_name=None):
+    def _build_receipt_xml(self, txn_date, ref_number, customer_name, memo, lines, class_name=None):
         lines_xml = ""
         for line in lines:
             amt = line["amount"]
@@ -928,7 +928,7 @@ class QBSyncClient:
                     <FullName>{escape_xml(class_name)}</FullName>
                 </ClassRef>"""
 
-        qbxml = f"""<?xml version="1.0" encoding="utf-8"?>
+        return f"""<?xml version="1.0" encoding="utf-8"?>
 <?qbxml version="{self.qbxml_version}"?>
 <QBXML>
     <QBXMLMsgsRq onError="stopOnError">
@@ -945,9 +945,36 @@ class QBSyncClient:
     </QBXMLMsgsRq>
 </QBXML>"""
 
+    def create_sales_receipt(self, txn_date, ref_number, customer_name, memo, lines, class_name=None):
+        qbxml = self._build_receipt_xml(txn_date, ref_number, customer_name, memo, lines, class_name)
         log(f"  Creating Sales Receipt: #{ref_number} date {txn_date}")
         resp = self._send(qbxml)
         result = self._parse(resp)
+
+        # If posting account is invalid, retry by removing one item at a time
+        # to identify and skip the problematic item.
+        if not result["ok"] and "posting account is invalid" in (result.get("msg") or "").lower():
+            log(f"  Warning: posting account invalid — retrying without problem items...")
+            skipped_items = []
+            valid_lines = list(lines)
+            for line in lines:
+                if line["amount"] == 0:
+                    continue
+                # Try without this line
+                test_lines = [l for l in valid_lines if l is not line]
+                if not test_lines:
+                    continue
+                test_xml = self._build_receipt_xml(txn_date, ref_number, customer_name, memo, test_lines, class_name)
+                test_resp = self._send(test_xml)
+                test_result = self._parse(test_resp)
+                if test_result["ok"]:
+                    skipped_items.append(line["item_name"])
+                    log(f"  Skipped invalid item: {line['item_name']} ({line['amount']})")
+                    result = test_result
+                    break
+                # If still failing, the removed item wasn't the only problem
+                if "posting account is invalid" not in (test_result.get("msg") or "").lower():
+                    break
 
         if result["ok"]:
             txn_id = ""
