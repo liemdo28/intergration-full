@@ -972,24 +972,31 @@ class ToastDownloader:
         if len(inputs) < 2:
             return False
 
-        # Extract raw digits MMDDYYYY for character-by-character typing.
-        # Playwright fill() doesn't trigger React onChange reliably on
-        # controlled inputs, so we click → select all → type each digit.
+        # Determine the right format for typing into date inputs:
+        #   - New Sales Summary UI: inputs auto-format, type raw digits MMDDYYYY
+        #   - Legacy report home (Orders, etc.): inputs need MM/DD/YYYY with slashes
         parts = date_str.strip().split("/")
         if len(parts) != 3:
             return False
         try:
             month, day, year = int(parts[0]), int(parts[1]), int(parts[2])
-            date_raw = f"{month:02d}{day:02d}{year:04d}"
         except (ValueError, IndexError):
             return False
+
+        is_new_ui = "sales-summary" in (self.page.url or "")
+        if is_new_ui:
+            # New UI auto-formats: type raw digits MMDDYYYY
+            type_value = f"{month:02d}{day:02d}{year:04d}"
+        else:
+            # Legacy report home: type MM/DD/YYYY with slashes
+            type_value = f"{month:02d}/{day:02d}/{year:04d}"
 
         try:
             inputs[0].click()
             self.page.wait_for_timeout(200)
             self.page.keyboard.press("Control+a")
             self.page.wait_for_timeout(100)
-            for ch in date_raw:
+            for ch in type_value:
                 self.page.keyboard.press(ch)
                 self.page.wait_for_timeout(60)
             self.log(f"    Start date: {date_str}")
@@ -999,7 +1006,7 @@ class ToastDownloader:
             self.page.wait_for_timeout(200)
             self.page.keyboard.press("Control+a")
             self.page.wait_for_timeout(100)
-            for ch in date_raw:
+            for ch in type_value:
                 self.page.keyboard.press(ch)
                 self.page.wait_for_timeout(60)
             self.log(f"    End date: {date_str}")
