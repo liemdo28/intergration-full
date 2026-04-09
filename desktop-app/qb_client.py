@@ -327,13 +327,15 @@ class QBClient:
         result = self._parse(resp)
         return {"ok": result["ok"], "msg": result.get("msg", "")}
 
-    def delete_transactions(self, txn_list, callback=None):
+    def delete_transactions(self, txn_list, callback=None, should_stop=None):
         total = len(txn_list)
         success = 0
         fail = 0
         errors = []
 
         for i, txn in enumerate(txn_list):
+            if should_stop and should_stop():
+                break
             result = self.delete_transaction(txn["TxnType"], txn["TxnID"])
 
             if result["ok"]:

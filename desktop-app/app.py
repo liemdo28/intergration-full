@@ -675,27 +675,6 @@ class DownloadTab(ctk.CTkFrame):
             state="disabled",
         )
         self.stop_unsave_btn.pack(side="left", padx=(12, 0))
-
-        def _exit_app():
-            try:
-                self._stop_event.set()
-            except Exception:
-                pass
-            root = self.winfo_toplevel()
-            root.after(200, root.destroy)
-
-        ctk.CTkButton(
-            action_row,
-            text="Exit App",
-            font=ctk.CTkFont(size=13, weight="bold"),
-            width=100,
-            height=50,
-            command=_exit_app,
-            fg_color="#dc2626",
-            hover_color="#991b1b",
-            corner_radius=14,
-        ).pack(side="right")
-
         tip_chip = ctk.CTkFrame(action_row, fg_color="#111827", corner_radius=14, border_width=1, border_color="#334155")
         tip_chip.pack(side="left", padx=(12, 0))
         ctk.CTkLabel(
@@ -1189,6 +1168,7 @@ class QBSyncTab(ctk.CTkFrame):
         self.mapping_saved_keys = set()
         self.selected_mapping_candidate = None
         self.pending_force_reruns = {}
+        self._stop_sync_event = threading.Event()
         self.last_sync_run = None
         self.marketplace_path_vars = {}
         self.marketplace_status_labels = {}
@@ -1434,11 +1414,19 @@ class QBSyncTab(ctk.CTkFrame):
             "Execution",
             "Run a preview first when mapping or data quality changed. Use full sync only when the validation panel is clean.",
         )
-        self.sync_btn = ctk.CTkButton(run_frame, text="Sync to QuickBooks",
+        sync_row = ctk.CTkFrame(run_frame, fg_color="transparent")
+        sync_row.pack(fill="x")
+        self.sync_btn = ctk.CTkButton(sync_row, text="Sync to QuickBooks",
                                        font=ctk.CTkFont(size=16, weight="bold"),
                                        height=48, command=self.start_sync,
                                        fg_color="#059669", hover_color="#047857", corner_radius=14)
-        self.sync_btn.pack(fill="x")
+        self.sync_btn.pack(side="left", fill="x", expand=True)
+        self.stop_sync_btn = ctk.CTkButton(
+            sync_row, text="Stop Sync", font=ctk.CTkFont(size=13, weight="bold"),
+            width=120, height=48, command=self._stop_sync,
+            fg_color="#dc2626", hover_color="#991b1b", corner_radius=14, state="disabled",
+        )
+        self.stop_sync_btn.pack(side="left", padx=(12, 0))
 
         # ── Progress ──
         progress_wrap = make_subcard(run_frame)
@@ -1860,6 +1848,12 @@ class QBSyncTab(ctk.CTkFrame):
         self.progress_label.configure(text=f"{msg} ({current}/{total})")
         self.status_var.set(msg)
 
+    def _stop_sync(self):
+        if not self._stop_sync_event.is_set():
+            self._stop_sync_event.set()
+            self.log("Stop requested. Sync will finish the current item, then stop.")
+            self.stop_sync_btn.configure(state="disabled")
+
     def start_sync(self):
         if self._running:
             return
@@ -1873,7 +1867,9 @@ class QBSyncTab(ctk.CTkFrame):
         source_filter = self.source_filter_var.get()
         self._set_validation_records([])
         self._running = True
+        self._stop_sync_event.clear()
         self.sync_btn.configure(state="disabled", text="Syncing...")
+        self.stop_sync_btn.configure(state="normal")
         threading.Thread(target=self._sync_worker,
                           args=(stores, dates, self.source_var.get(), self.preview_var.get(), self.strict_sync_var.get(), source_filter),
                           daemon=True).start()
@@ -2102,6 +2098,9 @@ class QBSyncTab(ctk.CTkFrame):
                     store_cfg = load_csv_mapping(orig_name, store_cfg)
 
                     for date_str in dates:
+                        if self._stop_sync_event.is_set():
+                            self.log("Stop requested. Ending sync batch.")
+                            break
                         current_task += 1
                         self.update_progress(current_task, total_tasks, f"{display_name} - {date_str}")
                         self.log(f"--- {display_name} / {date_str} ---")
@@ -2459,6 +2458,7 @@ class QBSyncTab(ctk.CTkFrame):
                 self.after(0, lambda payload=completion_payload, cb=completion_callback: cb(payload))
             self._running = False
             self.after(0, lambda: self.sync_btn.configure(state="normal", text="Sync to QuickBooks"))
+            self.after(0, lambda: self.stop_sync_btn.configure(state="disabled"))
             self.after(0, lambda: self.status_var.set("Ready"))
             self.after(0, lambda: self.progress_bar.set(0))
             self.after(0, lambda: self.progress_label.configure(text="Ready", text_color="gray"))
@@ -3617,6 +3617,7 @@ class RemoveTab(ctk.CTkFrame):
         self.accounts = []
         self.found_txns = []
         self._running = False
+        self._stop_remove_event = threading.Event()
         self.delete_dry_run_var = ctk.BooleanVar(value=True)
         self._global_cfg, self._stores = load_mapping()
         self._local_cfg = load_local_config()
@@ -3871,6 +3872,12 @@ class RemoveTab(ctk.CTkFrame):
                                           corner_radius=12,
                                           command=self._delete_selected, state="disabled")
         self.btn_delete.pack(fill="x", padx=5, pady=3)
+        self.btn_stop_remove = ctk.CTkButton(
+            btn_frame, text="Stop Remove", height=36,
+            fg_color="#b45309", hover_color="#92400e", corner_radius=12,
+            command=self._stop_remove, state="disabled",
+        )
+        self.btn_stop_remove.pack(fill="x", padx=5, pady=3)
         self._apply_delete_policy_ui()
 
     def _apply_delete_policy_ui(self):
@@ -4213,9 +4220,11 @@ class RemoveTab(ctk.CTkFrame):
                 return
 
         self._running = True
+        self._stop_remove_event.clear()
         self.btn_delete.configure(state="disabled", text="Dry Running..." if dry_run else "Deleting...")
         self.btn_search.configure(state="disabled")
         self.btn_export.configure(state="disabled")
+        self.btn_stop_remove.configure(state="normal")
         self._log(f"Starting {'dry run for' if dry_run else 'deletion of'} {count} transactions...")
         threading.Thread(target=self._delete_worker, args=(txn_list, snapshot_files, dry_run), daemon=True).start()
 
@@ -4235,6 +4244,9 @@ class RemoveTab(ctk.CTkFrame):
         try:
             if dry_run:
                 for index, txn in enumerate(txn_list, start=1):
+                    if self._stop_remove_event.is_set():
+                        self.after(0, lambda: self._log("Stop requested. Ending delete batch."))
+                        break
                     on_progress(index, len(txn_list), txn, True, "Dry run only - no delete sent to QuickBooks")
                 result = {
                     "success_count": 0,
@@ -4243,7 +4255,7 @@ class RemoveTab(ctk.CTkFrame):
                     "dry_run": True,
                 }
             else:
-                result = self.qb.delete_transactions(txn_list, callback=on_progress)
+                result = self.qb.delete_transactions(txn_list, callback=on_progress, should_stop=self._stop_remove_event.is_set)
                 result["dry_run"] = False
 
             audit_files = write_delete_audit(
@@ -4264,10 +4276,17 @@ class RemoveTab(ctk.CTkFrame):
             err_msg = str(e)
             self.after(0, lambda m=err_msg: self._on_delete_error(m))
 
+    def _stop_remove(self):
+        if not self._stop_remove_event.is_set():
+            self._stop_remove_event.set()
+            self._log("Stop requested. Delete will finish the current item, then stop.")
+            self.btn_stop_remove.configure(state="disabled")
+
     def _on_delete_done(self, result):
         self._running = False
         self.btn_search.configure(state="normal")
         self.btn_export.configure(state="normal" if self.txn_rows else "disabled")
+        self.btn_stop_remove.configure(state="disabled")
         mode_label = "Dry run complete" if result.get("dry_run") else "Delete complete"
         self._log(f"{mode_label}: {result['success_count']} deleted, {result['fail_count']} failed")
         if result.get("audit_files"):
