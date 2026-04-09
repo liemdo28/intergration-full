@@ -1013,6 +1013,7 @@ class DownloadTab(ctk.CTkFrame):
             else:
                 self.log("Download browser mode: interactive window")
 
+            drive_skip_keys = set()  # (store, report_key, business_date) already on Drive
             if self.upload_gdrive_var.get():
                 try:
                     from gdrive_service import GDriveService
@@ -1020,6 +1021,26 @@ class DownloadTab(ctk.CTkFrame):
                     gdrive_ready = gdrive.authenticate()
                     if gdrive_ready:
                         self.log("Google Drive ready. Each report will upload immediately after it is available.")
+                        # Pre-scan Drive to skip already-uploaded reports
+                        try:
+                            self.log("Scanning Google Drive for existing reports...")
+                            drive_rows = gdrive.scan_report_inventory(
+                                store_names=locations,
+                                report_types=report_types,
+                            )
+                            for row in drive_rows:
+                                if row.get("business_date"):
+                                    drive_skip_keys.add((
+                                        row["store"],
+                                        row["report_key"],
+                                        row["business_date"],
+                                    ))
+                            if drive_skip_keys:
+                                self.log(f"Found {len(drive_skip_keys)} reports already on Drive — will skip those.")
+                            else:
+                                self.log("No existing reports found on Drive for selected range.")
+                        except Exception as scan_err:
+                            self.log(f"Drive scan warning: {scan_err} — will download all.")
                     else:
                         self.log("Google Drive authentication failed - uploads will be skipped.")
                 except Exception as e:
@@ -1075,7 +1096,10 @@ class DownloadTab(ctk.CTkFrame):
                 dt = datetime.strptime(d, "%Y-%m-%d")
                 toast_dates.append(dt.strftime("%m/%d/%Y"))
 
-            results = downloader.download_reports_daterange(locations=locations, dates=toast_dates, report_types=report_types)
+            results = downloader.download_reports_daterange(
+                locations=locations, dates=toast_dates, report_types=report_types,
+                drive_skip_keys=drive_skip_keys,
+            )
             completion_payload = {
                 "ok": results["success"] == results["total"] and not results.get("stopped"),
                 "message": f"Prepared {results['success']} of {results['total']} files.",

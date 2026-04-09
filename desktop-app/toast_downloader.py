@@ -1645,7 +1645,7 @@ class ToastDownloader:
         dates = [target_date] if target_date else None
         return self.download_reports_daterange(locations=locations, dates=dates)
 
-    def download_reports_daterange(self, locations=None, dates=None, report_types=None):
+    def download_reports_daterange(self, locations=None, dates=None, report_types=None, drive_skip_keys=None):
         """
         Download reports for given locations across a date range.
 
@@ -1654,6 +1654,8 @@ class ToastDownloader:
             dates: list of date strings (MM/DD/YYYY for Toast).
                    None = use Yesterday for all.
             report_types: list of report type keys. None = sales_summary only.
+            drive_skip_keys: set of (store, report_key, business_date) tuples
+                already present on Google Drive — these will be skipped.
 
         Returns:
             dict with success, fail, total counts and list of downloaded files.
@@ -1663,6 +1665,7 @@ class ToastDownloader:
         if not dates:
             dates = [None]  # None = Yesterday
 
+        _drive_skip = drive_skip_keys or set()
         results = {"success": 0, "fail": 0, "skipped": 0, "total": 0, "files": [], "stopped": False}
         total_tasks = len(locations) * len(dates) * len(reports)
         had_unhandled_error = False
@@ -1714,6 +1717,32 @@ class ToastDownloader:
                         self.on_progress(task_num, total_tasks, f"{loc_name} - {date_label} - {report.label}")
                         self.log(f"  [{j+1}/{len(dates)}] Date: {date_label}")
                         self.log(f"    Report: {report.label}")
+
+                        # Skip if this exact (store, report, date) already exists on Drive
+                        business_date_check = self._to_business_date(date_str) if date_str else None
+                        if business_date_check and (loc_name, report.key, business_date_check) in _drive_skip:
+                            self.log(f"    Already on Google Drive — skipping {loc_name}/{report.label}/{business_date_check}")
+                            results["success"] += 1
+                            results["skipped"] += 1
+                            results["files"].append({
+                                "location": loc_name,
+                                "report_key": report.key,
+                                "report_label": report.label,
+                                "report_folder": report.folder_name,
+                                "business_date": business_date_check,
+                                "status": "existing_drive",
+                            })
+                            self.run_audit.append({
+                                "location": loc_name,
+                                "date": date_label,
+                                "report_type": report.key,
+                                "attempt": 0,
+                                "success": True,
+                                "skipped": True,
+                                "reason": "existing_drive",
+                                "business_date": business_date_check,
+                            })
+                            continue
 
                         # Open the report view only on the first date (or
                         # after a navigation failure).  For subsequent dates
