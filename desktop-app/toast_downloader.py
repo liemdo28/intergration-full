@@ -1621,14 +1621,8 @@ class ToastDownloader:
         return manifest_path
 
     def _should_close_browser(self, results, had_unhandled_error):
-        if self.headless:
-            return True
-        if not self.keep_browser_open_on_failure:
-            return True
-        if had_unhandled_error:
-            return False
-        if results.get("fail", 0) > 0:
-            return False
+        # Always close browser when done — results are logged and audited,
+        # no need to keep browser open for manual inspection.
         return True
 
     def download_reports(self, locations=None, target_date=None):

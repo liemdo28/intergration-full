@@ -488,15 +488,12 @@ def test_download_reports_daterange_skips_date_entry_for_wa1():
     assert any("Skipping date entry for WA1" in line for line in logs)
 
 
-def test_should_close_browser_keeps_gui_window_open_on_failure():
+def test_should_close_browser_always_closes():
     downloader = toast_downloader.ToastDownloader(headless=False)
 
-    assert downloader._should_close_browser({"fail": 1}, had_unhandled_error=False) is False
-    assert downloader._should_close_browser({"fail": 0}, had_unhandled_error=True) is False
+    assert downloader._should_close_browser({"fail": 1}, had_unhandled_error=False) is True
+    assert downloader._should_close_browser({"fail": 0}, had_unhandled_error=True) is True
     assert downloader._should_close_browser({"fail": 0}, had_unhandled_error=False) is True
 
-
-def test_should_close_browser_always_closes_in_headless_mode():
-    downloader = toast_downloader.ToastDownloader(headless=True)
-
-    assert downloader._should_close_browser({"fail": 3}, had_unhandled_error=True) is True
+    downloader_headless = toast_downloader.ToastDownloader(headless=True)
+    assert downloader_headless._should_close_browser({"fail": 3}, had_unhandled_error=True) is True
