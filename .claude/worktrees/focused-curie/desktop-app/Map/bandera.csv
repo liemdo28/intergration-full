@@ -1,0 +1,16 @@
+QB,Report,Note
+Food Sale,Food,Gross Sale
+Bar Sale,Bottled Beer | Wine | NA Beverage,Gross Sale
+Discount,Sales discounts,Gross Sale
+Discount:Refunds,Sales refunds,Net Sales Summary
+Tip,Tips,Revenue Summary
+LBW Tax,LBW Tax,Tax Summary
+boee,STATE TAX,Tax Summary
+Marketplace,Marketplace,Tax Summary
+Credit Card,Total of Credit/debit,Payments Summary
+Cash,Total of Cash,Payments Summary
+Gift Card,Total of Gift Card,Payments Summary
+DoorDash,DoorDash,Payments Summary - Other sub type
+Grubhub,Grubhub,Payments Summary - Other sub type
+Uber,Uber Eats,Payments Summary - Other sub type
+Cash Over/Short,auto-balance,Calculated

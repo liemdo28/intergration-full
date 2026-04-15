@@ -1,0 +1,16 @@
+QB,Column,Type
+DD Subtotal,Sum of Subtotal,item
+DD Tax,Sum of Subtotal tax passed to merchant,item
+DD Tips,Sum of Staff tip,item
+DD Adjustments,Sum of Adjustments,item
+DD Marketing Credit,Sum of DoorDash marketing credit,item
+DD Commission,Sum of Commission,item
+DD Marketing Fees,Sum of Marketing fees | (including any applicable taxes),item
+DD Other Fees,Sum of Other merchant fee,item
+DD Cust Disc You,Sum of Customer discounts from marketing | (funded by you),item
+DD Cust Disc DD,Sum of Customer discounts from marketing | (funded by DoorDash),item
+DD Cust Disc 3rd,Sum of Customer discounts from marketing | (funded by a third-party),item
+DD 3rd Party,Sum of Third-party contribution,item
+DD Error Charges,Sum of Error charges,item
+DD Payout,Sum of Net total,payment
+Over/Short,auto-balance,balance

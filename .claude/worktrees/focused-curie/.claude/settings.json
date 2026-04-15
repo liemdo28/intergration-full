@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m pytest tests/test_date_parser.py tests/test_marketplace_sync.py -v)",
+      "Read(//c/Users/liemdo/Downloads/**)",
+      "Bash(timeout 8 python app.py)",
+      "Bash(timeout 10 python app.py)",
+      "Bash(findstr /N \".\")",
+      "Bash(findstr \"^[0-9]*[0-9]$:\")",
+      "Bash(more +10)",
+      "Bash(python -c \":*)",
+      "Bash(timeout 15 python app.py)",
+      "Read(//d E:/Project/Toasttab Quickbook/**)",
+      "Bash(python -m pytest tests/ -q)",
+      "Bash(python -m pytest tests/test_sync_ledger.py -v)",
+      "Bash(python -c \"from datetime import timezone; print\\(''OK''\\)\")",
+      "Bash(python -m pytest tests/test_sync_ledger.py::test_begin_run_and_mark_success -v)"
+    ]
+  }
+}

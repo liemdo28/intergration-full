@@ -1,0 +1,8 @@
+QB,Column,Type
+GH Subtotal,Sum of Subtotal,item
+GH Tax,Sum of Tax Fee,item
+GH Commission,Sum of Commission,item
+GH Processing Fee,Sum of Processing Fee,item
+GH Delivery Commission,Sum of Delivery Commission,item
+GH Payout,Total,payment
+Over/Short,auto-balance,balance

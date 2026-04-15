@@ -1,0 +1,19 @@
+{
+  "qbw_paths": {
+    "The Rim": "D:\\QB\\JHT Ventures.qbw",
+    "Stockton": "D:\\QB\\Raw\\RawStockton.qbw"
+  },
+  "marketplace_paths": {
+    "Stockton": {
+      "Uber": "C:\\Users\\YourName\\Downloads\\UberSale.csv",
+      "DoorDash": "C:\\Users\\YourName\\Downloads\\DoordashSale.csv",
+      "Grubhub": "C:\\Users\\YourName\\Downloads\\GrubhubSale.csv"
+    }
+  },
+  "last_qbw_dir": "D:\\QB",
+  "last_marketplace_dir": "C:\\Users\\YourName\\Downloads",
+  "delete_policy": {
+    "allow_live_delete": false,
+    "approver": "Accounting lead"
+  }
+}
