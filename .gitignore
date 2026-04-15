@@ -17,3 +17,7 @@ desktop-app/sync-ledger.db
 desktop-app/build/
 desktop-app/dist/
 desktop-app/release/
+.claude/worktrees/
+.claude/settings.local.json
+desktop-app/agentai-runtime-state.json
+desktop-app/report-inventory.db
