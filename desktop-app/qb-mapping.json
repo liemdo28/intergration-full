@@ -85,6 +85,7 @@
       "qbw_match": "coppers",
       "password": "pass1",
       "toast_locations": ["WA1", "WA2", "WA3"],
+      "customer_name": "Copper",
       "sub_stores": {
         "C1": {"toast_location": "WA1", "customer_name": "C1", "class_name": "C1"},
         "C2": {"toast_location": "WA2", "customer_name": "C2", "class_name": "C2"},
@@ -98,20 +99,18 @@
       "qbw_match": "ift",
       "password": "pass3",
       "toast_location": "IFT",
-      "customer_name": "_TODO",
+      "customer_name": "IFT",
       "sale_no_prefix": "",
-      "csv_map": "ift.csv",
-      "_note": "IFT uses Squareup, not Toast. Mapping TBD"
+      "csv_map": "ift.csv"
     },
 
     "Jinya": {
       "qbw_match": "jinya",
       "password": "pass1",
       "toast_location": "Jinya",
-      "customer_name": "_TODO",
+      "customer_name": "Jinya",
       "sale_no_prefix": "",
-      "csv_map": "jinya.csv",
-      "_note": "Mapping TBD - need to check QB items and customers"
+      "csv_map": "jinya.csv"
     }
   }
 }

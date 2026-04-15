@@ -12,6 +12,23 @@ from toast_reports import REPORT_TYPES, get_report_type, infer_report_type, norm
 from worker_runtime import build_runtime_snapshot
 
 
+# Lazy-loaded store config cache
+_STORE_CONFIG_CACHE: dict | None = None
+
+
+def _load_mapping_cached():
+    global _STORE_CONFIG_CACHE
+    if _STORE_CONFIG_CACHE is None:
+        from mapping_maintenance import load_mapping_config
+        _STORE_CONFIG_CACHE = load_mapping_config()
+    return _STORE_CONFIG_CACHE
+
+
+def _get_customer_name_for_store(store_name: str) -> str:
+    cfg = _load_mapping_cached()
+    return cfg.get("stores", {}).get(store_name, {}).get("customer_name") or "Toasttab"
+
+
 KNOWN_TOAST_STORES = (
     "Stockton",
     "The Rim",
@@ -347,6 +364,28 @@ def collect_qb_sync_state(base_dir: str | Path | None = None) -> dict:
     }
 
 
+def _get_sources_for_store_from_db(base_dir: Path, store: str) -> list[str]:
+    """Discover actual source names synced for a store from the sync ledger."""
+    db_path = base_dir / "sync-ledger.db"
+    if not db_path.exists():
+        return []
+    try:
+        with sqlite3.connect(db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT DISTINCT source_name
+                FROM sync_runs
+                WHERE store = ? AND status IN ('success', 'preview_success')
+                ORDER BY source_name
+                """,
+                (store,),
+            ).fetchall()
+        return [row["source_name"] for row in rows if row["source_name"]]
+    except Exception:
+        return []
+
+
 def _next_day(date_str: str | None) -> str | None:
     if not date_str:
         return None
@@ -417,6 +456,7 @@ def get_auto_qb_sync_plan(
     plan_items = []
 
     for store in selected_stores:
+        primary_source = _get_customer_name_for_store(store)
         latest_download = latest_downloads.get((store, "sales_summary"))
         if not latest_download or not latest_download.get("business_date"):
             continue
@@ -425,7 +465,7 @@ def get_auto_qb_sync_plan(
             latest_download["business_date"],
             get_safe_target_date([store], include_today=include_today, now=now),
         )
-        last_qb = latest_qb_success.get((store, "Toasttab"))
+        last_qb = latest_qb_success.get((store, primary_source))
         if last_qb and last_qb.get("date"):
             start_date = _next_day(last_qb["date"])
         else:
@@ -435,7 +475,7 @@ def get_auto_qb_sync_plan(
             plan_items.append(
                 {
                     "store": store,
-                    "source_name": "Toasttab",
+                    "source_name": primary_source,
                     "start_date": start_date,
                     "end_date": target_end,
                     "last_download_date": latest_download["business_date"],
@@ -446,7 +486,7 @@ def get_auto_qb_sync_plan(
     if not plan_items:
         return {
             "has_gap": False,
-            "message": "QB Toasttab sync is already caught up for the selected stores.",
+            "message": f"QB sync is already caught up for the selected stores.",
             "items": [],
         }
 
@@ -469,6 +509,8 @@ def _build_ai_suggestions(
     now: datetime | None = None,
 ) -> list[dict]:
     suggestions: list[dict] = []
+    del include_today  # Reserved for future date-range filtering of suggestions
+    del now            # Reserved for future real-time suggestion updates
     latest_downloads = download_state["latest_by_store_report"]
     latest_attempts = download_state["latest_attempts_by_store_report"]
     latest_qb_success = qb_state["latest_success_by_store_source"]
@@ -505,8 +547,10 @@ def _build_ai_suggestions(
             )
 
     for store in KNOWN_TOAST_STORES:
+        # Use actual customer_name from store config as the sync source identifier
+        primary_source = _get_customer_name_for_store(store)
         sales_download = latest_downloads.get((store, "sales_summary"))
-        qb_success = latest_qb_success.get((store, "Toasttab"))
+        qb_success = latest_qb_success.get((store, primary_source))
         if sales_download and sales_download.get("business_date"):
             qb_start = _next_day(qb_success.get("date")) if qb_success and qb_success.get("date") else sales_download["business_date"]
             qb_end = sales_download["business_date"]
@@ -518,19 +562,19 @@ def _build_ai_suggestions(
                         "priority": 2,
                         "store": store,
                         "action_label": "Catch up QB sync",
-                        "title": f"{store}: QB Toasttab sync behind downloads",
-                        "description": f"Sync Toasttab sales from {qb_start} to {qb_end}.",
+                        "title": f"{store}: QB {primary_source} sync behind downloads",
+                        "description": f"Sync {primary_source} sales from {qb_start} to {qb_end}.",
                         "start_date": qb_start,
                         "end_date": qb_end,
-                        "source_filter": "toast",
+                        "source_filter": primary_source,
                         "prompt": (
-                            f"Prepare a catch-up QuickBooks sync plan for {store} using Toasttab sales summaries "
+                            f"Prepare a catch-up QuickBooks sync plan for {store} using {primary_source} sales summaries "
                             f"from {qb_start} to {qb_end}."
                         ),
                     }
                 )
 
-        qb_attempt = latest_qb_attempts.get((store, "Toasttab"))
+        qb_attempt = latest_qb_attempts.get((store, primary_source))
         if qb_attempt and qb_attempt.get("status") == "failed":
             suggestions.append(
                 {
@@ -540,12 +584,12 @@ def _build_ai_suggestions(
                     "store": store,
                     "action_label": "Review failed QB sync",
                     "title": f"{store}: QB sync failed",
-                        "description": qb_attempt.get("error_message") or "The latest Toasttab QB sync failed.",
+                        "description": qb_attempt.get("error_message") or f"The latest {primary_source} QB sync failed.",
                         "start_date": qb_attempt.get("date"),
                         "end_date": qb_attempt.get("date"),
-                        "source_filter": "toast",
+                        "source_filter": primary_source,
                         "prompt": (
-                            f"Investigate the failed Toasttab to QuickBooks sync for {store} on {qb_attempt.get('date')} "
+                            f"Investigate the failed {primary_source} to QuickBooks sync for {store} on {qb_attempt.get('date')} "
                             f"and propose the next recovery step."
                         ),
                     }

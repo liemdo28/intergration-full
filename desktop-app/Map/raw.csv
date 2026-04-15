@@ -1,16 +1,14 @@
-﻿QB,Report,Note
-Toast:Food Sales,Happy Hour | Kitchen | Sushi,Gross Sale
-Toast:Bar Sales,Beer + Wine | Liquor | NA Bev | Non-Grat Svc Charges | Online Sales Order,Gross Sale
-Discount/comp/Payment error,Sales discounts,Gross Sale
-Gloria Food sales,null,
-Tips,Tips + Gratuity,Revenue Summary
-GF Tips,,
-Sales tax,Tax amount,Revenue Summary
-GF Sales tax,null,
-Gift Cards Sold,,
-Total,,
-CASH 2021,Total of Cash,Payments Summary
-Credit Card,Total of Credit/debit,Payments Summary
-Gloriafood Online,null,
-Gift Certificate Redeemed,Other,Payments Summary
+QB,Report,Note
+Food Sales,Food,Sales Category - Net Sales
+Bar Sales,Draft Beer | Bottled Beer | Wine | Liquor | N/A Beverages | Non-Grat Svc Charges,Sales Category - Net Sales
+Discount/comp/error Adjustment,Sales discounts,Net Sales Summary
+Tips Paid Out,Tips,Revenue Summary
+boe,Tax amount,Revenue Summary
+Customer Contribution,Service charges total,Service Charge Summary
+Cash,Total of Cash,Payments Summary
+CC25,Total of Credit/debit,Payments Summary
+Gift Certificates,Total of Gift Card,Payments Summary
+DOORD,DoorDash,Payments Summary - Other sub type
+GrubH,Grubhub,Payments Summary - Other sub type
+Ube,Uber Eats,Payments Summary - Other sub type
 Over/Short,auto-balance,Calculated

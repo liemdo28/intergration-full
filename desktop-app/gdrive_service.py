@@ -216,7 +216,11 @@ class GDriveService:
         candidates = []
         seen = set()
         configured_root_id, configured_root_name = self._resolve_root_folder()
-        roots = [(configured_root_name, configured_root_id)] if configured_root_id else self._find_existing_root_folders()
+        # Only scan the PRIMARY root (the one returned by _resolve_root_folder).
+        # Previously this also scanned legacy root folders (Toasttab, Toast Reports,
+        # ToastUploads) which caused duplicate uploads to multiple root folders.
+        # If a root_folder_id is configured, use ONLY that folder.
+        roots = [(configured_root_name, configured_root_id)] if configured_root_id else []
         for root_name, root_id in roots:
             if self._configured_brand_folder_name:
                 brand_root_id = self._find_folder(self._configured_brand_folder_name, root_id)

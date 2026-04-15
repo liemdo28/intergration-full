@@ -9,7 +9,6 @@ import logging
 import re
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
-from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Optional, Union
 
@@ -155,7 +154,56 @@ TOAST_FILENAME_PATTERNS = [
     re.compile(r"Toast[_-](\d{8})", re.IGNORECASE),
     # SalesSummary_20260328.xlsx (compact, single date)
     re.compile(r"SalesSummary[_-](\d{8})", re.IGNORECASE),
+    # 03-01-2026 or 3-1-2026 (US dash format)
+    re.compile(r"(\d{1,2})[-_](\d{1,2})[-_](\d{4})", re.IGNORECASE),
+    # 20260301 (compact YYYYMMDD anywhere in filename)
+    re.compile(r"(20\d{2})(\d{2})(\d{2})", re.IGNORECASE),
 ]
+
+
+def _parse_compact_yyyymmdd(text: str) -> ParseResult:
+    """Parse YYYYMMDD compact date from filename."""
+    m = re.match(r"(20\d{2})(\d{2})(\d{2})", text)
+    if not m:
+        return ParseResult(success=False, error="Not YYYYMMDD", source="filename")
+    y, mo, d = int(m.group(1)), int(m.group(2)), int(m.group(3))
+    try:
+        dt = date(y, mo, d)
+        return ParseResult(
+            success=True,
+            value=ParsedDate(date_str=dt.strftime("%Y-%m-%d"), original=text, source="filename"),
+            source="filename",
+        )
+    except ValueError:
+        return ParseResult(success=False, error=f"Invalid date {y}-{mo}-{d}", source="filename")
+
+
+def _parse_us_dashed_date(text: str) -> ParseResult:
+    """Parse MMDDYYYY or DDMMYYYY (dash/underscore separated) from filename."""
+    m = re.match(r"(\d{1,2})[-_](\d{1,2})[-_](\d{4})", text)
+    if not m:
+        return ParseResult(success=False, error="Not US dashed date", source="filename")
+    a, b, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+    # Try MM-DD-YYYY first (US convention)
+    try:
+        dt = date(y, a, b)
+        return ParseResult(
+            success=True,
+            value=ParsedDate(date_str=dt.strftime("%Y-%m-%d"), original=text, source="filename"),
+            source="filename",
+        )
+    except ValueError:
+        pass
+    # Fallback: DD-MM-YYYY
+    try:
+        dt = date(y, b, a)
+        return ParseResult(
+            success=True,
+            value=ParsedDate(date_str=dt.strftime("%Y-%m-%d"), original=text, source="filename"),
+            source="filename",
+        )
+    except ValueError:
+        return ParseResult(success=False, error=f"Invalid date {a}/{b}/{y}", source="filename")
 
 
 def parse_toast_filename(filepath: str | Path) -> ParseResult:
@@ -163,9 +211,13 @@ def parse_toast_filename(filepath: str | Path) -> ParseResult:
     Parse date range from Toast report filename.
 
     Supports multiple filename patterns:
-    - SalesSummary_2026-03-28_2026-03-28.xlsx
-    - Toast_2024-01-15_to_2024-01-21.xlsx
-    - SalesSummary_20260328.xlsx (compact)
+    - SalesSummary_2026-03-28_2026-03-28.xlsx  (range)
+    - SalesSummary_2026-03-28.xlsx            (single ISO date)
+    - Toast_2024-01-15_to_2024-01-21.xlsx     (alternative range)
+    - Toast_20260328.xlsx                     (compact YYYYMMDD)
+    - SalesSummary_20260328.xlsx              (compact YYYYMMDD)
+    - 03-01-2026_SalesSummary_Stockton.xlsx   (date first, US format)
+    - 20260301_SalesSummary_Stockton.xlsx    (compact date first)
 
     Returns ParseResult with DateRange (for two dates) or ParsedDate (for single).
     """
@@ -175,7 +227,12 @@ def parse_toast_filename(filepath: str | Path) -> ParseResult:
         match = pattern.search(filename)
         if match:
             groups = match.groups()
-            if len(groups) == 2:
+            if len(groups) == 3:
+                # Pattern: (m1, m2, year) → could be MMDDYYYY or DDMMYYYY
+                result = _parse_us_dashed_date(match.group(0))
+                if result.success:
+                    return result
+            elif len(groups) == 2:
                 # Date range: start and end
                 start_result = parse_date_flexible(groups[0], "filename")
                 end_result = parse_date_flexible(groups[1], "filename")
@@ -192,18 +249,9 @@ def parse_toast_filename(filepath: str | Path) -> ParseResult:
                 # Single date (compact format: YYYYMMDD)
                 compact_date = groups[0]
                 if len(compact_date) == 8 and compact_date.isdigit():
-                    formatted = f"{compact_date[:4]}-{compact_date[4:6]}-{compact_date[6:8]}"
-                    iso = parse_iso_date(formatted)
-                    if iso:
-                        return ParseResult(
-                            success=True,
-                            value=ParsedDate(
-                                date_str=formatted,
-                                original=filename,
-                                source="filename",
-                            ),
-                            source="filename",
-                        )
+                    result = _parse_compact_yyyymmdd(compact_date)
+                    if result.success:
+                        return result
 
     return ParseResult(
         success=False,

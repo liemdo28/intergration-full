@@ -746,6 +746,30 @@ class ToastDownloader:
             self.log(f"  Final switch check still shows location: {last_detected}")
         return False
 
+
+    # -- FIX: Retry on navigation / context-destroy errors -------------
+    def _safe_eval(self, script, *args):
+        """Execute page.evaluate() with auto-retry on navigation crashes."""
+        NAV_ERRORS = (
+            "Execution context was destroyed",
+            "navigation",
+            "Page closed",
+        )
+        for attempt in range(2):
+            try:
+                return self.page.evaluate(script, *args)
+            except Exception as e:
+                err_str = str(e)
+                if attempt < 1 and any(x in err_str for x in NAV_ERRORS):
+                    self.log("      Navigation detected in evaluate, retrying...")
+                    try:
+                        self.page.wait_for_load_state("load", timeout=15000)
+                        self.page.wait_for_load_state("networkidle", timeout=10000)
+                    except Exception:
+                        pass
+                    continue
+                raise
+
     def _open_date_picker(self):
         """
         Open the date picker dropdown.
@@ -757,46 +781,46 @@ class ToastDownloader:
         self.page.wait_for_timeout(1000)
 
         if self.legacy_sales_summary_active:
-            try:
-                found = self.page.evaluate("""() => {
-                    const normalize = (value) => (value || '').replace(/\\s+/g, ' ').trim();
-                    const hasDateText = (text) =>
-                        /today|yesterday|custom|last 7 days|this month|last month/i.test(text) ||
-                        /\\d{1,2}\\/\\d{1,2}\\/\\d{4}/.test(text) ||
-                        /[A-Z][a-z]{2}\\s+\\d{1,2},\\s+\\d{4}/.test(text);
-                    const blocked = /(show percentages|leave feedback|sales summary|raw sushi bistro|bakudan|stockton|bandera|the rim|stone oak|wa1|wa2|wa3)/i;
-                    const candidates = Array.from(document.querySelectorAll('main button, main [role="button"], main [role="combobox"], main a, main div, main span'));
-                    let best = null;
-                    for (const node of candidates) {
-                        const text = normalize(node.innerText || node.textContent || '');
-                        if (!text || text.length > 160) continue;
-                        if (!hasDateText(text)) continue;
-                        if (blocked.test(text) && !/^custom/i.test(text)) continue;
-                        const rect = node.getBoundingClientRect?.();
-                        if (!rect) continue;
-                        if (rect.width < 60 || rect.height < 24) continue;
-                        if (rect.top < 80 || rect.top > 280) continue;
-                        if (rect.left < 180 || rect.left > 900) continue;
-                        const target = node.closest('button, [role="button"], [role="combobox"], a') || node;
-                        const score = (text.toLowerCase().includes('custom') ? 30 : 0) + (/[A-Z][a-z]{2}\\s+\\d{1,2},\\s+\\d{4}|\\d{1,2}\\/\\d{1,2}\\/\\d{4}/.test(text) ? 20 : 0) - Math.abs(rect.left - 420);
-                        if (!best || score > best.score) {
-                            best = { target, text, score };
+                try:
+                    found = self._safe_eval("""() => {
+                        const normalize = (value) => (value || '').replace(/\\s+/g, ' ').trim();
+                        const hasDateText = (text) =>
+                            /today|yesterday|custom|last 7 days|this month|last month/i.test(text) ||
+                            /\\d{1,2}\\/\\d{1,2}\\/\\d{4}/.test(text) ||
+                            /[A-Z][a-z]{2}\\s+\\d{1,2},\\s+\\d{4}/.test(text);
+                        const blocked = /(show percentages|leave feedback|sales summary|raw sushi bistro|bakudan|stockton|bandera|the rim|stone oak|wa1|wa2|wa3)/i;
+                        const candidates = Array.from(document.querySelectorAll('main button, main [role="button"], main [role="combobox"], main a, main div, main span'));
+                        let best = null;
+                        for (const node of candidates) {
+                            const text = normalize(node.innerText || node.textContent || '');
+                            if (!text || text.length > 160) continue;
+                            if (!hasDateText(text)) continue;
+                            if (blocked.test(text) && !/^custom/i.test(text)) continue;
+                            const rect = node.getBoundingClientRect?.();
+                            if (!rect) continue;
+                            if (rect.width < 60 || rect.height < 24) continue;
+                            if (rect.top < 80 || rect.top > 280) continue;
+                            if (rect.left < 180 || rect.left > 900) continue;
+                            const target = node.closest('button, [role="button"], [role="combobox"], a') || node;
+                            const score = (text.toLowerCase().includes('custom') ? 30 : 0) + (/[A-Z][a-z]{2}\\s+\\d{1,2},\\s+\\d{4}|\\d{1,2}\\/\\d{1,2}\\/\\d{4}/.test(text) ? 20 : 0) - Math.abs(rect.left - 420);
+                            if (!best || score > best.score) {
+                                best = { target, text, score };
+                            }
                         }
-                    }
-                    if (!best) return null;
-                    try {
-                        best.target.click();
-                        return best.text;
-                    } catch (_err) {
-                        return null;
-                    }
-                }""")
-                if found:
-                    self.log(f"    Opened date picker: [{found}]")
-                    self.page.wait_for_timeout(1000)
-                    return True
-            except Exception:
-                pass
+                        if (!best) return null;
+                        try {
+                            best.target.click();
+                            return best.text;
+                        } catch (_err) {
+                            return null;
+                        }
+                    }""")
+                    if found:
+                        self.log(f"    Opened date picker: [{found}]")
+                        self.page.wait_for_timeout(1000)
+                        return True
+                except Exception:
+                    pass
 
         # The date picker button is in the report controls area.
         # It contains a calendar icon and date range text.
@@ -812,263 +836,263 @@ class ToastDownloader:
         # text, so we must find the NARROWEST element that contains a date label
         # and date pattern without also containing "Custom hours" or location info.
         date_labels = [
-            "Yesterday", "Today", "This week", "Last week",
-            "Last 7 days", "This month", "Last month", "Custom",
+                "Yesterday", "Today", "This week", "Last week",
+                "Last 7 days", "This month", "Last month", "Custom",
         ]
 
-        found = self.page.evaluate("""(labels) => {
-            const selectors = [
-                'button',
-                '[role="button"]',
-                '[role="combobox"]',
-                '[aria-haspopup="listbox"]',
-                '[aria-haspopup="menu"]',
-                '[data-testid*="date" i]',
-                '[class*="date" i]',
-                'div',
-                'span',
-            ];
-            const seen = new Set();
-            const nodes = [];
-            selectors.forEach((selector) => {
-                document.querySelectorAll(selector).forEach((node) => {
-                    if (seen.has(node)) return;
-                    seen.add(node);
-                    nodes.push(node);
+        found = self._safe_eval("""(labels) => {
+                const selectors = [
+                    'button',
+                    '[role="button"]',
+                    '[role="combobox"]',
+                    '[aria-haspopup="listbox"]',
+                    '[aria-haspopup="menu"]',
+                    '[data-testid*="date" i]',
+                    '[class*="date" i]',
+                    'div',
+                    'span',
+                ];
+                const seen = new Set();
+                const nodes = [];
+                selectors.forEach((selector) => {
+                    document.querySelectorAll(selector).forEach((node) => {
+                        if (seen.has(node)) return;
+                        seen.add(node);
+                        nodes.push(node);
+                    });
                 });
-            });
 
-            const hasDatePattern = (text) =>
-                /\\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\\b/.test(text) ||
-                /\\d{1,2}\\/\\d{1,2}\\/\\d{4}/.test(text);
-            const hasDateRangePattern = (text) =>
-                /\\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\\s+\\d{1,2},\\s+\\d{4}\\s*[-–]\\s*\\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\\s+\\d{1,2},\\s+\\d{4}/i.test(text) ||
-                /\\d{1,2}\\/\\d{1,2}\\/\\d{4}\\s*[-–]\\s*\\d{1,2}\\/\\d{1,2}\\/\\d{4}/.test(text);
+                const hasDatePattern = (text) =>
+                    /\\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\\b/.test(text) ||
+                    /\\d{1,2}\\/\\d{1,2}\\/\\d{4}/.test(text);
+                const hasDateRangePattern = (text) =>
+                    /\\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\\s+\\d{1,2},\\s+\\d{4}\\s*[-–]\\s*\\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\\s+\\d{1,2},\\s+\\d{4}/i.test(text) ||
+                    /\\d{1,2}\\/\\d{1,2}\\/\\d{4}\\s*[-–]\\s*\\d{1,2}\\/\\d{1,2}\\/\\d{4}/.test(text);
 
-            // Score candidates by specificity: prefer the narrowest element that
-            // contains a date label + date pattern.  Skip elements whose own text
-            // also includes "Custom hours" (that's the separate hours dropdown).
-            let best = null;
+                // Score candidates by specificity: prefer the narrowest element that
+                // contains a date label + date pattern.  Skip elements whose own text
+                // also includes "Custom hours" (that's the separate hours dropdown).
+                let best = null;
 
-            for (const node of nodes) {
-                const text = (node.innerText || node.textContent || '').trim();
-                if (!text) continue;
-                if (text.length > 140) continue;
-                const rect = node.getBoundingClientRect?.();
-                if (rect) {
-                    if (rect.width < 40 || rect.height < 18) continue;
-                    if (rect.top < -10 || rect.top > 320) continue;
-                    if (rect.left < 120 || rect.left > 1200) continue;
-                }
+                for (const node of nodes) {
+                    const text = (node.innerText || node.textContent || '').trim();
+                    if (!text) continue;
+                    if (text.length > 140) continue;
+                    const rect = node.getBoundingClientRect?.();
+                    if (rect) {
+                        if (rect.width < 40 || rect.height < 18) continue;
+                        if (rect.top < -10 || rect.top > 320) continue;
+                        if (rect.left < 120 || rect.left > 1200) continue;
+                    }
 
-                // Check if this element's own text (NOT children) includes
-                // "Custom hours" — if so, it's too broad a container.
-                if (text.includes('Custom hours')) continue;
+                    // Check if this element's own text (NOT children) includes
+                    // "Custom hours" — if so, it's too broad a container.
+                    if (text.includes('Custom hours')) continue;
 
-                let matchesLabel = false;
-                let matchesDate = hasDatePattern(text) || hasDateRangePattern(text);
-                for (const label of labels) {
-                    if (text.includes(label)) {
-                        matchesLabel = true;
-                        break;
+                    let matchesLabel = false;
+                    let matchesDate = hasDatePattern(text) || hasDateRangePattern(text);
+                    for (const label of labels) {
+                        if (text.includes(label)) {
+                            matchesLabel = true;
+                            break;
+                        }
+                    }
+
+                    if (!matchesLabel && !matchesDate) continue;
+
+                    // Prefer elements that match BOTH a label and a date pattern.
+                    // Among those, prefer narrower elements (smaller text length and
+                    // smaller bounding box area) to avoid clicking a large container.
+                    const hasBoth = matchesLabel && matchesDate;
+                    const area = rect ? rect.width * rect.height : 999999;
+                    const score = (hasBoth ? 10000 : 0) - text.length - area / 1000;
+
+                    if (!best || score > best.score) {
+                        best = { node, text, score };
                     }
                 }
 
-                if (!matchesLabel && !matchesDate) continue;
-
-                // Prefer elements that match BOTH a label and a date pattern.
-                // Among those, prefer narrower elements (smaller text length and
-                // smaller bounding box area) to avoid clicking a large container.
-                const hasBoth = matchesLabel && matchesDate;
-                const area = rect ? rect.width * rect.height : 999999;
-                const score = (hasBoth ? 10000 : 0) - text.length - area / 1000;
-
-                if (!best || score > best.score) {
-                    best = { node, text, score };
+                if (best) {
+                    best.node.click();
+                    return best.text.replace(/\\n/g, ' | ');
                 }
-            }
 
-            if (best) {
-                best.node.click();
-                return best.text.replace(/\\n/g, ' | ');
-            }
+                // Fallback: look for calendar icon elements and walk up to their
+                // clickable ancestor.
+                const calendarTargets = Array.from(document.querySelectorAll(
+                    'svg[data-icon*="calendar" i], [aria-label*="calendar" i], ' +
+                    '[class*="calendar" i], [data-testid*="calendar" i], ' +
+                    'svg[class*="calendar" i]'
+                ))
+                    .map((node) => node.closest('button, [role="button"], [role="combobox"], [aria-haspopup], div'))
+                    .filter(Boolean);
+                for (const target of calendarTargets) {
+                    const text = (target.innerText || target.textContent || '').trim();
+                    if (text.includes('Custom hours')) continue;
+                    // Accept the calendar icon's parent if it contains any date text
+                    // or a known label.
+                    const relevant = hasDatePattern(text) || hasDateRangePattern(text) ||
+                        labels.some((label) => text.includes(label));
+                    if (!relevant && text.length > 0) continue;
+                    target.click();
+                    return text ? text.replace(/\\n/g, ' | ') : '[calendar icon]';
+                }
 
-            // Fallback: look for calendar icon elements and walk up to their
-            // clickable ancestor.
-            const calendarTargets = Array.from(document.querySelectorAll(
-                'svg[data-icon*="calendar" i], [aria-label*="calendar" i], ' +
-                '[class*="calendar" i], [data-testid*="calendar" i], ' +
-                'svg[class*="calendar" i]'
-            ))
-                .map((node) => node.closest('button, [role="button"], [role="combobox"], [aria-haspopup], div'))
-                .filter(Boolean);
-            for (const target of calendarTargets) {
-                const text = (target.innerText || target.textContent || '').trim();
-                if (text.includes('Custom hours')) continue;
-                // Accept the calendar icon's parent if it contains any date text
-                // or a known label.
-                const relevant = hasDatePattern(text) || hasDateRangePattern(text) ||
-                    labels.some((label) => text.includes(label));
-                if (!relevant && text.length > 0) continue;
-                target.click();
-                return text ? text.replace(/\\n/g, ' | ') : '[calendar icon]';
-            }
-
-            return null;
+                return null;
         }""", date_labels)
 
         if found:
-            self.log(f"    Opened date picker: [{found}]")
-            self.page.wait_for_timeout(1000)
-            return True
+                self.log(f"    Opened date picker: [{found}]")
+                self.page.wait_for_timeout(1000)
+                return True
 
         self.log("    Could not find date picker button")
         return False
 
     def _locate_date_inputs(self):
         selectors = [
-            '[role="dialog"] input',
-            '[aria-modal="true"] input',
-            'input[placeholder*="Start" i]',
-            'input[placeholder*="End" i]',
-            'input[aria-label*="Start" i]',
-            'input[aria-label*="End" i]',
-            'input[name*="start" i]',
-            'input[name*="end" i]',
-            'input[data-testid*="start" i]',
-            'input[data-testid*="end" i]',
-            'input',
+                '[role="dialog"] input',
+                '[aria-modal="true"] input',
+                'input[placeholder*="Start" i]',
+                'input[placeholder*="End" i]',
+                'input[aria-label*="Start" i]',
+                'input[aria-label*="End" i]',
+                'input[name*="start" i]',
+                'input[name*="end" i]',
+                'input[data-testid*="start" i]',
+                'input[data-testid*="end" i]',
+                'input',
         ]
         seen = []
         for sel in selectors:
-            try:
-                for locator in self.page.locator(sel).all():
-                    try:
-                        if not locator.is_visible(timeout=300):
-                            continue
-                        text = ""
+                try:
+                    for locator in self.page.locator(sel).all():
                         try:
-                            text = (locator.get_attribute("type") or "").lower()
-                        except Exception:
+                            if not locator.is_visible(timeout=300):
+                                continue
                             text = ""
-                        if text in {"hidden", "checkbox", "radio"}:
+                            try:
+                                text = (locator.get_attribute("type") or "").lower()
+                            except Exception:
+                                text = ""
+                            if text in {"hidden", "checkbox", "radio"}:
+                                continue
+                            seen.append(locator)
+                        except Exception:
                             continue
-                        seen.append(locator)
-                    except Exception:
-                        continue
-            except Exception:
-                continue
+                except Exception:
+                    continue
         unique = []
         dedupe = set()
         for locator in seen:
-            key = id(locator)
-            if key in dedupe:
-                continue
-            dedupe.add(key)
-            unique.append(locator)
+                key = id(locator)
+                if key in dedupe:
+                    continue
+                dedupe.add(key)
+                unique.append(locator)
         return unique[:4]
 
     def _fill_custom_date_inputs(self, date_str):
         inputs = self._locate_date_inputs()
         if len(inputs) < 2:
-            return False
+                return False
 
         # Determine the right format for typing into date inputs:
         #   - New Sales Summary UI: inputs auto-format, type raw digits MMDDYYYY
         #   - Legacy report home (Orders, etc.): inputs need MM/DD/YYYY with slashes
         parts = date_str.strip().split("/")
         if len(parts) != 3:
-            return False
+                return False
         try:
-            month, day, year = int(parts[0]), int(parts[1]), int(parts[2])
+                month, day, year = int(parts[0]), int(parts[1]), int(parts[2])
         except (ValueError, IndexError):
-            return False
+                return False
 
         is_new_ui = "sales-summary" in (self.page.url or "")
         if is_new_ui:
-            # New UI auto-formats: type raw digits MMDDYYYY
-            type_value = f"{month:02d}{day:02d}{year:04d}"
+                # New UI auto-formats: type raw digits MMDDYYYY
+                type_value = f"{month:02d}{day:02d}{year:04d}"
         else:
-            # Legacy report home (Orders, etc.): type MM-DD-YYYY with dashes
-            type_value = f"{month:02d}-{day:02d}-{year:04d}"
+                # Legacy report home (Orders, etc.): type MM-DD-YYYY with dashes
+                type_value = f"{month:02d}-{day:02d}-{year:04d}"
 
         try:
-            inputs[0].click()
-            self.page.wait_for_timeout(200)
-            self.page.keyboard.press("Control+a")
-            self.page.wait_for_timeout(100)
-            for ch in type_value:
-                self.page.keyboard.press(ch)
-                self.page.wait_for_timeout(60)
-            self.log(f"    Start date: {date_str}")
-            self.page.wait_for_timeout(300)
+                inputs[0].click()
+                self.page.wait_for_timeout(200)
+                self.page.keyboard.press("Control+a")
+                self.page.wait_for_timeout(100)
+                for ch in type_value:
+                    self.page.keyboard.press(ch)
+                    self.page.wait_for_timeout(60)
+                self.log(f"    Start date: {date_str}")
+                self.page.wait_for_timeout(300)
 
-            inputs[1].click()
-            self.page.wait_for_timeout(200)
-            self.page.keyboard.press("Control+a")
-            self.page.wait_for_timeout(100)
-            for ch in type_value:
-                self.page.keyboard.press(ch)
-                self.page.wait_for_timeout(60)
-            self.log(f"    End date: {date_str}")
-            self.page.wait_for_timeout(350)
+                inputs[1].click()
+                self.page.wait_for_timeout(200)
+                self.page.keyboard.press("Control+a")
+                self.page.wait_for_timeout(100)
+                for ch in type_value:
+                    self.page.keyboard.press(ch)
+                    self.page.wait_for_timeout(60)
+                self.log(f"    End date: {date_str}")
+                self.page.wait_for_timeout(350)
         except Exception:
-            return False
+                return False
 
         if is_new_ui:
-            # New UI: click Apply button directly
-            applied = self._click_first_visible(
-                [
-                    'button:text-is("Apply")',
-                    'button:text-is("Done")',
-                    '[role="button"]:text-is("Apply")',
-                    '[role="button"]:text-is("Done")',
-                ],
-                timeout=1200,
-            )
-            if not applied:
-                try:
-                    inputs[1].press("Enter")
-                    applied = True
-                except Exception:
-                    applied = False
-        else:
-            # Legacy report home: Tab from End date → Update button → Enter.
-            # Stockton needs 4 tabs; other stores (The Rim, Stone Oak, Bandera,
-            # WA1, WA2, WA3) have an extra filter field and need 5 tabs.
-            loc = (self.active_location or "").strip()
-            tab_to_update = 4 if loc == "Stockton" else 5
-            try:
-                for _ in range(tab_to_update):
-                    self.page.keyboard.press("Tab")
-                    self.page.wait_for_timeout(150)
-                self.page.keyboard.press("Enter")
-                applied = True
-            except Exception:
+                # New UI: click Apply button directly
                 applied = self._click_first_visible(
                     [
-                        'button:text-is("Update")',
-                        'input[value="Update"]',
-                        '[role="button"]:text-is("Update")',
+                        'button:text-is("Apply")',
+                        'button:text-is("Done")',
+                        '[role="button"]:text-is("Apply")',
+                        '[role="button"]:text-is("Done")',
                     ],
-                    timeout=1500,
+                    timeout=1200,
                 )
+                if not applied:
+                    try:
+                        inputs[1].press("Enter")
+                        applied = True
+                    except Exception:
+                        applied = False
+        else:
+                # Legacy report home: Tab from End date → Update button → Enter.
+                # Stockton needs 4 tabs; other stores (The Rim, Stone Oak, Bandera,
+                # WA1, WA2, WA3) have an extra filter field and need 5 tabs.
+                loc = (self.active_location or "").strip()
+                tab_to_update = 4 if loc == "Stockton" else 5
+                try:
+                    for _ in range(tab_to_update):
+                        self.page.keyboard.press("Tab")
+                        self.page.wait_for_timeout(150)
+                    self.page.keyboard.press("Enter")
+                    applied = True
+                except Exception:
+                    applied = self._click_first_visible(
+                        [
+                            'button:text-is("Update")',
+                            'input[value="Update"]',
+                            '[role="button"]:text-is("Update")',
+                        ],
+                        timeout=1500,
+                    )
         if applied:
-            self.log(f"    Applied date: {date_str}")
-            # Wait for the report to reload after date change.
-            # Legacy pages may take longer to load data for some stores.
-            self.page.wait_for_timeout(3000)
-            try:
-                self.page.wait_for_load_state("networkidle", timeout=30000)
-            except Exception:
-                pass
-            # Extra wait for legacy report home — the table reloads via AJAX
-            # and may not trigger networkidle consistently.
-            if not is_new_ui:
-                self.page.wait_for_timeout(5000)
-            else:
-                self.page.wait_for_timeout(1500)
-            return True
+                self.log(f"    Applied date: {date_str}")
+                # Wait for the report to reload after date change.
+                # Legacy pages may take longer to load data for some stores.
+                self.page.wait_for_timeout(3000)
+                try:
+                    self.page.wait_for_load_state("networkidle", timeout=30000)
+                except Exception:
+                    pass
+                # Extra wait for legacy report home — the table reloads via AJAX
+                # and may not trigger networkidle consistently.
+                if not is_new_ui:
+                    self.page.wait_for_timeout(5000)
+                else:
+                    self.page.wait_for_timeout(1500)
+                return True
         return False
 
     def _select_custom_date(self, date_str):
@@ -1091,20 +1115,20 @@ class ToastDownloader:
         # Fix: parse M/D/YYYY components and zero-pad each.
         parts = date_str.strip().split("/")
         if len(parts) != 3:
-            raise ValueError(f"Invalid date format (expected MM/DD/YYYY): '{date_str}'")
+                raise ValueError(f"Invalid date format (expected MM/DD/YYYY): '{date_str}'")
         month_s, day_s, year_s = parts
         try:
-            month, day, year = int(month_s), int(day_s), int(year_s)
+                month, day, year = int(month_s), int(day_s), int(year_s)
         except ValueError:
-            raise ValueError(f"Date components must be integers: '{date_str}'")
+                raise ValueError(f"Date components must be integers: '{date_str}'")
         ok, result_or_err = validate_toast_date_format(month, day, year)
         if not ok:
-            raise ValueError(f"Invalid date '{date_str}': {result_or_err}")
+                raise ValueError(f"Invalid date '{date_str}': {result_or_err}")
         date_raw = result_or_err  # Already formatted MMDDYYYY
 
         # Step 1: Open date picker dropdown
         if not self._open_date_picker():
-            return False
+                return False
 
         self.page.wait_for_timeout(500)
 
@@ -1115,134 +1139,134 @@ class ToastDownloader:
         #   B) JavaScript DOM scan (catches any element with matching text)
         #   C) Keyboard navigation (arrow-down through items, press Enter on Custom)
         custom_clicked = self._click_first_visible(
-            [
-                '[role="option"]:text-is("Custom date")',
-                '[role="option"]:text-is("Custom dates")',
-                '[role="option"]:text-is("Custom range")',
-                '[role="option"]:text-is("Custom")',
-                '[role="menuitem"]:text-is("Custom date")',
-                '[role="menuitem"]:text-is("Custom dates")',
-                '[role="menuitem"]:text-is("Custom range")',
-                '[role="menuitem"]:text-is("Custom")',
-                'li:text-is("Custom date")',
-                'li:text-is("Custom dates")',
-                'li:text-is("Custom range")',
-                'li:text-is("Custom")',
-                'button:text-is("Custom date")',
-                'button:text-is("Custom dates")',
-                'button:text-is("Custom range")',
-                'button:text-is("Custom")',
-                'text="Custom date"',
-                'text="Custom dates"',
-                'text="Custom range"',
-                'text="Custom"',
-            ],
-            timeout=800,
-            log_msg="    Clicked 'Custom date' (selector)",
+                [
+                    '[role="option"]:text-is("Custom date")',
+                    '[role="option"]:text-is("Custom dates")',
+                    '[role="option"]:text-is("Custom range")',
+                    '[role="option"]:text-is("Custom")',
+                    '[role="menuitem"]:text-is("Custom date")',
+                    '[role="menuitem"]:text-is("Custom dates")',
+                    '[role="menuitem"]:text-is("Custom range")',
+                    '[role="menuitem"]:text-is("Custom")',
+                    'li:text-is("Custom date")',
+                    'li:text-is("Custom dates")',
+                    'li:text-is("Custom range")',
+                    'li:text-is("Custom")',
+                    'button:text-is("Custom date")',
+                    'button:text-is("Custom dates")',
+                    'button:text-is("Custom range")',
+                    'button:text-is("Custom")',
+                    'text="Custom date"',
+                    'text="Custom dates"',
+                    'text="Custom range"',
+                    'text="Custom"',
+                ],
+                timeout=800,
+                log_msg="    Clicked 'Custom date' (selector)",
         )
         if custom_clicked:
-            self.page.wait_for_timeout(1000)
+                self.page.wait_for_timeout(1000)
 
         # Strategy B: JavaScript DOM scan — finds any visible element whose
         # trimmed text starts with "Custom" and is inside a dropdown / overlay
         # that appeared after opening the date picker.
         if not custom_clicked:
-            custom_clicked = bool(self.page.evaluate("""() => {
-                const customLabels = [
-                    'custom date', 'custom dates', 'custom range', 'custom'
-                ];
-                // Gather candidate elements from overlays, popovers, dropdowns, lists
-                const candidates = Array.from(document.querySelectorAll(
-                    '[role="listbox"] *, [role="menu"] *, [role="dialog"] *, ' +
-                    '[class*="dropdown" i] *, [class*="popover" i] *, ' +
-                    '[class*="overlay" i] *, [class*="picker" i] *, ' +
-                    '[class*="select" i] *, [class*="menu" i] *, ' +
-                    'ul *, ol *, select option, ' +
-                    'a, div, span, li, button, option'
-                ));
-                const seen = new Set();
-                for (const node of candidates) {
-                    if (seen.has(node)) continue;
-                    seen.add(node);
-                    const text = (node.innerText || node.textContent || '').trim();
-                    if (!text || text.length > 40) continue;
-                    const lower = text.toLowerCase();
-                    if (!customLabels.some(label => lower === label)) continue;
-                    const rect = node.getBoundingClientRect();
-                    if (rect.width < 10 || rect.height < 10) continue;
-                    if (rect.top < 0 || rect.bottom > window.innerHeight) continue;
-                    // Scroll into view if needed, then click
-                    node.scrollIntoView?.({block: 'nearest'});
-                    node.click();
-                    return text;
-                }
-                // Also try native <select> elements: if the date picker is a
-                // <select>, set its value to the Custom option.
-                for (const sel of document.querySelectorAll('select')) {
-                    for (const opt of sel.options) {
-                        const optText = opt.text.trim().toLowerCase();
-                        if (customLabels.some(label => optText === label)) {
-                            sel.value = opt.value;
-                            sel.dispatchEvent(new Event('change', {bubbles: true}));
-                            return opt.text.trim();
+                custom_clicked = bool(self._safe_eval("""() => {
+                    const customLabels = [
+                        'custom date', 'custom dates', 'custom range', 'custom'
+                    ];
+                    // Gather candidate elements from overlays, popovers, dropdowns, lists
+                    const candidates = Array.from(document.querySelectorAll(
+                        '[role="listbox"] *, [role="menu"] *, [role="dialog"] *, ' +
+                        '[class*="dropdown" i] *, [class*="popover" i] *, ' +
+                        '[class*="overlay" i] *, [class*="picker" i] *, ' +
+                        '[class*="select" i] *, [class*="menu" i] *, ' +
+                        'ul *, ol *, select option, ' +
+                        'a, div, span, li, button, option'
+                    ));
+                    const seen = new Set();
+                    for (const node of candidates) {
+                        if (seen.has(node)) continue;
+                        seen.add(node);
+                        const text = (node.innerText || node.textContent || '').trim();
+                        if (!text || text.length > 40) continue;
+                        const lower = text.toLowerCase();
+                        if (!customLabels.some(label => lower === label)) continue;
+                        const rect = node.getBoundingClientRect();
+                        if (rect.width < 10 || rect.height < 10) continue;
+                        if (rect.top < 0 || rect.bottom > window.innerHeight) continue;
+                        // Scroll into view if needed, then click
+                        node.scrollIntoView?.({block: 'nearest'});
+                        node.click();
+                        return text;
+                    }
+                    // Also try native <select> elements: if the date picker is a
+                    // <select>, set its value to the Custom option.
+                    for (const sel of document.querySelectorAll('select')) {
+                        for (const opt of sel.options) {
+                            const optText = opt.text.trim().toLowerCase();
+                            if (customLabels.some(label => optText === label)) {
+                                sel.value = opt.value;
+                                sel.dispatchEvent(new Event('change', {bubbles: true}));
+                                return opt.text.trim();
+                            }
                         }
                     }
-                }
-                return null;
-            }"""))
-            if custom_clicked:
-                self.log(f"    Clicked 'Custom date' (JS scan)")
-                self.page.wait_for_timeout(1000)
+                    return null;
+                }"""))
+                if custom_clicked:
+                    self.log(f"    Clicked 'Custom date' (JS scan)")
+                    self.page.wait_for_timeout(1000)
 
         # Strategy C: Keyboard navigation — arrow-down through the dropdown
         # items until "Custom" is reached, then press Enter.
         if not custom_clicked:
-            try:
-                for _ in range(10):
-                    self.page.keyboard.press("ArrowDown")
-                    self.page.wait_for_timeout(150)
-                    focused_text = self.page.evaluate("""() => {
-                        const el = document.activeElement;
-                        if (!el) return '';
-                        return (el.innerText || el.textContent || el.value || '').trim().toLowerCase();
-                    }""")
-                    if focused_text and focused_text.startswith("custom"):
-                        self.page.keyboard.press("Enter")
-                        custom_clicked = True
-                        self.log(f"    Clicked 'Custom date' (keyboard nav)")
-                        self.page.wait_for_timeout(1000)
-                        break
-            except Exception:
-                pass
+                try:
+                    for _ in range(10):
+                        self.page.keyboard.press("ArrowDown")
+                        self.page.wait_for_timeout(150)
+                        focused_text = self._safe_eval("""() => {
+                            const el = document.activeElement;
+                            if (!el) return '';
+                            return (el.innerText || el.textContent || el.value || '').trim().toLowerCase();
+                        }""")
+                        if focused_text and focused_text.startswith("custom"):
+                            self.page.keyboard.press("Enter")
+                            custom_clicked = True
+                            self.log(f"    Clicked 'Custom date' (keyboard nav)")
+                            self.page.wait_for_timeout(1000)
+                            break
+                except Exception:
+                    pass
 
         if not custom_clicked:
-            if self._fill_custom_date_inputs(date_str):
-                return True
-            self.log("    'Custom date' not found in dropdown")
-            self.page.keyboard.press("Escape")
-            return False
+                if self._fill_custom_date_inputs(date_str):
+                    return True
+                self.log("    'Custom date' not found in dropdown")
+                self.page.keyboard.press("Escape")
+                return False
 
         # After selecting "Custom" in the dropdown, the legacy report home
         # page (<select>-based) requires clicking "Update" to show the date
         # input fields.  Without Update, Tab would land on other toolbar
         # buttons (e.g. "Email Export") instead of date inputs.
         if self.legacy_sales_summary_active:
-            update_clicked = self._click_first_visible(
-                [
-                    'button:text-is("Update")',
-                    'input[value="Update"]',
-                    '[role="button"]:text-is("Update")',
-                ],
-                timeout=2000,
-                log_msg="    Clicked 'Update' to show date inputs",
-            )
-            if update_clicked:
-                self.page.wait_for_timeout(2000)
-                try:
-                    self.page.wait_for_load_state("networkidle", timeout=15000)
-                except Exception:
-                    pass
-                self.page.wait_for_timeout(1000)
+                update_clicked = self._click_first_visible(
+                    [
+                        'button:text-is("Update")',
+                        'input[value="Update"]',
+                        '[role="button"]:text-is("Update")',
+                    ],
+                    timeout=2000,
+                    log_msg="    Clicked 'Update' to show date inputs",
+                )
+                if update_clicked:
+                    self.page.wait_for_timeout(2000)
+                    try:
+                        self.page.wait_for_load_state("networkidle", timeout=15000)
+                    except Exception:
+                        pass
+                    self.page.wait_for_timeout(1000)
 
         # After clicking "Custom date", we need to enter the date range.
         # Two strategies:
@@ -1250,27 +1274,27 @@ class ToastDownloader:
         #   - For legacy Toast UI: MUST use keyboard Tab approach because
         #     legacy inputs don't respond properly to programmatic fill().
         if not self.legacy_sales_summary_active:
-            if self._fill_custom_date_inputs(date_str):
-                return True
+                if self._fill_custom_date_inputs(date_str):
+                    return True
 
         # Try programmatic fill first (works if date inputs are visible).
         if self._fill_custom_date_inputs(date_str):
-            return True
+                return True
 
         # Keyboard approach: Tab to Start date → type → Tab to End date → type → Tab → Enter.
         # Legacy UI after Update click: date inputs should be right after the
         # select dropdowns. Try a smaller tab count first.
         tab_count = 4 if self.legacy_sales_summary_active else 2
         for _ in range(tab_count):
-            self.page.keyboard.press("Tab")
-            self.page.wait_for_timeout(200)
+                self.page.keyboard.press("Tab")
+                self.page.wait_for_timeout(200)
 
         # Step 4: Clear and type Start date digit by digit
         self.page.keyboard.press("Control+a")
         self.page.wait_for_timeout(100)
         for ch in date_raw:
-            self.page.keyboard.press(ch)
-            self.page.wait_for_timeout(80)
+                self.page.keyboard.press(ch)
+                self.page.wait_for_timeout(80)
         self.log(f"    Start date: {date_str}")
         self.page.wait_for_timeout(500)
 
@@ -1282,8 +1306,8 @@ class ToastDownloader:
         self.page.keyboard.press("Control+a")
         self.page.wait_for_timeout(100)
         for ch in date_raw:
-            self.page.keyboard.press(ch)
-            self.page.wait_for_timeout(80)
+                self.page.keyboard.press(ch)
+                self.page.wait_for_timeout(80)
         self.log(f"    End date: {date_str}")
         self.page.wait_for_timeout(500)
 
@@ -1298,9 +1322,9 @@ class ToastDownloader:
         # Wait for report to reload
         self.page.wait_for_timeout(3000)
         try:
-            self.page.wait_for_load_state("networkidle", timeout=30000)
+                self.page.wait_for_load_state("networkidle", timeout=30000)
         except Exception:
-            pass
+                pass
         self.page.wait_for_timeout(2000)
 
         return True
@@ -1309,57 +1333,57 @@ class ToastDownloader:
         """Wait for report data and classify the page as ready, no_data, error, or unknown."""
         deadline = time.time() + (max(1000, int(timeout_ms)) / 1000)
         while time.time() < deadline:
-            try:
-                state = self.page.evaluate("""() => {
-                    const extractText = () => (document.body?.innerText || '').replace(/\\s+/g, ' ').trim();
-                    const text = extractText();
-                    // Detect "ready" state: look for an enabled download/export trigger.
-                    // New Sales Summary UI uses SVG icons without text labels.
-                    const readySelectors = [
-                        '[aria-label="Download report"]',
-                        'button[aria-label*="Download" i]',
-                        'button[title*="Download" i]',
-                        '[data-testid*="download" i]',
-                        '[aria-label*="export" i]',
-                    ];
-                    for (const selector of readySelectors) {
-                        const node = document.querySelector(selector);
-                        if (node) {
-                            const btn = node.closest('button, a') || node;
-                            if (!btn.disabled && !btn.hasAttribute('disabled')) return 'ready';
+                try:
+                    state = self.page.evaluate("""() => {
+                        const extractText = () => (document.body?.innerText || '').replace(/\\s+/g, ' ').trim();
+                        const text = extractText();
+                        // Detect "ready" state: look for an enabled download/export trigger.
+                        // New Sales Summary UI uses SVG icons without text labels.
+                        const readySelectors = [
+                            '[aria-label="Download report"]',
+                            'button[aria-label*="Download" i]',
+                            'button[title*="Download" i]',
+                            '[data-testid*="download" i]',
+                            '[aria-label*="export" i]',
+                        ];
+                        for (const selector of readySelectors) {
+                            const node = document.querySelector(selector);
+                            if (node) {
+                                const btn = node.closest('button, a') || node;
+                                if (!btn.disabled && !btn.hasAttribute('disabled')) return 'ready';
+                            }
                         }
-                    }
-                    // Also detect SVG download icons (new UI toolbar)
-                    const svgIcons = document.querySelectorAll(
-                        'svg[class*="download" i], svg[class*="export" i], ' +
-                        '[class*="download" i] svg, [class*="export" i] svg'
-                    );
-                    if (svgIcons.length > 0) return 'ready';
-                    // Fallback: any visible button with download/export text
-                    for (const btn of document.querySelectorAll('button, a')) {
-                        const label = (btn.innerText || btn.textContent || '').trim();
-                        if (/download|export|excel|csv|xlsx/i.test(label)) {
-                            if (!btn.disabled && !btn.hasAttribute('disabled')) return 'ready';
+                        // Also detect SVG download icons (new UI toolbar)
+                        const svgIcons = document.querySelectorAll(
+                            'svg[class*="download" i], svg[class*="export" i], ' +
+                            '[class*="download" i] svg, [class*="export" i] svg'
+                        );
+                        if (svgIcons.length > 0) return 'ready';
+                        // Fallback: any visible button with download/export text
+                        for (const btn of document.querySelectorAll('button, a')) {
+                            const label = (btn.innerText || btn.textContent || '').trim();
+                            if (/download|export|excel|csv|xlsx/i.test(label)) {
+                                if (!btn.disabled && !btn.hasAttribute('disabled')) return 'ready';
+                            }
                         }
-                    }
-                    // Check for no-data state.  Patterns must be specific enough
-                    // to avoid false positives on pages that contain partial text
-                    // like "no sales trends" in chart labels while still having data.
-                    const noDataPatterns = /^no data available|no results found|no records found|nothing to show|there are no .* for this period|there aren't any .* for this period/i;
-                    const noDataExact = /\bno data\b(?! available)/i;
-                    if (noDataPatterns.test(text) || (noDataExact.test(text) && text.length < 2000)) {
-                        return 'no_data';
-                    }
-                    if (/unable to load this table|try changing your filters or refreshing the page|something went wrong|failed to load|we are unable to load/i.test(text)) {
-                        return 'error';
-                    }
-                    return null;
-                }""")
-                if state in {"ready", "no_data", "error"}:
-                    return state
-            except Exception:
-                pass
-            self.page.wait_for_timeout(750)
+                        // Check for no-data state.  Patterns must be specific enough
+                        // to avoid false positives on pages that contain partial text
+                        // like "no sales trends" in chart labels while still having data.
+                        const noDataPatterns = /^no data available|no results found|no records found|nothing to show|there are no .* for this period|there aren't any .* for this period/i;
+                        const noDataExact = /\bno data\b(?! available)/i;
+                        if (noDataPatterns.test(text) || (noDataExact.test(text) && text.length < 2000)) {
+                            return 'no_data';
+                        }
+                        if (/unable to load this table|try changing your filters or refreshing the page|something went wrong|failed to load|we are unable to load/i.test(text)) {
+                            return 'error';
+                        }
+                        return null;
+                    }""")
+                    if state in {"ready", "no_data", "error"}:
+                        return state
+                except Exception:
+                    pass
+                self.page.wait_for_timeout(750)
         return "unknown"
 
     def _wait_for_report_context(self, report):
@@ -1367,60 +1391,60 @@ class ToastDownloader:
         # Strip full URL prefix to get the path portion for matching.
         expected_path = raw_path
         if expected_path.startswith("http"):
-            from urllib.parse import urlparse
-            parsed = urlparse(expected_path)
-            expected_path = parsed.path + (f"#{parsed.fragment}" if parsed.fragment else "")
+                from urllib.parse import urlparse
+                parsed = urlparse(expected_path)
+                expected_path = parsed.path + (f"#{parsed.fragment}" if parsed.fragment else "")
         expected_fragment = expected_path.split("#", 1)[1] if "#" in expected_path else ""
         markers = tuple(marker for marker in report.ready_markers if marker)
 
         try:
-            self.page.wait_for_function(
-                """({ pathPart, fragment }) => {
-                    const href = window.location.href || "";
-                    if (fragment && href.includes(`#${fragment}`)) return true;
-                    if (pathPart && href.includes(pathPart)) return true;
-                    return false;
-                }""",
-                {"pathPart": expected_path, "fragment": expected_fragment},
-                timeout=15000,
-            )
+                self.page.wait_for_function(
+                    """({ pathPart, fragment }) => {
+                        const href = window.location.href || "";
+                        if (fragment && href.includes(`#${fragment}`)) return true;
+                        if (pathPart && href.includes(pathPart)) return true;
+                        return false;
+                    }""",
+                    {"pathPart": expected_path, "fragment": expected_fragment},
+                    timeout=15000,
+                )
         except Exception:
-            pass
+                pass
 
         for marker in markers:
-            try:
-                if self.page.locator(f'text="{marker}"').first.is_visible(timeout=2500):
-                    return
-            except Exception:
-                continue
+                try:
+                    if self.page.locator(f'text="{marker}"').first.is_visible(timeout=2500):
+                        return
+                except Exception:
+                    continue
 
         self.page.wait_for_timeout(1500)
 
     def _wait_for_legacy_sales_summary_ready(self, timeout_ms=30000):
         try:
-            self.page.wait_for_function(
-                """() => {
-                    const text = (document.body?.innerText || '').replace(/\\s+/g, ' ').trim();
-                    const hasReadyControls = Array.from(
-                        document.querySelectorAll('main button, main [role="button"], main [role="combobox"], main a')
-                    ).some((node) => {
-                        const value = (node.innerText || node.textContent || '').replace(/\\s+/g, ' ').trim();
-                        if (!value || value.length > 160) return false;
-                        return /today|yesterday|custom|last 7 days|this month|last month|\\d{1,2}\\/\\d{1,2}\\/\\d{4}|[A-Z][a-z]{2}\\s+\\d{1,2},\\s+\\d{4}/i.test(value);
-                    });
-                    const hasDownload = Array.from(document.querySelectorAll('button, a')).some((node) => {
-                        const value = (node.innerText || node.textContent || '').replace(/\\s+/g, ' ').trim();
-                        return /download|export|excel|csv|xlsx/i.test(value);
-                    });
-                    const hasTerminalState = /no data|no results|no records|nothing to show|unable to load this table/i.test(text);
-                    return hasReadyControls || hasDownload || hasTerminalState;
-                }""",
-                timeout=timeout_ms,
-            )
-            self.page.wait_for_timeout(1000)
-            return True
+                self.page.wait_for_function(
+                    """() => {
+                        const text = (document.body?.innerText || '').replace(/\\s+/g, ' ').trim();
+                        const hasReadyControls = Array.from(
+                            document.querySelectorAll('main button, main [role="button"], main [role="combobox"], main a')
+                        ).some((node) => {
+                            const value = (node.innerText || node.textContent || '').replace(/\\s+/g, ' ').trim();
+                            if (!value || value.length > 160) return false;
+                            return /today|yesterday|custom|last 7 days|this month|last month|\\d{1,2}\\/\\d{1,2}\\/\\d{4}|[A-Z][a-z]{2}\\s+\\d{1,2},\\s+\\d{4}/i.test(value);
+                        });
+                        const hasDownload = Array.from(document.querySelectorAll('button, a')).some((node) => {
+                            const value = (node.innerText || node.textContent || '').replace(/\\s+/g, ' ').trim();
+                            return /download|export|excel|csv|xlsx/i.test(value);
+                        });
+                        const hasTerminalState = /no data|no results|no records|nothing to show|unable to load this table/i.test(text);
+                        return hasReadyControls || hasDownload || hasTerminalState;
+                    }""",
+                    timeout=timeout_ms,
+                )
+                self.page.wait_for_timeout(1000)
+                return True
         except Exception:
-            return False
+                return False
 
     def _maybe_open_legacy_sales_summary(self, report):
         # The new Sales Summary UI has a proper download icon (↓) with
@@ -1432,42 +1456,42 @@ class ToastDownloader:
 
         # Legacy switch kept for reference but disabled:
         if report.key != "sales_summary":
-            self.legacy_sales_summary_active = False
-            return False
+                self.legacy_sales_summary_active = False
+                return False
 
         legacy_selectors = [
-            'a:text-matches("legacy\\s+Sales\\s+summary", "i")',
-            'button:text-matches("legacy\\s+Sales\\s+summary", "i")',
-            'text=/legacy\\s+Sales\\s+summary/i',
+                'a:text-matches("legacy\\s+Sales\\s+summary", "i")',
+                'button:text-matches("legacy\\s+Sales\\s+summary", "i")',
+                'text=/legacy\\s+Sales\\s+summary/i',
         ]
         opened = self._click_first_visible(
-            legacy_selectors,
-            timeout=2000,
-            log_msg="    Switching to legacy Sales Summary",
+                legacy_selectors,
+                timeout=2000,
+                log_msg="    Switching to legacy Sales Summary",
         )
         if not opened:
-            self.legacy_sales_summary_active = False
-            return False
+                self.legacy_sales_summary_active = False
+                return False
 
         self.page.wait_for_timeout(2000)
         try:
-            self.page.wait_for_load_state("networkidle", timeout=30000)
+                self.page.wait_for_load_state("networkidle", timeout=30000)
         except Exception:
-            pass
+                pass
         self.page.wait_for_timeout(1000)
         self.legacy_sales_summary_active = True
         if not self._wait_for_legacy_sales_summary_ready():
-            self.log("    Legacy Sales Summary toolbar did not fully load yet")
+                self.log("    Legacy Sales Summary toolbar did not fully load yet")
         self._dismiss_overlays()
         return True
 
     def _open_report_view(self, report_type):
         report = get_report_type(report_type)
         if not report.download_supported or not report.report_path:
-            raise RuntimeError(
-                f"Toast downloader does not have a verified navigation flow for '{report.label}' yet. "
-                "Use manual export + Google Drive upload for this report type."
-            )
+                raise RuntimeError(
+                    f"Toast downloader does not have a verified navigation flow for '{report.label}' yet. "
+                    "Use manual export + Google Drive upload for this report type."
+                )
         self.active_report_key = report.key
         self.legacy_sales_summary_active = False
         self.log(f"    Opening report: {report.label}")
@@ -1476,7 +1500,7 @@ class ToastDownloader:
         # otherwise prefix with REPORTS_BASE.
         url = report.report_path
         if not url.startswith("http"):
-            url = f"{REPORTS_BASE}/{url}"
+                url = f"{REPORTS_BASE}/{url}"
         self.page.goto(url, wait_until="domcontentloaded", timeout=60000)
         self.page.wait_for_timeout(3000)
         self._dismiss_overlays()
@@ -1491,68 +1515,68 @@ class ToastDownloader:
         """Click the download icon using JS click."""
         # Try Playwright selectors first (fast path for known attributes).
         selectors = [
-            '[aria-label="Download report"]',
-            'button[aria-label*="Download" i]',
-            'button[title*="Download" i]',
-            'i[aria-label*="Download" i]',
-            '[aria-label*="download" i]',
-            '[data-testid*="download" i]',
-            '[aria-label*="export" i]',
-            '[data-testid*="export" i]',
+                '[aria-label="Download report"]',
+                'button[aria-label*="Download" i]',
+                'button[title*="Download" i]',
+                'i[aria-label*="Download" i]',
+                '[aria-label*="download" i]',
+                '[data-testid*="download" i]',
+                '[aria-label*="export" i]',
+                '[data-testid*="export" i]',
         ]
         for sel in selectors:
-            el = self.page.locator(sel).first
-            try:
-                if el.is_visible(timeout=1500):
-                    el.evaluate("""node => {
-                        const target = node.closest('button') || node.closest('a') || node;
-                        target.click();
-                    }""")
-                    return True
-            except Exception:
-                pass
+                el = self.page.locator(sel).first
+                try:
+                    if el.is_visible(timeout=1500):
+                        el.evaluate("""node => {
+                            const target = node.closest('button') || node.closest('a') || node;
+                            target.click();
+                        }""")
+                        return True
+                except Exception:
+                    pass
 
         # Fallback: JS scan for download/export icons by SVG path or class
         # name.  Legacy Toast toolbar uses <svg> icons without aria-labels.
         found = self.page.evaluate("""() => {
-            // Look for SVG download icons (arrow-down-to-tray pattern)
-            const svgCandidates = Array.from(document.querySelectorAll(
-                'svg[class*="download" i], svg[class*="export" i], ' +
-                'svg[data-icon*="download" i], svg[data-icon*="export" i], ' +
-                '[class*="download" i] svg, [class*="export" i] svg'
-            ));
-            for (const svg of svgCandidates) {
-                const target = svg.closest('button, [role="button"], a') || svg.parentElement;
-                if (!target) continue;
-                const rect = target.getBoundingClientRect();
-                if (rect.width < 10 || rect.height < 10) continue;
-                target.click();
-                return 'svg-icon';
-            }
-
-            // Look for buttons/links with download-related text or title
-            const btns = Array.from(document.querySelectorAll(
-                'button, [role="button"], a, [role="menuitem"]'
-            ));
-            for (const btn of btns) {
-                const text = (btn.innerText || btn.textContent || '').trim().toLowerCase();
-                const title = (btn.getAttribute('title') || '').toLowerCase();
-                const ariaLabel = (btn.getAttribute('aria-label') || '').toLowerCase();
-                const combined = text + ' ' + title + ' ' + ariaLabel;
-                if (/\\bdownload\\b|\\bexport\\b/.test(combined)) {
-                    // Exclude "Email Export" button
-                    if (/email/i.test(combined)) continue;
-                    const rect = btn.getBoundingClientRect();
+                // Look for SVG download icons (arrow-down-to-tray pattern)
+                const svgCandidates = Array.from(document.querySelectorAll(
+                    'svg[class*="download" i], svg[class*="export" i], ' +
+                    'svg[data-icon*="download" i], svg[data-icon*="export" i], ' +
+                    '[class*="download" i] svg, [class*="export" i] svg'
+                ));
+                for (const svg of svgCandidates) {
+                    const target = svg.closest('button, [role="button"], a') || svg.parentElement;
+                    if (!target) continue;
+                    const rect = target.getBoundingClientRect();
                     if (rect.width < 10 || rect.height < 10) continue;
-                    btn.click();
-                    return text || title || ariaLabel;
+                    target.click();
+                    return 'svg-icon';
                 }
-            }
-            return null;
+
+                // Look for buttons/links with download-related text or title
+                const btns = Array.from(document.querySelectorAll(
+                    'button, [role="button"], a, [role="menuitem"]'
+                ));
+                for (const btn of btns) {
+                    const text = (btn.innerText || btn.textContent || '').trim().toLowerCase();
+                    const title = (btn.getAttribute('title') || '').toLowerCase();
+                    const ariaLabel = (btn.getAttribute('aria-label') || '').toLowerCase();
+                    const combined = text + ' ' + title + ' ' + ariaLabel;
+                    if (/\\bdownload\\b|\\bexport\\b/.test(combined)) {
+                        // Exclude "Email Export" button
+                        if (/email/i.test(combined)) continue;
+                        const rect = btn.getBoundingClientRect();
+                        if (rect.width < 10 || rect.height < 10) continue;
+                        btn.click();
+                        return text || title || ariaLabel;
+                    }
+                }
+                return null;
         }""")
         if found:
-            self.log(f"    Found download trigger: {found}")
-            return True
+                self.log(f"    Found download trigger: {found}")
+                return True
 
         return False
 
@@ -1562,10 +1586,10 @@ class ToastDownloader:
         # the table may still be loading after a date change, so retry once
         # after a short wait if the first attempt fails.
         if not self._click_download_icon():
-            self.page.wait_for_timeout(3000)
-            if not self._click_download_icon():
-                self.log("    Download button not found")
-                return None
+                self.page.wait_for_timeout(3000)
+                if not self._click_download_icon():
+                    self.log("    Download button not found")
+                    return None
 
         self.page.wait_for_timeout(1000)
 
@@ -1574,58 +1598,58 @@ class ToastDownloader:
         # "Download CSV file" and "Download Excel file".  Prefer Excel.
         # Flow: Tab once (skip CSV → land on Excel) → Enter.
         try:
-            with self.page.expect_download(timeout=30000) as download_info:
-                # Prefer Excel over CSV — try Excel-specific selectors first
-                explicit_clicked = self._click_first_visible(
-                    [
-                        '[role="menuitem"]:text-is("Download Excel file")',
-                        'button:text-is("Download Excel file")',
-                        'text="Download Excel file"',
-                        '[role="menuitem"]:text-matches("Excel", "i")',
-                        'button:text-matches("Excel", "i")',
-                        'text=/Excel/i',
-                        '[role="menuitem"]:text-matches("Export|Download", "i")',
-                        'button:text-matches("Export|Download", "i")',
-                    ],
-                    timeout=1200,
-                )
-                if not explicit_clicked:
-                    # Fallback: Tab to Excel option, Enter to download
-                    self.page.keyboard.press("Tab")
-                    self.page.wait_for_timeout(300)
-                    self.page.keyboard.press("Enter")
+                with self.page.expect_download(timeout=30000) as download_info:
+                    # Prefer Excel over CSV — try Excel-specific selectors first
+                    explicit_clicked = self._click_first_visible(
+                        [
+                            '[role="menuitem"]:text-is("Download Excel file")',
+                            'button:text-is("Download Excel file")',
+                            'text="Download Excel file"',
+                            '[role="menuitem"]:text-matches("Excel", "i")',
+                            'button:text-matches("Excel", "i")',
+                            'text=/Excel/i',
+                            '[role="menuitem"]:text-matches("Export|Download", "i")',
+                            'button:text-matches("Export|Download", "i")',
+                        ],
+                        timeout=1200,
+                    )
+                    if not explicit_clicked:
+                        # Fallback: Tab to Excel option, Enter to download
+                        self.page.keyboard.press("Tab")
+                        self.page.wait_for_timeout(300)
+                        self.page.keyboard.press("Enter")
 
-            download = download_info.value
-            filename = download.suggested_filename or "report.xlsx"
-            save_name = self._build_saved_filename(
-                filename,
-                report_type=report_type,
-                store_name=store_name,
-                business_date=business_date,
-            )
-            filepath = os.path.join(save_dir, save_name)
-            download.save_as(filepath)
-            validation = validate_toast_report_file(filepath, report_type=report_type)
-            if not validation.ok:
-                self.log(f"    Downloaded file failed validation: {'; '.join(validation.errors)}")
-                return None
-            if validation.warnings:
-                self.log(f"    Download warnings: {'; '.join(validation.warnings)}")
-            self.log(f"    Downloaded: {save_name} [{validation.checksum_sha256[:12]}]")
-            return {"filepath": filepath, "filename": save_name, "original_filename": filename, "validation": validation.to_dict()}
+                download = download_info.value
+                filename = download.suggested_filename or "report.xlsx"
+                save_name = self._build_saved_filename(
+                    filename,
+                    report_type=report_type,
+                    store_name=store_name,
+                    business_date=business_date,
+                )
+                filepath = os.path.join(save_dir, save_name)
+                download.save_as(filepath)
+                validation = validate_toast_report_file(filepath, report_type=report_type)
+                if not validation.ok:
+                    self.log(f"    Downloaded file failed validation: {'; '.join(validation.errors)}")
+                    return None
+                if validation.warnings:
+                    self.log(f"    Download warnings: {'; '.join(validation.warnings)}")
+                self.log(f"    Downloaded: {save_name} [{validation.checksum_sha256[:12]}]")
+                return {"filepath": filepath, "filename": save_name, "original_filename": filename, "validation": validation.to_dict()}
 
         except Exception as e:
-            self.log(f"    Download failed: {e}")
-            return None
+                self.log(f"    Download failed: {e}")
+                return None
 
     def _write_audit_manifest(self, results):
         DOWNLOAD_AUDIT_DIR.mkdir(parents=True, exist_ok=True)
         timestamp = time.strftime("%Y%m%d-%H%M%S")
         manifest = {
-            "generated_at": timestamp,
-            "download_dir": self.download_dir,
-            "results": results,
-            "attempts": self.run_audit,
+                "generated_at": timestamp,
+                "download_dir": self.download_dir,
+                "results": results,
+                "attempts": self.run_audit,
         }
         manifest_path = DOWNLOAD_AUDIT_DIR / f"download-run-{timestamp}.json"
         manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -1650,20 +1674,20 @@ class ToastDownloader:
         Download reports for given locations across a date range.
 
         Args:
-            locations: list of location names. None = all locations.
-            dates: list of date strings (MM/DD/YYYY for Toast).
-                   None = use Yesterday for all.
-            report_types: list of report type keys. None = sales_summary only.
-            drive_skip_keys: set of (store, report_key, business_date) tuples
-                already present on Google Drive — these will be skipped.
+                locations: list of location names. None = all locations.
+                dates: list of date strings (MM/DD/YYYY for Toast).
+                       None = use Yesterday for all.
+                report_types: list of report type keys. None = sales_summary only.
+                drive_skip_keys: set of (store, report_key, business_date) tuples
+                    already present on Google Drive — these will be skipped.
 
         Returns:
-            dict with success, fail, total counts and list of downloaded files.
+                dict with success, fail, total counts and list of downloaded files.
         """
         locations = locations or TOAST_LOCATIONS
         reports = normalize_report_types(report_types)
         if not dates:
-            dates = [None]  # None = Yesterday
+                dates = [None]  # None = Yesterday
 
         _drive_skip = drive_skip_keys or set()
         results = {"success": 0, "fail": 0, "skipped": 0, "total": 0, "files": [], "stopped": False}
@@ -1673,167 +1697,235 @@ class ToastDownloader:
         os.makedirs(self.download_dir, exist_ok=True)
 
         try:
-            self._start_browser()
-            self._login()
+                self._start_browser()
+                self._login()
 
-            self.log(f"Current URL: {self.page.url}")
-            self.log(f"Downloading for {len(locations)} locations × {len(dates)} date(s) × {len(reports)} report type(s)")
+                self.log(f"Current URL: {self.page.url}")
+                self.log(f"Downloading for {len(locations)} locations × {len(dates)} date(s) × {len(reports)} report type(s)")
 
-            task_num = 0
+                task_num = 0
 
-            for i, loc_name in enumerate(locations):
-                if self._stop_requested():
-                    results["stopped"] = True
-                    self.log("Stop requested. Ending download batch after current item.")
-                    break
-                self.log(f"\n[Location {i+1}/{len(locations)}] {loc_name}")
+                for i, loc_name in enumerate(locations):
+                    if self._stop_requested():
+                        results["stopped"] = True
+                        self.log("Stop requested. Ending download batch after current item.")
+                        break
+                    self.log(f"\n[Location {i+1}/{len(locations)}] {loc_name}")
 
-                # Switch location
-                self.active_location = loc_name
-                if not self._switch_location_with_retries(loc_name):
-                    self.log(f"  Could not switch to {loc_name}, skipping")
-                    skipped = len(dates) * len(reports)
-                    results["fail"] += skipped
-                    task_num += skipped
-                    continue
-                self._dismiss_overlays()
+                    # Switch location
+                    self.active_location = loc_name
+                    if not self._switch_location_with_retries(loc_name):
+                        self.log(f"  Could not switch to {loc_name}, skipping")
+                        skipped = len(dates) * len(reports)
+                        results["fail"] += skipped
+                        task_num += skipped
+                        continue
+                    self._dismiss_overlays()
 
-                # Loop through each report type, then each date.
-                # We open the report view ONCE per report type and stay on
-                # that page while iterating dates — only changing the date
-                # picker each time.  This avoids the slow
-                # navigate→legacy→date cycle on every single date.
-                for report in reports:
-                    report_view_opened = False
+                    # Loop through each report type, then each date.
+                    # We open the report view ONCE per report type and stay on
+                    # that page while iterating dates — only changing the date
+                    # picker each time.  This avoids the slow
+                    # navigate→legacy→date cycle on every single date.
+                    for report in reports:
+                        report_view_opened = False
 
-                    for j, date_str in enumerate(dates):
-                        if self._stop_requested():
-                            results["stopped"] = True
-                            self.log("Stop requested. Ending download batch after current item.")
-                            break
-                        date_label = date_str or "Yesterday"
-                        task_num += 1
-                        results["total"] += 1
-                        self.on_progress(task_num, total_tasks, f"{loc_name} - {date_label} - {report.label}")
-                        self.log(f"  [{j+1}/{len(dates)}] Date: {date_label}")
-                        self.log(f"    Report: {report.label}")
+                        for j, date_str in enumerate(dates):
+                            if self._stop_requested():
+                                results["stopped"] = True
+                                self.log("Stop requested. Ending download batch after current item.")
+                                break
+                            date_label = date_str or "Yesterday"
+                            task_num += 1
+                            results["total"] += 1
+                            self.on_progress(task_num, total_tasks, f"{loc_name} - {date_label} - {report.label}")
+                            self.log(f"  [{j+1}/{len(dates)}] Date: {date_label}")
+                            self.log(f"    Report: {report.label}")
 
-                        # Skip if this exact (store, report, date) already exists on Drive
-                        business_date_check = self._to_business_date(date_str) if date_str else None
-                        if business_date_check and (loc_name, report.key, business_date_check) in _drive_skip:
-                            self.log(f"    Already on Google Drive — skipping {loc_name}/{report.label}/{business_date_check}")
-                            results["success"] += 1
-                            results["skipped"] += 1
-                            results["files"].append({
-                                "location": loc_name,
-                                "report_key": report.key,
-                                "report_label": report.label,
-                                "report_folder": report.folder_name,
-                                "business_date": business_date_check,
-                                "status": "existing_drive",
-                            })
-                            self.run_audit.append({
-                                "location": loc_name,
-                                "date": date_label,
-                                "report_type": report.key,
-                                "attempt": 0,
-                                "success": True,
-                                "skipped": True,
-                                "reason": "existing_drive",
-                                "business_date": business_date_check,
-                            })
-                            continue
-
-                        # Open the report view only on the first date (or
-                        # after a navigation failure).  For subsequent dates
-                        # we stay on the same page and just change the date.
-                        if not report_view_opened:
-                            try:
-                                self._open_report_view(report.key)
-                                report_view_opened = True
-                            except Exception as exc:
-                                self.log(f"    Could not open report view: {exc}")
-                                results["fail"] += 1
-                                continue
-
-                        if date_str:
-                            if self._skip_date_selection_for_location(loc_name):
-                                self.log(f"    Skipping date entry for {loc_name}; using the page's current date filter.")
-                            else:
-                                if not self._select_custom_date(date_str):
-                                    self.log(f"    Could not set date {date_str}, skipping")
-                                    results["fail"] += 1
-                                    # The page may have ended up in a bad
-                                    # state — force re-open on next date.
-                                    report_view_opened = False
-                                    continue
-                        else:
-                            if not self._open_date_picker():
-                                results["fail"] += 1
-                                report_view_opened = False
-                                continue
-                            yesterday_opt = self.page.locator('text="Yesterday"').first
-                            try:
-                                if yesterday_opt.is_visible(timeout=2000):
-                                    yesterday_opt.click()
-                                    self.page.wait_for_timeout(3000)
-                                    try:
-                                        self.page.wait_for_load_state("networkidle", timeout=30000)
-                                    except Exception:
-                                        pass
-                            except Exception:
-                                results["fail"] += 1
-                                report_view_opened = False
-                                continue
-
-                        self._dismiss_overlays()
-                        report_state = self._wait_for_report_ready()
-                        report_state = self._verified_report_state(report_state, loc_name, report.label, date_label)
-                        self._dismiss_overlays()
-                        if report_state == "no_data":
-                            self.log(f"    No data returned for {loc_name} / {report.label} / {date_label}. Skipping cleanly.")
-                            results["success"] += 1
-                            results["skipped"] += 1
-                            results["files"].append(
-                                {
+                            # Skip if this exact (store, report, date) already exists on Drive
+                            business_date_check = self._to_business_date(date_str) if date_str else None
+                            if business_date_check and (loc_name, report.key, business_date_check) in _drive_skip:
+                                self.log(f"    Already on Google Drive — skipping {loc_name}/{report.label}/{business_date_check}")
+                                results["success"] += 1
+                                results["skipped"] += 1
+                                results["files"].append({
                                     "location": loc_name,
                                     "report_key": report.key,
                                     "report_label": report.label,
                                     "report_folder": report.folder_name,
-                                    "business_date": self._to_business_date(date_str),
-                                    "status": "no_data",
-                                    "reason": "Toast reported no data for this date filter.",
-                                }
-                            )
-                            self.run_audit.append(
-                                {
+                                    "business_date": business_date_check,
+                                    "status": "existing_drive",
+                                })
+                                self.run_audit.append({
                                     "location": loc_name,
                                     "date": date_label,
                                     "report_type": report.key,
                                     "attempt": 0,
                                     "success": True,
                                     "skipped": True,
-                                    "reason": "no_data",
-                                    "business_date": self._to_business_date(date_str),
-                                }
-                            )
-                            continue
-                        if report_state == "error":
-                            self.log("    Report page loaded with an error state. This is not a no-data skip; download will still retry.")
+                                    "reason": "existing_drive",
+                                    "business_date": business_date_check,
+                                })
+                                continue
 
-                        report_dir = build_local_report_dir(self.download_dir, self._sanitize(loc_name), report.key)
-                        os.makedirs(report_dir, exist_ok=True)
-                        business_date = self._to_business_date(date_str)
+                            # Open the report view only on the first date (or
+                            # after a navigation failure).  For subsequent dates
+                            # we stay on the same page and just change the date.
+                            if not report_view_opened:
+                                try:
+                                    self._open_report_view(report.key)
+                                    report_view_opened = True
+                                except Exception as exc:
+                                    self.log(f"    Could not open report view: {exc}")
+                                    results["fail"] += 1
+                                    continue
 
-                        if business_date:
-                            existing_file = find_existing_local_report(
-                                self.download_dir,
-                                store_name=self._sanitize(loc_name),
-                                report_type=report.key,
-                                business_date=business_date,
-                            )
-                            if existing_file:
-                                self.log(f"    Already exists locally for {business_date}: {existing_file['filename']}")
+                            if date_str:
+                                if self._skip_date_selection_for_location(loc_name):
+                                    self.log(f"    Skipping date entry for {loc_name}; using the page's current date filter.")
+                                else:
+                                    if not self._select_custom_date(date_str):
+                                        self.log(f"    Could not set date {date_str}, skipping")
+                                        results["fail"] += 1
+                                        # The page may have ended up in a bad
+                                        # state — force re-open on next date.
+                                        report_view_opened = False
+                                        continue
+                            else:
+                                if not self._open_date_picker():
+                                    results["fail"] += 1
+                                    report_view_opened = False
+                                    continue
+                                yesterday_opt = self.page.locator('text="Yesterday"').first
+                                try:
+                                    if yesterday_opt.is_visible(timeout=2000):
+                                        yesterday_opt.click()
+                                        self.page.wait_for_timeout(3000)
+                                        try:
+                                            self.page.wait_for_load_state("networkidle", timeout=30000)
+                                        except Exception:
+                                            pass
+                                except Exception:
+                                    results["fail"] += 1
+                                    report_view_opened = False
+                                    continue
+
+                            self._dismiss_overlays()
+                            report_state = self._wait_for_report_ready()
+                            report_state = self._verified_report_state(report_state, loc_name, report.label, date_label)
+                            self._dismiss_overlays()
+                            if report_state == "no_data":
+                                self.log(f"    No data returned for {loc_name} / {report.label} / {date_label}. Skipping cleanly.")
+                                results["success"] += 1
+                                results["skipped"] += 1
+                                results["files"].append(
+                                    {
+                                        "location": loc_name,
+                                        "report_key": report.key,
+                                        "report_label": report.label,
+                                        "report_folder": report.folder_name,
+                                        "business_date": self._to_business_date(date_str),
+                                        "status": "no_data",
+                                        "reason": "Toast reported no data for this date filter.",
+                                    }
+                                )
+                                self.run_audit.append(
+                                    {
+                                        "location": loc_name,
+                                        "date": date_label,
+                                        "report_type": report.key,
+                                        "attempt": 0,
+                                        "success": True,
+                                        "skipped": True,
+                                        "reason": "no_data",
+                                        "business_date": self._to_business_date(date_str),
+                                    }
+                                )
+                                continue
+                            if report_state == "error":
+                                self.log("    Report page loaded with an error state. This is not a no-data skip; download will still retry.")
+
+                            report_dir = build_local_report_dir(self.download_dir, self._sanitize(loc_name), report.key)
+                            os.makedirs(report_dir, exist_ok=True)
+                            business_date = self._to_business_date(date_str)
+
+                            if business_date:
+                                existing_file = find_existing_local_report(
+                                    self.download_dir,
+                                    store_name=self._sanitize(loc_name),
+                                    report_type=report.key,
+                                    business_date=business_date,
+                                )
+                                if existing_file:
+                                    self.log(f"    Already exists locally for {business_date}: {existing_file['filename']}")
+                                    results["success"] += 1
+                                    results["skipped"] += 1
+                                    results["files"].append(
+                                        {
+                                            "location": loc_name,
+                                            "report_key": report.key,
+                                            "report_label": report.label,
+                                            "report_folder": report.folder_name,
+                                            "business_date": business_date,
+                                            **existing_file,
+                                        }
+                                    )
+                                    self._emit_report_file(results["files"][-1])
+                                    self.run_audit.append(
+                                        {
+                                            "location": loc_name,
+                                            "date": date_label,
+                                            "report_type": report.key,
+                                            "attempt": 0,
+                                            "success": True,
+                                            "skipped": True,
+                                            "business_date": business_date,
+                                        }
+                                    )
+                                    continue
+
+                            download_info = None
+                            last_error = None
+                            for attempt in range(1, self.max_download_attempts + 1):
+                                if self._stop_requested():
+                                    results["stopped"] = True
+                                    self.log("    Stop requested before next download attempt.")
+                                    break
+                                if attempt > 1:
+                                    backoff = min(2 ** (attempt - 1), 8)
+                                    self.log(f"    Retry {attempt}/{self.max_download_attempts} after {backoff}s backoff")
+                                    self.page.wait_for_timeout(backoff * 1000)
+                                    self._dismiss_overlays()
+                                    report_state = self._wait_for_report_ready()
+                                    report_state = self._verified_report_state(report_state, loc_name, report.label, date_label)
+                                    if report_state == "no_data":
+                                        last_error = None
+                                        self.log(f"    No data returned for {loc_name} / {report.label} / {date_label}. Skipping cleanly.")
+                                        break
+                                download_info = self._download_report(
+                                    str(report_dir),
+                                    report_type=report.key,
+                                    store_name=loc_name,
+                                    business_date=business_date,
+                                )
+                                self.run_audit.append({
+                                    "location": loc_name,
+                                    "date": date_label,
+                                    "report_type": report.key,
+                                    "attempt": attempt,
+                                    "success": bool(download_info),
+                                    "business_date": business_date,
+                                })
+                                if report_state == "no_data":
+                                    break
+                                if download_info:
+                                    break
+                                last_error = "download validation failed or file was not saved"
+
+                            if results.get("stopped") and not download_info:
+                                break
+
+                            if report_state == "no_data" and not download_info:
                                 results["success"] += 1
                                 results["skipped"] += 1
                                 results["files"].append(
@@ -1843,146 +1935,78 @@ class ToastDownloader:
                                         "report_label": report.label,
                                         "report_folder": report.folder_name,
                                         "business_date": business_date,
-                                        **existing_file,
-                                    }
-                                )
-                                self._emit_report_file(results["files"][-1])
-                                self.run_audit.append(
-                                    {
-                                        "location": loc_name,
-                                        "date": date_label,
-                                        "report_type": report.key,
-                                        "attempt": 0,
-                                        "success": True,
-                                        "skipped": True,
-                                        "business_date": business_date,
+                                        "status": "no_data",
+                                        "reason": "Toast reported no data for this date filter.",
                                     }
                                 )
                                 continue
 
-                        download_info = None
-                        last_error = None
-                        for attempt in range(1, self.max_download_attempts + 1):
-                            if self._stop_requested():
-                                results["stopped"] = True
-                                self.log("    Stop requested before next download attempt.")
-                                break
-                            if attempt > 1:
-                                backoff = min(2 ** (attempt - 1), 8)
-                                self.log(f"    Retry {attempt}/{self.max_download_attempts} after {backoff}s backoff")
-                                self.page.wait_for_timeout(backoff * 1000)
-                                self._dismiss_overlays()
-                                report_state = self._wait_for_report_ready()
-                                report_state = self._verified_report_state(report_state, loc_name, report.label, date_label)
-                                if report_state == "no_data":
-                                    last_error = None
-                                    self.log(f"    No data returned for {loc_name} / {report.label} / {date_label}. Skipping cleanly.")
-                                    break
-                            download_info = self._download_report(
-                                str(report_dir),
-                                report_type=report.key,
-                                store_name=loc_name,
-                                business_date=business_date,
-                            )
-                            self.run_audit.append({
-                                "location": loc_name,
-                                "date": date_label,
-                                "report_type": report.key,
-                                "attempt": attempt,
-                                "success": bool(download_info),
-                                "business_date": business_date,
-                            })
-                            if report_state == "no_data":
-                                break
                             if download_info:
-                                break
-                            last_error = "download validation failed or file was not saved"
-
-                        if results.get("stopped") and not download_info:
+                                results["success"] += 1
+                                results["files"].append(
+                                    {
+                                        "location": loc_name,
+                                        "report_key": report.key,
+                                        "report_label": report.label,
+                                        "report_folder": report.folder_name,
+                                        "business_date": business_date,
+                                        "status": "downloaded",
+                                        **download_info,
+                                    }
+                                )
+                                self._emit_report_file(results["files"][-1])
+                            else:
+                                results["fail"] += 1
+                                if last_error:
+                                    self.log(f"    Final failure: {last_error}")
+                        if results.get("stopped"):
                             break
-
-                        if report_state == "no_data" and not download_info:
-                            results["success"] += 1
-                            results["skipped"] += 1
-                            results["files"].append(
-                                {
-                                    "location": loc_name,
-                                    "report_key": report.key,
-                                    "report_label": report.label,
-                                    "report_folder": report.folder_name,
-                                    "business_date": business_date,
-                                    "status": "no_data",
-                                    "reason": "Toast reported no data for this date filter.",
-                                }
-                            )
-                            continue
-
-                        if download_info:
-                            results["success"] += 1
-                            results["files"].append(
-                                {
-                                    "location": loc_name,
-                                    "report_key": report.key,
-                                    "report_label": report.label,
-                                    "report_folder": report.folder_name,
-                                    "business_date": business_date,
-                                    "status": "downloaded",
-                                    **download_info,
-                                }
-                            )
-                            self._emit_report_file(results["files"][-1])
-                        else:
-                            results["fail"] += 1
-                            if last_error:
-                                self.log(f"    Final failure: {last_error}")
                     if results.get("stopped"):
                         break
+
                 if results.get("stopped"):
-                    break
+                    self.on_progress(task_num, total_tasks, "Stopped")
+                else:
+                    self.on_progress(total_tasks, total_tasks, "Done")
 
-            if results.get("stopped"):
-                self.on_progress(task_num, total_tasks, "Stopped")
-            else:
-                self.on_progress(total_tasks, total_tasks, "Done")
-
-            # Save session after successful run
-            try:
-                self.context.storage_state(path=self.session_file)
-            except Exception:
-                pass
+                # Save session after successful run
+                try:
+                    self.context.storage_state(path=self.session_file)
+                except Exception:
+                    pass
 
         except Exception as e:
-            self.log(f"Error: {e}")
-            had_unhandled_error = True
-            raise
+                self.log(f"Error: {e}")
+                had_unhandled_error = True
+                raise
         finally:
-            try:
-                self._write_audit_manifest(results)
-            except Exception as exc:
-                self.log(f"Could not write download audit manifest: {exc}")
-            if self._should_close_browser(results, had_unhandled_error):
-                self.close()
-            else:
-                self.log("Browser left open for inspection because the download run failed.")
+                try:
+                    self._write_audit_manifest(results)
+                except Exception as exc:
+                    self.log(f"Could not write download audit manifest: {exc}")
+                if self._should_close_browser(results, had_unhandled_error):
+                    self.close()
+                else:
+                    self.log("Browser left open for inspection because the download run failed.")
 
         if results.get("stopped"):
-            self.log(
-                f"\nStopped! {results['success']}/{results['total']} successful so far, "
-                f"{results['fail']} failed"
-            )
+                self.log(
+                    f"\nStopped! {results['success']}/{results['total']} successful so far, "
+                    f"{results['fail']} failed"
+                )
         else:
-            self.log(f"\nDone! {results['success']}/{results['total']} successful, {results['fail']} failed")
+                self.log(f"\nDone! {results['success']}/{results['total']} successful, {results['fail']} failed")
         return results
 
     def close(self):
         """Close browser."""
         try:
-            if self.browser:
-                self.browser.close()
-            if self.playwright:
-                self.playwright.stop()
+                if self.browser:
+                    self.browser.close()
+                if self.playwright:
+                    self.playwright.stop()
         except Exception:
-            pass
+                pass
         self.browser = None
         self.playwright = None
 

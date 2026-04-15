@@ -1,5 +1,6 @@
 QB,Report,Note
 Gross sale,No Sales Category Assigned,Gross Sale
+Gross sale,Food,Gross Sale
 Discount,Sales discounts,Gross Sale
 Discount:Refund,Sales refunds,Net Sales Summary
 Tax,Tax amount,Revenue Summary

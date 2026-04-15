@@ -4489,6 +4489,48 @@ class SettingsTab(ctk.CTkFrame):
             font=ctk.CTkFont(size=11),
         ).pack(side="left", padx=(4, 0))
 
+        # ── Month selector for coverage matrix ──
+        month_row = ctk.CTkFrame(drive_inventory_frame, fg_color="transparent")
+        month_row.pack(fill="x", pady=(0, 6))
+        ctk.CTkLabel(month_row, text="Coverage Month:", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left", padx=(0, 6))
+        self.coverage_month_var = ctk.StringVar(value=datetime.now().strftime("%Y-%m"))
+        month_options = []
+        now = datetime.now()
+        for i in range(6, -1, -1):
+            d = (now - timedelta(days=i * 30)).replace(day=1)
+            month_options.append(d.strftime("%Y-%m"))
+        month_menu = ctk.CTkOptionMenu(month_row, variable=self.coverage_month_var, values=month_options, width=110)
+        month_menu.pack(side="left", padx=(0, 8))
+        make_action_button(month_row, "Refresh for Month", self._refresh_drive_inventory, tone="neutral", width=150).pack(side="left")
+
+        # ── Upload suggestion box ──
+        ctk.CTkLabel(
+            drive_inventory_frame,
+            text="Missing File Suggestions",
+            font=ctk.CTkFont(size=12, weight="bold"),
+        ).pack(anchor="w", pady=(4, 4))
+        upload_hint_frame = ctk.CTkFrame(drive_inventory_frame, fg_color="#1e293b", corner_radius=8)
+        upload_hint_frame.pack(fill="x", pady=(0, 8))
+        self.upload_suggestion_var = ctk.StringVar(
+            value="Click 'Refresh for Month' to see missing reports and upload suggestions."
+        )
+        self.upload_suggestion_label = ctk.CTkLabel(
+            upload_hint_frame,
+            textvariable=self.upload_suggestion_var,
+            text_color="#60a5fa",
+            font=ctk.CTkFont(size=11),
+            anchor="w",
+            justify="left",
+            wraplength=560,
+        )
+        self.upload_suggestion_label.pack(anchor="w", padx=12, pady=10)
+        copy_btn_row = ctk.CTkFrame(upload_hint_frame, fg_color="transparent")
+        copy_btn_row.pack(fill="x", padx=12, pady=(0, 10))
+        self.upload_path_var = ctk.StringVar(value="")
+        self.upload_path_entry = ctk.CTkEntry(copy_btn_row, textvariable=self.upload_path_var, font=ctk.CTkFont(size=11), width=400)
+        self.upload_path_entry.pack(side="left", padx=(0, 8))
+        make_action_button(copy_btn_row, "Copy Path", self._copy_upload_path, tone="neutral", width=100).pack(side="left")
+
         ctk.CTkLabel(
             drive_inventory_frame,
             text="Coverage Matrix",
@@ -4934,6 +4976,7 @@ class SettingsTab(ctk.CTkFrame):
                     store_names=TOAST_LOCATIONS,
                 )
                 self.after(0, lambda snap=snapshot: self._render_drive_inventory_snapshot(snap))
+                self.after(0, lambda snap=snapshot: self._update_upload_suggestions(snap))
                 if self.status_var is not None:
                     self.after(0, lambda: self.status_var.set("Drive inventory refreshed"))
             except Exception as exc:
@@ -4944,6 +4987,64 @@ class SettingsTab(ctk.CTkFrame):
         if self.status_var is not None:
             self.status_var.set("Refreshing Drive inventory...")
         threading.Thread(target=_worker, daemon=True).start()
+
+    def _copy_upload_path(self):
+        """Copy the currently shown upload path to clipboard."""
+        import pyperclip
+        path = self.upload_path_var.get()
+        if path:
+            try:
+                pyperclip.copy(path)
+                if self.status_var:
+                    self.status_var.set("Upload path copied to clipboard!")
+            except Exception:
+                pass
+
+    def _update_upload_suggestions(self, snapshot):
+        """Build upload suggestions from the Drive inventory snapshot."""
+        try:
+            missing_rows = snapshot.get("missing_rows", [])
+            if not missing_rows:
+                self.upload_suggestion_var.set(
+                    "All reports for this month are present on Google Drive. No uploads needed."
+                )
+                self.upload_path_var.set("")
+                return
+
+            # Count by store/type
+            from collections import defaultdict
+            by_pair = defaultdict(list)
+            for row in missing_rows:
+                key = (row["store"], row["report_key"], row["report_label"])
+                by_pair[key].append(row["business_date"])
+
+            lines = []
+            for (store, rk, label), dates in sorted(by_pair.items())[:6]:
+                dates_str = ", ".join(sorted(dates)[:5])
+                if len(dates) > 5:
+                    dates_str += f" (+{len(dates) - 5} more)"
+                lines.append(
+                    f"  {store} / {label}: missing {len(dates)} day(s) -> "
+                    f"Upload to: Toast/{store}/{label}/"
+                )
+            if len(by_pair) > 6:
+                lines.append(f"  ...and {len(by_pair) - 6} more store/report combinations.")
+
+            msg = (
+                f"{len(missing_rows)} total missing file(s) found.\n"
+                + "\n".join(lines)
+                + "\n\nSelect a missing item above to see the exact upload path."
+            )
+            self.upload_suggestion_var.set(msg)
+
+            # Default path: first missing item
+            first = sorted(by_pair.items())[0]
+            store, rk = first[0][0], first[0][1]
+            label = first[0][2]
+            self.upload_path_var.set(f"Toast/{store}/{label}/")
+
+        except Exception as e:
+            self.upload_suggestion_var.set(f"Could not build suggestions: {e}")
 
     def _download_missing_from_drive(self):
         """Pull missing reports from Google Drive back to local toast-reports/ folder."""
