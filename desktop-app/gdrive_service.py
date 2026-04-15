@@ -177,28 +177,57 @@ class GDriveService:
         return self._create_folder(name, parent_id)
 
     def _list_folders(self, parent_id):
+        """List all subfolders, fully paginating through nextPageToken."""
         q = (
             "mimeType='application/vnd.google-apps.folder' and trashed=false "
             f"and '{parent_id}' in parents"
         )
-        results = self._execute_with_retry(
-            lambda: self.service.files().list(q=q, spaces="drive", fields="files(id, name)").execute(),
-            operation="List Drive subfolders",
-        )
-        return results.get("files", [])
+        all_folders = []
+        page_token = None
+        while True:
+            try:
+                results = self.service.files().list(
+                    q=q,
+                    spaces="drive",
+                    fields="nextPageToken, files(id, name)",
+                    pageSize=200,
+                    pageToken=page_token,
+                ).execute()
+                files = results.get("files", [])
+                if files:
+                    all_folders.extend(files)
+                page_token = results.get("nextPageToken")
+                if not page_token:
+                    break
+            except Exception as e:
+                self.log(f"  Error listing subfolders (page token={page_token}): {e}")
+                break
+        return all_folders
 
     def _list_folder_items(self, parent_id):
+        """List all files in a folder, fully paginating through nextPageToken."""
         q = f"'{parent_id}' in parents and trashed=false"
-        results = self._execute_with_retry(
-            lambda: self.service.files().list(
-                q=q,
-                spaces="drive",
-                fields="files(id, name, mimeType, modifiedTime, size)",
-                pageSize=200,
-            ).execute(),
-            operation="List Drive folder items",
-        )
-        return results.get("files", [])
+        all_files = []
+        page_token = None
+        while True:
+            try:
+                results = self.service.files().list(
+                    q=q,
+                    spaces="drive",
+                    fields="nextPageToken, files(id, name, mimeType, modifiedTime, size)",
+                    pageSize=200,
+                    pageToken=page_token,
+                ).execute()
+                files = results.get("files", [])
+                if files:
+                    all_files.extend(files)
+                page_token = results.get("nextPageToken")
+                if not page_token:
+                    break
+            except Exception as e:
+                self.log(f"  Error listing folder items (page token={page_token}): {e}")
+                break
+        return all_files
 
     def _resolve_root_folder(self):
         if self._configured_root_folder_id:
@@ -544,29 +573,51 @@ class GDriveService:
             seen_ids = set()
             candidates = self._iter_report_folder_candidates(store_name, "", report_type or "sales_summary")
             for folder_id, _root_name, _relative_parts in candidates:
-                results = self.service.files().list(
-                    q=f"'{folder_id}' in parents and trashed=false",
-                    fields="files(id, name, size, modifiedTime, parents)",
-                    orderBy="name desc",
-                    pageSize=100,
-                ).execute()
-                for file_info in results.get("files", []):
-                    if file_info["id"] in seen_ids:
-                        continue
-                    aggregated.append(file_info)
-                    seen_ids.add(file_info["id"])
+                page_token = None
+                while True:
+                    try:
+                        results = self.service.files().list(
+                            q=f"'{folder_id}' in parents and trashed=false",
+                            fields="nextPageToken, files(id, name, size, modifiedTime, parents)",
+                            orderBy="name desc",
+                            pageSize=200,
+                            pageToken=page_token,
+                        ).execute()
+                        for file_info in results.get("files", []):
+                            if file_info["id"] in seen_ids:
+                                continue
+                            aggregated.append(file_info)
+                            seen_ids.add(file_info["id"])
+                        page_token = results.get("nextPageToken")
+                        if not page_token:
+                            break
+                    except Exception as e:
+                        self.on_log(f"  Error listing reports (folder={folder_id}, page_token={page_token}): {e}")
+                        break
             return aggregated
 
         root_id = self._find_folder(ROOT_FOLDER_NAME)
         if not root_id:
             return []
-        results = self.service.files().list(
-            q=f"'{root_id}' in parents and trashed=false",
-            fields="files(id, name, size, modifiedTime, parents)",
-            orderBy="name desc",
-            pageSize=100,
-        ).execute()
-        return results.get("files", [])
+        all_files = []
+        page_token = None
+        while True:
+            try:
+                results = self.service.files().list(
+                    q=f"'{root_id}' in parents and trashed=false",
+                    fields="nextPageToken, files(id, name, size, modifiedTime, parents)",
+                    orderBy="name desc",
+                    pageSize=200,
+                    pageToken=page_token,
+                ).execute()
+                all_files.extend(results.get("files", []))
+                page_token = results.get("nextPageToken")
+                if not page_token:
+                    break
+            except Exception as e:
+                self.on_log(f"  Error listing root reports (page_token={page_token}): {e}")
+                break
+        return all_files
 
     def list_store_reports(self, store_name, date_prefix=None, report_type=None):
         files = self.list_reports(store_name=store_name, report_type=report_type)

@@ -433,6 +433,86 @@ def _write_drive_inventory_tables(rows: list[dict], missing_rows: list[dict], su
         )
         conn.commit()
 
+        # ---- Duplicate report records ----
+        dup_rows = [r for r in rows if r.get('_dup_count', 1) > 1]
+        conn.execute(
+            '''
+            CREATE TABLE IF NOT EXISTS drive_duplicate_report_records (
+                store TEXT NOT NULL,
+                report_key TEXT NOT NULL,
+                report_label TEXT NOT NULL,
+                business_date TEXT,
+                filename TEXT NOT NULL,
+                filepath TEXT NOT NULL,
+                drive_file_id TEXT,
+                size_bytes INTEGER NOT NULL DEFAULT 0,
+                modified_at TEXT,
+                detected_at TEXT NOT NULL,
+                dup_count INTEGER NOT NULL DEFAULT 1
+            )
+            '''
+        )
+        conn.execute('DELETE FROM drive_duplicate_report_records')
+        dup_write = [
+            dict(
+                store=r['store'], report_key=r['report_key'], report_label=r['report_label'],
+                business_date=r.get('business_date'), filename=r['filename'],
+                filepath=r['filepath'], drive_file_id=r.get('drive_file_id'),
+                size_bytes=r.get('size_bytes', 0), modified_at=r.get('modified_at'),
+                detected_at=datetime.now(UTC).isoformat(), dup_count=r.get('_dup_count', 1),
+            )
+            for r in dup_rows
+        ]
+        conn.executemany(
+            '''INSERT INTO drive_duplicate_report_records
+            (store, report_key, report_label, business_date, filename, filepath,
+             drive_file_id, size_bytes, modified_at, detected_at, dup_count)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+            [(r['store'], r['report_key'], r['report_label'], r['business_date'],
+              r['filename'], r['filepath'], r['drive_file_id'], r['size_bytes'],
+              r['modified_at'], r['detected_at'], r['dup_count']) for r in dup_write],
+        )
+
+        # ---- Invalid report records ----
+        inv_rows = [r for r in rows if r.get('_invalid_reason')]
+        conn.execute(
+            '''
+            CREATE TABLE IF NOT EXISTS drive_invalid_report_records (
+                store TEXT NOT NULL,
+                report_key TEXT NOT NULL,
+                report_label TEXT NOT NULL,
+                business_date TEXT,
+                filename TEXT NOT NULL,
+                filepath TEXT NOT NULL,
+                drive_file_id TEXT,
+                size_bytes INTEGER NOT NULL DEFAULT 0,
+                modified_at TEXT,
+                detected_at TEXT NOT NULL,
+                invalid_reason TEXT NOT NULL
+            )
+            '''
+        )
+        conn.execute('DELETE FROM drive_invalid_report_records')
+        inv_write = [
+            dict(
+                store=r['store'], report_key=r['report_key'], report_label=r['report_label'],
+                business_date=r.get('business_date'), filename=r['filename'],
+                filepath=r['filepath'], drive_file_id=r.get('drive_file_id'),
+                size_bytes=r.get('size_bytes', 0), modified_at=r.get('modified_at'),
+                detected_at=datetime.now(UTC).isoformat(), invalid_reason=r['_invalid_reason'],
+            )
+            for r in inv_rows
+        ]
+        conn.executemany(
+            '''INSERT INTO drive_invalid_report_records
+            (store, report_key, report_label, business_date, filename, filepath,
+             drive_file_id, size_bytes, modified_at, detected_at, invalid_reason)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+            [(r['store'], r['report_key'], r['report_label'], r['business_date'],
+              r['filename'], r['filepath'], r['drive_file_id'], r['size_bytes'],
+              r['modified_at'], r['detected_at'], r['invalid_reason']) for r in inv_write],
+        )
+
 
 def _build_missing_rows(
     inventory_rows: list[dict],

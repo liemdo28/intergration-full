@@ -30,6 +30,8 @@ if sys.platform == "win32":
 import customtkinter as ctk
 import tkinter as tk
 from tkinter import messagebox
+from tkinter import ttk as tkinter_ttk
+from tkinter import ttk as tkinter_ttk
 from tkcalendar import Calendar
 from app_paths import APP_DIR, RUNTIME_DIR, app_path, runtime_path
 from audit_utils import (
@@ -53,6 +55,48 @@ from recovery_center import (
     get_recovery_playbooks,
 )
 from toast_reports import DEFAULT_REPORT_TYPE_KEYS, REPORT_TYPES, build_local_report_dir, get_download_report_types
+
+
+# ---------------------------------------------------------------------------
+# Task 8: Config-driven required report rules per store
+# REQUIRED_REPORT_RULES: store name -> frozenset of required report_key strings
+# Unknown stores fall back to frozenset(DEFAULT_REPORT_TYPE_KEYS).
+# ---------------------------------------------------------------------------
+REQUIRED_REPORT_RULES: dict[str, frozenset[str]] = {}
+
+
+def get_required_reports(store_name: str) -> frozenset[str]:
+    """Return required report keys for a store (custom rules or defaults)."""
+    return REQUIRED_REPORT_RULES.get(store_name, frozenset(DEFAULT_REPORT_TYPE_KEYS))
+
+
+def load_required_report_rules(cfg: dict) -> None:
+    """Load store-level required report rules from a config dict.
+
+    Expected format::
+
+        {
+          "coverage_rules": {
+            "Stockton":   ["sales_summary", "order_details"],
+            "WA3":        ["sales_summary"],
+          }
+        }
+
+    Clears and repopulates REQUIRED_REPORT_RULES.
+    """
+    global REQUIRED_REPORT_RULES
+    REQUIRED_REPORT_RULES = {}
+    rules = cfg.get("coverage_rules", {})
+    for store, keys in rules.items():
+        if isinstance(keys, (list, tuple, frozenset)):
+            REQUIRED_REPORT_RULES[str(store)] = frozenset(k for k in keys if k)
+        elif isinstance(keys, str):
+            REQUIRED_REPORT_RULES[str(store)] = frozenset(
+                k.strip() for k in keys.split(",") if k.strip()
+            )
+    import logging
+    _lg = logging.getLogger(__name__)
+    _lg.debug(f"Loaded coverage rules for {len(REQUIRED_REPORT_RULES)} store(s): {list(REQUIRED_REPORT_RULES.keys())}")
 from integration_status import (
     get_auto_download_plan,
     get_auto_qb_sync_plan,
@@ -1443,6 +1487,27 @@ class QBSyncTab(ctk.CTkFrame):
             text="Strict accounting mode (block sync on unmapped or unbalanced report data)",
             variable=self.strict_sync_var,
         ).grid(row=3, column=0, columnspan=3, pady=(8, 0), sticky="w")
+        self.require_coverage_var = ctk.BooleanVar(value=False)
+        ctk.CTkCheckBox(
+            opt_inner,
+            text="Require report coverage (block sync if expected reports are missing from Drive)",
+            variable=self.require_coverage_var,
+        ).grid(row=4, column=0, columnspan=3, pady=(8, 0), sticky="w")
+        rules_row = ctk.CTkFrame(opt_inner, fg_color="transparent")
+        rules_row.grid(row=5, column=0, columnspan=3, pady=(4, 0), sticky="w")
+        ctk.CTkLabel(rules_row, text="Coverage Rules:").pack(side="left", padx=(0, 8))
+        self.coverage_rules_var = ctk.StringVar(value="")
+        ctk.CTkEntry(
+            rules_row, textvariable=self.coverage_rules_var,
+            width=300, font=ctk.CTkFont(size=11),
+            placeholder_text="Leave blank = default  |  store:report1,report2  |  *prefix = override default",
+        ).pack(side="left", padx=(0, 6))
+        ctk.CTkLabel(
+            rules_row,
+            text="e.g.  Stockton:sales_summary,order_details  |  Prefix * to override defaults",
+            text_color=UI_MUTED_TEXT, font=ctk.CTkFont(size=10),
+            anchor="w",
+        ).pack(side="left")
 
         # ── Marketplace Uploads ──
         _marketplace_card, marketplace_frame = make_section_card(
@@ -1950,6 +2015,102 @@ class QBSyncTab(ctk.CTkFrame):
         self.progress_label.configure(text=f"{msg} ({current}/{total})")
         self.status_var.set(msg)
 
+    def _check_coverage_guard(self, stores, dates):
+        """Check Drive for missing reports before sync. Returns (ok, message)."""
+        import sqlite3
+        from app_paths import runtime_path
+        db_path = runtime_path("report-inventory.db")
+        if not db_path.exists():
+            return True, "Drive inventory not yet scanned."
+        conn = sqlite3.connect(db_path)
+        missing_by_store = {}
+        for store in stores:
+            for date_str in dates:
+                rows = conn.execute(
+                    "SELECT report_key, COUNT(*) FROM drive_missing_report_records "
+                    "WHERE store=? AND business_date=? AND download_supported=1",
+                    (store, date_str)
+                ).fetchall()
+                for rk, cnt in rows:
+                    if cnt > 0:
+                        missing_by_store.setdefault(store, []).append((date_str, rk))
+        conn.close()
+        if not missing_by_store:
+            return True, ""
+        total_missing = sum(len(v) for v in missing_by_store.values())
+        lines_msg = [str(total_missing) + " missing expected report(s) found on Drive:"]
+        for store, items in sorted(missing_by_store.items()):
+            lines_msg.append("  " + store + ": " + str(len(items)) + " missing")
+        lines_msg.append("")
+        lines_msg.append("Run Refresh Drive Inventory in Settings to update the snapshot.")
+        lines_msg.append("Sync will continue without blocking.")
+        msg = "\n".join(lines_msg)
+        return False, msg
+
+    def _check_coverage_guard(self, stores, dates, rules_text=None):
+        """Check Drive for missing reports before sync. Returns (ok, message).
+
+        rules_text: optional per-store overrides in the form  store:report1,report2
+            Entries separated by newlines or semicolons.
+            Prefix a report key with * to override the store's entire default set.
+            e.g. "Stockton:sales_summary,order_details;WA3:*sales_summary"
+        """
+        import sqlite3
+        from app_paths import runtime_path
+        db_path = runtime_path("report-inventory.db")
+        if not db_path.exists():
+            return True, "Drive inventory not yet scanned."
+
+        # Parse rules_text into custom_rules: store -> frozenset(report_keys)
+        custom_rules: dict[str, frozenset[str]] = {}
+        if rules_text:
+            for entry in rules_text.replace(";", "\n").split("\n"):
+                entry = entry.strip()
+                if ":" not in entry:
+                    continue
+                store_name, reports_part = entry.split(":", 1)
+                store_name = store_name.strip()
+                report_keys = [k.strip() for k in reports_part.split(",") if k.strip()]
+                is_override = any(k.startswith("*") for k in report_keys)
+                if is_override:
+                    custom_rules[store_name] = frozenset(k.lstrip("*") for k in report_keys)
+                else:
+                    default = get_required_reports(store_name)
+                    custom_rules[store_name] = default | frozenset(report_keys)
+
+        conn = sqlite3.connect(db_path)
+        missing_by_store: dict[str, list[tuple[str, str]]] = {}
+        for store in stores:
+            req_keys = custom_rules.get(store, get_required_reports(store))
+            if not req_keys:
+                continue
+            for date_str in dates:
+                for rk in req_keys:
+                    cnt = conn.execute(
+                        "SELECT COUNT(*) FROM drive_missing_report_records "
+                        "WHERE store=? AND business_date=? AND report_key=? AND download_supported=1",
+                        (store, date_str, rk)
+                    ).fetchone()[0]
+                    if cnt > 0:
+                        missing_by_store.setdefault(store, []).append((date_str, rk))
+        conn.close()
+        if not missing_by_store:
+            return True, ""
+        total_missing = sum(len(v) for v in missing_by_store.values())
+        lines_msg = [str(total_missing) + " missing required report(s) found on Drive:"]
+        for store, items in sorted(missing_by_store.items()):
+            by_report: dict[str, int] = {}
+            for date_str, rk in items:
+                by_report[rk] = by_report.get(rk, 0) + 1
+            report_summary = ", ".join(f"{rk}({n})" for rk, n in sorted(by_report.items()))
+            lines_msg.append(f"  {store}: {report_summary}")
+        lines_msg.append("")
+        lines_msg.append("Update coverage rules in QB Sync options if needed.")
+        lines_msg.append("Run Refresh Drive Inventory in Settings to update the snapshot.")
+        lines_msg.append("Sync will continue without blocking.")
+        msg = "\n".join(lines_msg)
+        return False, msg
+
     def _stop_sync(self):
         if not self._stop_sync_event.is_set():
             self._stop_sync_event.set()
@@ -1966,6 +2127,11 @@ class QBSyncTab(ctk.CTkFrame):
         dates = self._get_date_range()
         if not dates:
             return
+        if self.require_coverage_var.get():
+            guard_ok, guard_msg = self._check_coverage_guard(stores, dates)
+            if not guard_ok:
+                messagebox.showwarning("Coverage Guard", guard_msg)
+                return
         source_filter = self.source_filter_var.get()
         self._set_validation_records([])
         self._running = True
@@ -4424,6 +4590,7 @@ class SettingsTab(ctk.CTkFrame):
         self.status_var = status_var
         self.recovery_playbooks = get_recovery_playbooks()
         self._local_cfg = load_local_config()
+        load_required_report_rules(self._local_cfg)
         self._build_ui()
 
     def _build_ui(self):
@@ -4482,6 +4649,20 @@ class SettingsTab(ctk.CTkFrame):
             tone="teal",
             width=210,
         ).pack(side="left", padx=(0, 8))
+        make_action_button(
+            drive_inventory_btns,
+            "Export Missing CSV",
+            self._export_missing_csv,
+            tone="neutral",
+            width=140,
+        ).pack(side="left", padx=(0, 8))
+        make_action_button(
+            drive_inventory_btns,
+            "Export Missing CSV",
+            self._export_missing_csv,
+            tone="neutral",
+            width=140,
+        ).pack(side="left", padx=(0, 8))
         ctk.CTkLabel(
             drive_inventory_btns,
             text="Rows sort by missing coverage first, then by store and report type.",
@@ -4536,26 +4717,76 @@ class SettingsTab(ctk.CTkFrame):
             text="Coverage Matrix",
             font=ctk.CTkFont(size=12, weight="bold"),
         ).pack(anchor="w", pady=(2, 4))
-        self.drive_inventory_box = ctk.CTkTextbox(
-            drive_inventory_frame,
-            height=230,
-            font=ctk.CTkFont(family="Consolas", size=11),
+        tree_outer = ctk.CTkFrame(drive_inventory_frame, fg_color="#1e293b", corner_radius=6)
+        tree_outer.pack(fill="x", pady=(0, 6))
+        tree_tk = tk.Frame(tree_outer, bg="#1e293b")
+        tree_tk.pack(fill="x", padx=4, pady=4)
+        vsb = tk.Scrollbar(tree_tk, orient="vertical")
+        hsb = tk.Scrollbar(tree_tk, orient="horizontal")
+        COLS = ("store","report","health","files","first","last","missing","next_gap","last_file")
+        self.drive_matrix_tree = tkinter_ttk.Treeview(
+            tree_tk, columns=COLS, show="headings", height=8,
+            yscrollcommand=vsb.set, xscrollcommand=hsb.set,
         )
-        self.drive_inventory_box.pack(fill="x", pady=(0, 8))
-        self.drive_inventory_box.configure(state="disabled")
+        vsb.config(command=self.drive_matrix_tree.yview)
+        hsb.config(command=self.drive_matrix_tree.xview)
+        vsb.pack(side="right", fill="y")
+        hsb.pack(side="bottom", fill="x")
+        self.drive_matrix_tree.pack(fill="x")
+        self.drive_matrix_tree.tag_configure("ready", background="#1a3d2e", foreground="#4ade80")
+        self.drive_matrix_tree.tag_configure("partial", background="#3d2a1a", foreground="#fbbf24")
+        self.drive_matrix_tree.tag_configure("missing", background="#3d1a1a", foreground="#f87171")
+        self.drive_matrix_tree.tag_configure("empty", background="#1a1a2e", foreground="#94a3b8")
+        col_widths = {"store":90,"report":160,"health":72,"files":50,"first":90,"last":90,"missing":60,"next_gap":90,"last_file":200}
+        col_labels = {"store":"Store","report":"Report Type","health":"Health","files":"Files","first":"First Date","last":"Last Date","missing":"Missing","next_gap":"Next Gap","last_file":"Latest File"}
+        for col in COLS:
+            self.drive_matrix_tree.heading(col, text=col_labels[col])
+            self.drive_matrix_tree.column(col, width=col_widths[col], anchor="w", minwidth=60)
+        self.drive_matrix_tree.bind("<<TreeviewSelect>>", self._on_matrix_row_selected)
+
+        ctk.CTkLabel(
+            drive_inventory_frame,
+            text="Selection Detail",
+            font=ctk.CTkFont(size=12, weight="bold"),
+        ).pack(anchor="w", pady=(0, 4))
+        detail_frm = ctk.CTkFrame(drive_inventory_frame, fg_color="#1e293b", corner_radius=6)
+        detail_frm.pack(fill="x", pady=(0, 6))
+        self.drive_detail_var = ctk.StringVar(value="Click a row above to see full details.")
+        ctk.CTkLabel(
+            detail_frm, textvariable=self.drive_detail_var,
+            text_color="#94a3b8", font=ctk.CTkFont(family="Consolas", size=11),
+            anchor="w", justify="left", wraplength=620,
+        ).pack(anchor="w", padx=10, pady=10)
 
         ctk.CTkLabel(
             drive_inventory_frame,
             text="Missing Ranges",
             font=ctk.CTkFont(size=12, weight="bold"),
         ).pack(anchor="w", pady=(0, 4))
-        self.drive_missing_box = ctk.CTkTextbox(
-            drive_inventory_frame,
-            height=170,
-            font=ctk.CTkFont(family="Consolas", size=11),
+        miss_frm = ctk.CTkFrame(drive_inventory_frame, fg_color="#1e293b", corner_radius=6)
+        miss_frm.pack(fill="x")
+        miss_tk = tk.Frame(miss_frm, bg="#1e293b")
+        miss_tk.pack(fill="x", padx=4, pady=4)
+        m_vsb = tk.Scrollbar(miss_tk, orient="vertical")
+        m_hsb = tk.Scrollbar(miss_tk, orient="horizontal")
+        m_cols = ("store","report","start","end","count","reason")
+        self.drive_missing_tree = tkinter_ttk.Treeview(
+            miss_tk, columns=m_cols, show="headings", height=5,
+            yscrollcommand=m_vsb.set, xscrollcommand=m_hsb.set,
         )
-        self.drive_missing_box.pack(fill="x")
-        self.drive_missing_box.configure(state="disabled")
+        m_vsb.config(command=self.drive_missing_tree.yview)
+        m_hsb.config(command=self.drive_missing_tree.xview)
+        m_vsb.pack(side="right", fill="y")
+        m_hsb.pack(side="bottom", fill="x")
+        self.drive_missing_tree.pack(fill="x")
+        m_widths = {"store":90,"report":160,"start":100,"end":100,"count":50,"reason":160}
+        m_labels = {"store":"Store","report":"Report","start":"Start","end":"End","count":"Days","reason":"Reason"}
+        for col in m_cols:
+            self.drive_missing_tree.heading(col, text=m_labels[col])
+            self.drive_missing_tree.column(col, width=m_widths[col], anchor="w", minwidth=60)
+
+        self.drive_inventory_box = None
+        self.drive_missing_box = None
 
         # ── Toast Session ──
         _toast_card, toast_frame = make_section_card(
@@ -4893,11 +5124,11 @@ class SettingsTab(ctk.CTkFrame):
         inventory_rows = list(snapshot.get("inventory_rows") or [])
 
         ready_count = sum(1 for row in summary_rows if row["health"] == "ready")
-        missing_count = sum(1 for row in summary_rows if row["health"] == "missing")
+        missing_count_sum = sum(1 for row in summary_rows if row["health"] == "missing")
         empty_count = sum(1 for row in summary_rows if row["health"] == "empty")
         summary_text = (
             f"Drive snapshot: {len(inventory_rows)} file rows, {len(summary_rows)} store/report lanes, "
-            f"{missing_count} with gaps, {empty_count} empty, {ready_count} ready."
+            + str(missing_count_sum) + " with gaps, " + str(empty_count) + " empty, " + str(ready_count) + " ready."
         )
         self.drive_inventory_summary.configure(text=summary_text, text_color="#cbd5e1")
 
@@ -4918,47 +5149,85 @@ class SettingsTab(ctk.CTkFrame):
             )
         if len(summary_rows) > 60:
             matrix_lines.append(f"... {len(summary_rows) - 60} more row(s)")
-        self.drive_inventory_box.configure(state="normal")
-        self.drive_inventory_box.delete("1.0", "end")
-        self.drive_inventory_box.insert("end", "\n".join(matrix_lines))
-        self.drive_inventory_box.configure(state="disabled")
-
-        grouped = []
-        by_pair = {}
-        for row in missing_rows:
-            by_pair.setdefault((row["store"], row["report_label"]), []).append(row)
-        for (store, report_label), rows in sorted(by_pair.items()):
-            rows = sorted(rows, key=lambda item: item["business_date"])
-            start = rows[0]["business_date"]
-            prev = start
-            count = 1
-            for item in rows[1:]:
-                current = item["business_date"]
-                prev_dt = datetime.strptime(prev, "%Y-%m-%d")
-                cur_dt = datetime.strptime(current, "%Y-%m-%d")
-                if cur_dt == prev_dt + timedelta(days=1):
-                    prev = current
-                    count += 1
-                    continue
-                grouped.append((store, report_label, start, prev, count))
-                start = current
-                prev = current
+        tree = getattr(self, "drive_matrix_tree", None)
+        if tree:
+            for item in tree.get_children():
+                tree.delete(item)
+            HEALTH_MAP = {"ready":"READY","partial":"PARTIAL","missing":"MISSING","empty":"EMPTY"}
+            for row in summary_rows:
+                tag = row["health"]
+                tree.insert("", "end", values=(
+                    row["store"], row["report_label"],
+                    HEALTH_MAP.get(tag, tag.upper()),
+                    row["available_dates_count"],
+                    row.get("first_date") or "-",
+                    row.get("last_date") or "-",
+                    row["missing_count"],
+                    row.get("next_missing_date") or "-",
+                    (row.get("latest_file_name") or "-")[:40],
+                ), tags=(tag,))
+        missing_tree = getattr(self, "drive_missing_tree", None)
+        if missing_tree:
+            for item in missing_tree.get_children():
+                missing_tree.delete(item)
+            by_pair = {}
+            for row in missing_rows:
+                by_pair.setdefault((row["store"], row["report_label"]), []).append(row)
+            grouped = []
+            for (store, report_label), rows in sorted(by_pair.items()):
+                rows = sorted(rows, key=lambda item: item["business_date"])
+                start = rows[0]["business_date"]
+                prev = start
                 count = 1
-            grouped.append((store, report_label, start, prev, count))
+                for item in rows[1:]:
+                    current = item["business_date"]
+                    prev_dt = datetime.strptime(prev, "%Y-%m-%d")
+                    cur_dt = datetime.strptime(current, "%Y-%m-%d")
+                    if cur_dt == prev_dt + timedelta(days=1):
+                        prev = current
+                        count += 1
+                        continue
+                    grouped.append((store, report_label, start, prev, count, rows[0].get("reason", "")))
+                    start = current
+                    prev = current
+                    count = 1
+                grouped.append((store, report_label, start, prev, count, rows[0].get("reason", "")))
+            for store, report_label, start, end, count, reason in grouped[:200]:
+                reason_short = reason.replace("_", " ").title() if reason else "-"
+                tag = reason.split("_")[0] if reason else "gap"
+                end_disp = "-" if start == end else end
+                missing_tree.insert("", "end", values=(
+                    store, report_label, start, end_disp, count, reason_short
+                ), tags=(tag,))
+        self.drive_inventory_summary.configure(
+            text="Drive snapshot: " + str(len(inventory_rows)) + " file rows, " + str(len(summary_rows)) + " store/report lanes, "
+                 + str(missing_count_sum) + " with gaps, " + str(empty_count) + " empty, " + str(ready_count) + " ready.",
+            text_color="#cbd5e1"
+        )
 
-        missing_lines = [
-            "STORE        REPORT                    RANGE                     DAYS",
-            "-" * 78,
+    def _on_matrix_row_selected(self, event):
+        tree = getattr(self, "drive_matrix_tree", None)
+        if not tree:
+            return
+        sel = tree.selection()
+        if not sel:
+            return
+        vals = tree.item(sel[0], "values")
+        if not vals:
+            return
+        store, report, health, files, first, last, missing, next_gap, last_file = vals
+        parts = [
+            ("Store:", str(store)),
+            ("Report:", str(report)),
+            ("Health:", str(health)),
+            ("Files found:", str(files)),
+            ("First date:", str(first)),
+            ("Last date:", str(last)),
+            ("Missing days:", str(missing)),
+            ("Next gap:", str(next_gap)),
+            ("Latest file:", str(last_file)),
         ]
-        for store, report_label, start, end, count in grouped[:80]:
-            range_label = start if start == end else f"{start} -> {end}"
-            missing_lines.append(f"{store[:12]:12} {report_label[:24]:24} {range_label:25} {count:>4}")
-        if len(grouped) > 80:
-            missing_lines.append(f"... {len(grouped) - 80} more missing range(s)")
-        self.drive_missing_box.configure(state="normal")
-        self.drive_missing_box.delete("1.0", "end")
-        self.drive_missing_box.insert("end", "\n".join(missing_lines))
-        self.drive_missing_box.configure(state="disabled")
+        self.drive_detail_var.set("\n".join("%-14s %s" % p for p in parts))
 
     def _refresh_drive_inventory(self):
         def _worker():
@@ -5045,6 +5314,80 @@ class SettingsTab(ctk.CTkFrame):
 
         except Exception as e:
             self.upload_suggestion_var.set(f"Could not build suggestions: {e}")
+
+    def _export_missing_csv(self):
+        """Export missing report records to CSV."""
+        try:
+            import csv as _csv
+            from tkinter import filedialog
+            from app_paths import runtime_path
+            import sqlite3
+            db_path = runtime_path("report-inventory.db")
+            if not db_path.exists():
+                messagebox.showinfo("Export CSV", "Run Refresh Drive Inventory first.")
+                return
+            default_name = "missing_reports_" + datetime.now().strftime("%Y%m%d_%H%M%S") + ".csv"
+            out_path = filedialog.asksaveasfilename(
+                title="Save Missing Reports CSV",
+                defaultextension=".csv",
+                initialfile=default_name,
+                filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+            )
+            if not out_path:
+                return
+            conn = sqlite3.connect(db_path)
+            rows = conn.execute(
+                "SELECT store, report_key, report_label, business_date, reason, detected_at, download_supported "
+                "FROM drive_missing_report_records ORDER BY store, report_key, business_date"
+            ).fetchall()
+            conn.close()
+            with open(out_path, "w", newline="", encoding="utf-8-sig") as csvfile:
+                writer = _csv.writer(csvfile)
+                writer.writerow(["Store","Report Key","Report Label","Business Date","Reason","Detected At","Downloadable"])
+                for row in rows:
+                    writer.writerow(list(row))
+            if self.status_var:
+                self.status_var.set("Exported " + str(len(rows)) + " missing records to CSV")
+            messagebox.showinfo("Export CSV", "Saved " + str(len(rows)) + " rows to: " + out_path)
+        except Exception as exc:
+            messagebox.showerror("Export CSV", "Export failed: " + str(exc))
+
+    def _export_missing_csv(self):
+        """Export missing report records to CSV."""
+        try:
+            import csv as _csv
+            from tkinter import filedialog
+            from app_paths import runtime_path
+            import sqlite3
+            db_path = runtime_path("report-inventory.db")
+            if not db_path.exists():
+                messagebox.showinfo("Export CSV", "Run Refresh Drive Inventory first.")
+                return
+            default_name = "missing_reports_" + datetime.now().strftime("%Y%m%d_%H%M%S") + ".csv"
+            out_path = filedialog.asksaveasfilename(
+                title="Save Missing Reports CSV",
+                defaultextension=".csv",
+                initialfile=default_name,
+                filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+            )
+            if not out_path:
+                return
+            conn = sqlite3.connect(db_path)
+            rows = conn.execute(
+                "SELECT store, report_key, report_label, business_date, reason, detected_at, download_supported "
+                "FROM drive_missing_report_records ORDER BY store, report_key, business_date"
+            ).fetchall()
+            conn.close()
+            with open(out_path, "w", newline="", encoding="utf-8-sig") as csvfile:
+                writer = _csv.writer(csvfile)
+                writer.writerow(["Store","Report Key","Report Label","Business Date","Reason","Detected At","Downloadable"])
+                for row in rows:
+                    writer.writerow(list(row))
+            if self.status_var:
+                self.status_var.set("Exported " + str(len(rows)) + " missing records to CSV")
+            messagebox.showinfo("Export CSV", "Saved " + str(len(rows)) + " rows to: " + out_path)
+        except Exception as exc:
+            messagebox.showerror("Export CSV", "Export failed: " + str(exc))
 
     def _download_missing_from_drive(self):
         """Pull missing reports from Google Drive back to local toast-reports/ folder."""
