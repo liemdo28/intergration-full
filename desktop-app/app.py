@@ -63,6 +63,11 @@ from runtime_manifest import build_manifest, RuntimeManifest
 from services.feature_readiness_service import check_all_features
 from models.feature_readiness import FeatureKey, ReadinessStatus
 from content.ui_copy import operator_msg, CopyKey
+from services.activity_log_service import (
+    log,
+    EventCategory,
+    EventSeverity,
+)
 # ---------------------------------------------------------------------------
 # Task 8: Config-driven required report rules per store
 # REQUIRED_REPORT_RULES: store name -> frozenset of required report_key strings
@@ -1147,6 +1152,7 @@ class DownloadTab(ctk.CTkFrame):
         silent_mode = False
         gdrive = None
         gdrive_ready = False
+        start_time = time.time()
         try:
             from toast_downloader import ToastDownloader, ToastLoginRequiredError
             app_root = self.winfo_toplevel()
@@ -1280,10 +1286,16 @@ class DownloadTab(ctk.CTkFrame):
                 f"All done! {results['success']}/{results['total']} prepared "
                 f"({results.get('skipped', 0)} skipped existing)"
             )
+            log(EventCategory.DOWNLOAD, "Download Reports completed",
+                detail=f"{results['success']} report(s) for {', '.join(locations)}",
+                store=", ".join(locations), success=True,
+                duration=time.time() - start_time)
 
         except ToastLoginRequiredError as e:
             self.log(f"Error: {e}")
             completion_payload = {"ok": False, "message": str(e), "success": 0, "failed": len(locations) * len(dates), "total": len(locations) * len(dates)}
+            log(EventCategory.DOWNLOAD, "Download Reports failed",
+                detail=str(e), success=False)
             if not silent_mode:
                 self.after(0, lambda msg=str(e): messagebox.showwarning("Toast Login Required", msg))
         except Exception as e:
@@ -1291,6 +1303,8 @@ class DownloadTab(ctk.CTkFrame):
             import traceback
             self.log(traceback.format_exc())
             completion_payload = {"ok": False, "message": str(e), "success": 0, "failed": len(locations) * len(dates), "total": len(locations) * len(dates)}
+            log(EventCategory.DOWNLOAD, "Download Reports failed",
+                detail=str(e), success=False)
         finally:
             refresh_report_inventory(APP_DIR)
             publish_agentai_snapshot_if_configured(on_log=self.log)
@@ -2254,6 +2268,7 @@ class QBSyncTab(ctk.CTkFrame):
             "failed": 0,
             "total": 0,
         }
+        start_time = time.time()
         try:
             global_cfg, all_stores = load_mapping()
             sys.path.insert(0, str(APP_DIR))
@@ -2712,6 +2727,10 @@ class QBSyncTab(ctk.CTkFrame):
             self.after(0, lambda records=validation_records: self._set_validation_records(records))
             self.after(0, self._refresh_last_sync_status)
             self.log(f"\nAll done! Success: {success_count}, Failed: {fail_count}")
+            log(EventCategory.QB_SYNC, "QB Sync completed",
+                detail=f"Sync completed — {success_count} success, {fail_count} failed",
+                store=", ".join(stores) if stores else None, success=True,
+                duration=time.time() - start_time)
             completion_payload = {
                 "ok": fail_count == 0,
                 "message": f"QB sync finished with {success_count} success and {fail_count} failed.",
@@ -2725,6 +2744,8 @@ class QBSyncTab(ctk.CTkFrame):
             import traceback
             self.log(traceback.format_exc())
             completion_payload = {"ok": False, "message": str(e), "success": 0, "failed": len(stores) * len(dates), "total": len(stores) * len(dates)}
+            log(EventCategory.QB_SYNC, "QB Sync failed",
+                detail=str(e), success=False)
         finally:
             publish_agentai_snapshot_if_configured(on_log=self.log)
             completion_callback = self._run_completion_callback
@@ -4504,6 +4525,7 @@ class RemoveTab(ctk.CTkFrame):
         threading.Thread(target=self._delete_worker, args=(txn_list, snapshot_files, dry_run), daemon=True).start()
 
     def _delete_worker(self, txn_list, snapshot_files, dry_run):
+        start_time = time.time()
         audit_rows = []
 
         def on_progress(current, total, txn, success, msg):
@@ -4546,9 +4568,16 @@ class RemoveTab(ctk.CTkFrame):
                 "delete-run",
             )
             result["audit_files"] = audit_files
-            self.after(0, lambda r=result: self._on_delete_done(r))
+            _duration = time.time() - start_time
+            log(EventCategory.REMOVE_TX, "Remove Transactions completed",
+                detail=f"Removed {result['success_count']} transaction(s) ({result['fail_count']} failed)",
+                store=None, success=True,
+                duration=_duration)
+            self.after(0, lambda r=result, d=_duration: self._on_delete_done(r, d))
         except Exception as e:
             err_msg = str(e)
+            log(EventCategory.REMOVE_TX, "Remove Transactions failed",
+                detail=str(e), success=False)
             self.after(0, lambda m=err_msg: self._on_delete_error(m))
 
     def _stop_remove(self):
@@ -4557,7 +4586,7 @@ class RemoveTab(ctk.CTkFrame):
             self._log("Stop requested. Delete will finish the current item, then stop.")
             self.btn_stop_remove.configure(state="disabled")
 
-    def _on_delete_done(self, result):
+    def _on_delete_done(self, result, _duration=None):
         self._running = False
         self.btn_search.configure(state="normal")
         self.btn_export.configure(state="normal" if self.txn_rows else "disabled")
@@ -5802,6 +5831,8 @@ class App(ctk.CTk):
         self._agentai_command_heartbeat_stop = None
         self._build_ui()
         self._sync_runtime_state(started_at=utc_now_iso(), worker_status="idle", last_error="")
+        log(EventCategory.APP_LIFECYCLE, "App started",
+            detail=f"Runtime mode: {self.runtime_mode}", success=True)
         self.run_diagnostics_async(False)
         self.after(5000, lambda: self._schedule_agentai_poll(5000))
         self.after(7000, lambda: self._schedule_agentai_snapshot_publish(5000))
@@ -5847,6 +5878,8 @@ class App(ctk.CTk):
             active_command_type="",
             last_command_finished_at=utc_now_iso(),
         )
+        log(EventCategory.APP_LIFECYCLE, "App closed cleanly",
+            detail=f"Runtime mode: {self.runtime_mode}", success=True)
         self.destroy()
 
     def _build_ui(self):
