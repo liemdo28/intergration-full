@@ -1,18 +1,29 @@
 """
 ToastPOSManager — Safe Mode Controller
 
-Safe mode is entered when:
-  1. Normal boot had BLOCKERs (from bootstrap report)
-  2. User passed --safe flag
-  3. App crashed during previous normal run
-  4. User chose "Run in Safe Mode" from recovery dialog
+Safe mode is a deterministic, persistent startup mode.
+
+Entry conditions (any one activates safe mode):
+  1. Bootstrap report has blockers or is first-run
+  2. User passes --safe flag
+  3. A crash marker exists from the previous run
+  4. User chooses "Run in Safe Mode" from the recovery dialog
 
 In safe mode:
   - Background worker thread is skipped
   - Heavy background actions (periodic Drive scans, auto-sync) are skipped
   - Settings / Recovery tab opens first
-  - Diagnostics panel shows full environment info
-  - A visible banner notes "Safe Mode" is active
+  - A visible amber banner shows safe mode is active
+
+Exit safe mode:
+  - Run a normal successful session (app closes cleanly without crashes)
+  - Delete all safe_mode_*.marker files in the logs/ folder
+  - Restart without --safe flag after a clean exit
+
+Persistence:
+  - Safe mode state is NOT persisted across runs by default
+  - A crash marker triggers safe mode on the NEXT run only
+  - After a successful clean run, safe mode is automatically cleared
 """
 
 from __future__ import annotations
@@ -64,6 +75,14 @@ class SafeModeConfig:
             return "Safe mode: OFF"
         return f"Safe mode: ON — {self.reason}"
 
+    def deactivate(self) -> None:
+        """Exit safe mode and clear the state."""
+        self.active = False
+        self.reason = ""
+        self.skipped_workers.clear()
+        self.started_at = ""
+        logging.info("Safe mode deactivated")
+
 
 # ---------------------------------------------------------------------------
 # Global singleton (module-level state survives across imports)
@@ -82,40 +101,74 @@ def get_safe_mode_config() -> SafeModeConfig:
 def activate_safe_mode(reason: str) -> None:
     """Programmatically enter safe mode (e.g. after a crash)."""
     _state.activate(reason)
-    _log_to_file(reason)
+    _write_marker(reason)
+
+
+def deactivate_safe_mode() -> None:
+    """Exit safe mode, clear marker files, clear state."""
+    _state.deactivate()
+    _clear_markers()
 
 
 def activate_from_bootstrap_report(report) -> None:
     """
     Read a bootstrap_runtime.BootstrapReport and enter safe mode
-    if there were blockers or first-run.
+    if there were blockers, first-run, or an existing crash marker.
     """
     if not report.can_run:
         _state.activate(f"bootstrap blockers: {report.summary()}")
-    elif report.is_first_run:
+        return
+    if report.is_first_run:
         _state.activate("first-run detected")
-    else:
-        blockers = [i for i in report.blockers]
-        if blockers:
-            _state.activate(f"bootstrap blockers: {len(blockers)} issue(s)")
+        return
+    # Check for crash marker from previous run
+    prev_crash = get_last_crash_marker()
+    if prev_crash:
+        _state.activate(f"previous crash: {prev_crash}")
 
 
-def _log_to_file(reason: str) -> None:
+def _write_marker(reason: str) -> None:
+    """Write a safe-mode marker file to logs/ so next run can detect it."""
     try:
         log_dir = RUNTIME_DIR / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
         marker = log_dir / f"safe_mode_{datetime.now().strftime('%Y%m%d_%H%M%S')}.marker"
-        marker.write_text(f"safe_mode=True\nreason={reason}\n", encoding="utf-8")
+        marker.write_text(
+            f"safe_mode=True\nreason={reason}\nentered_at={datetime.now().isoformat()}\n",
+            encoding="utf-8",
+        )
+        logging.debug(f"Safe mode marker written: {marker}")
     except Exception:
         pass
 
 
-def get_last_crash_reason() -> Optional[str]:
-    """Check logs for most recent crash marker."""
+def _clear_markers() -> None:
+    """Remove all safe_mode marker files after a clean run."""
     try:
         log_dir = RUNTIME_DIR / "logs"
-        for marker in sorted((log_dir).glob("crash_*.txt"), reverse=True)[:1]:
-            return marker.read_text(encoding="utf-8", errors="replace")[:200]
+        for marker in log_dir.glob("safe_mode_*.marker"):
+            marker.unlink(missing_ok=True)
+        logging.debug("Safe mode markers cleared")
+    except Exception:
+        pass
+
+
+def get_last_crash_marker() -> Optional[str]:
+    """Return the reason string from the most recent safe_mode marker, if any."""
+    try:
+        log_dir = RUNTIME_DIR / "logs"
+        markers = sorted(log_dir.glob("safe_mode_*.marker"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if markers:
+            content = markers[0].read_text(encoding="utf-8", errors="replace")
+            for line in content.splitlines():
+                if line.startswith("reason="):
+                    return line[len("reason="):]
+            return content[:200]
     except Exception:
         pass
     return None
+
+
+def get_last_crash_reason() -> Optional[str]:
+    """Legacy alias — checks safe_mode markers only."""
+    return get_last_crash_marker()

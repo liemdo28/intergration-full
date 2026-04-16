@@ -13,7 +13,6 @@ Usage:
 
 from __future__ import annotations
 import logging
-import os
 import sys
 import traceback
 from datetime import datetime
@@ -23,6 +22,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from bootstrap_runtime import run_bootstrap, RUNTIME_DIR, APP_DIR
+from safe_mode import activate_from_bootstrap_report, deactivate_safe_mode
 
 _log = logging.getLogger("launcher")
 
@@ -54,6 +54,9 @@ def main() -> int:
 
     _log.info(f"Bootstrap result: can_run={report.can_run} "
               f"is_first_run={report.is_first_run} portable={report.portable_mode}")
+
+    # --- Activate safe mode based on bootstrap + crash markers ---
+    activate_from_bootstrap_report(report)  # noqa: F811 — local alias is intentional
 
     # --- Save report for app to read ---
     try:
@@ -121,6 +124,7 @@ def _setup_logging() -> None:
 
 def _launch_app(safe_mode: bool = False) -> int:
     """Import and run app.py. safe_mode=True opens Settings first and skips workers."""
+    import atexit
     _log.info("Launching app...")
     try:
         import app
@@ -128,6 +132,8 @@ def _launch_app(safe_mode: bool = False) -> int:
         if safe_mode:
             app._SAFE_MODE = True
             _log.info("App running in safe mode")
+        # Register safe-mode deactivation on clean exit (clears crash markers)
+        atexit.register(deactivate_safe_mode)
         app.main()
         return 0
     except Exception as exc:
