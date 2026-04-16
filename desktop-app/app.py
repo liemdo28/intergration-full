@@ -60,6 +60,9 @@ from toast_reports import DEFAULT_REPORT_TYPE_KEYS, REPORT_TYPES, build_local_re
 
 from safe_mode import is_safe_mode, get_safe_mode_config
 from runtime_manifest import build_manifest, RuntimeManifest
+from services.feature_readiness_service import check_all_features
+from models.feature_readiness import FeatureKey, ReadinessStatus
+from content.ui_copy import operator_msg, CopyKey
 # ---------------------------------------------------------------------------
 # Task 8: Config-driven required report rules per store
 # REQUIRED_REPORT_RULES: store name -> frozenset of required report_key strings
@@ -4654,8 +4657,33 @@ class RemoveTab(ctk.CTkFrame):
             logging.warning(f"Could not save runtime manifest: {exc}")
 
     def get_readiness(self) -> dict[str, dict]:
-        """Return the current readiness state for all features."""
-        return self._readiness
+        """Return the current readiness state for all features.
+
+        Uses feature_readiness_service for real data, falls back to the
+        cached _readiness dict if the service is unavailable.
+        """
+        try:
+            results = check_all_features()
+            return {
+                "download":   _readiness_for(results.get(FeatureKey.REPORT_DOWNLOAD)),
+                "qb_sync":    _readiness_for(results.get(FeatureKey.QB_SYNC)),
+                "remove_tx":  _readiness_for(results.get(FeatureKey.REMOVE_TX)),
+                "drive":      _readiness_for(results.get(FeatureKey.GOOGLE_DRIVE)),
+            }
+        except Exception:
+            return self._readiness  # fallback to cached state
+
+
+def _readiness_for(fr) -> dict:
+    """Convert a FeatureReadiness object to the legacy dict shape."""
+    if fr is None:
+        return {"ready": False, "reason": "Unknown state"}
+    return {
+        "ready": fr.status == ReadinessStatus.READY,
+        "reason": fr.reason,
+        "next_step": fr.next_step,
+        "status": fr.status.value,
+    }
 #  Tab 4: Settings
 # ══════════════════════════════════════════════════════════════════════
 class SettingsTab(ctk.CTkFrame):
@@ -4689,36 +4717,71 @@ class SettingsTab(ctk.CTkFrame):
             "Feature Readiness",
             "Shows whether each feature can run on this machine.",
         )
+        from ui.widgets.status_badge import StatusBadge, Status as SBStatus
+
         self.readiness_vars: dict[str, dict] = {}
-        for feat_key, feat_label in [
-            ("download",   "Download Reports (Playwright/Toast)"),
-            ("qb_sync",    "QB Sync (QuickBooks Desktop)"),
-            ("remove_tx",  "Remove Transactions (QB cleanup)"),
-            ("drive",      "Drive Upload (Google Drive API)"),
-        ]:
+        self._readiness_badges: dict[str, StatusBadge] = {}
+        self._readiness_reason_labels: dict[str, ctk.CTkLabel] = {}
+
+        _FEATURE_READINESS_MAP = [
+            ("download",   "Download Reports (Playwright/Toast)",        "download"),
+            ("qb_sync",    "QB Sync (QuickBooks Desktop)",              "qb_sync"),
+            ("remove_tx",  "Remove Transactions (QB cleanup)",           "remove_tx"),
+            ("drive",      "Drive Upload (Google Drive API)",             "drive"),
+        ]
+
+        # 2-column grid layout
+        for i, (badge_key, feat_label, svc_key) in enumerate(_FEATURE_READINESS_MAP):
             row = ctk.CTkFrame(read_frame, fg_color="transparent")
-            row.pack(fill="x", pady=2)
-            ctk.CTkLabel(row, text=feat_label, font=ctk.CTkFont(size=12), anchor="w", width=300).pack(side="left")
-            self.readiness_vars[feat_key] = {"label": feat_label}
-        self._readiness_display = ctk.CTkLabel(
-            read_frame,
-            text="Checking features...",
-            text_color=UI_MUTED_TEXT, font=ctk.CTkFont(size=11),
-            anchor="w", justify="left",
-        )
-        self._readiness_display.pack(anchor="w", pady=(4, 0))
+            row.pack(fill="x", pady=4)
+            # Feature name label
+            ctk.CTkLabel(
+                row, text=feat_label,
+                font=ctk.CTkFont(size=12), anchor="w", width=240,
+                text_color="#e2e8f0",
+            ).pack(side="left", padx=(0, 8))
+            # Status badge
+            badge = StatusBadge(row, status=SBStatus.UNKNOWN, text="Checking...")
+            badge.pack(side="left", padx=(0, 8))
+            self._readiness_badges[badge_key] = badge
+            # Reason label
+            reason_lbl = ctk.CTkLabel(
+                row, text="",
+                font=ctk.CTkFont(size=11), anchor="w",
+                text_color="#64748b", wraplength=400,
+            )
+            reason_lbl.pack(side="left", fill="x", expand=True)
+            self._readiness_reason_labels[badge_key] = reason_lbl
+            self.readiness_vars[badge_key] = {"label": feat_label}
 
         def _refresh_readiness_ui():
             if not hasattr(self, "_app") or not self._app:
                 return
             readiness = self._app.get_readiness()
-            lines = []
-            for feat, info in readiness.items():
-                icon = "🟢" if info["ready"] else "🔴"
-                lines.append(f"{icon}  {feat}: {info['reason']}")
-            if hasattr(self, "_readiness_display"):
-                self._readiness_display.configure(text="\n".join(lines))
-            self.after(3000, _refresh_readiness_ui)
+            for badge_key, _, svc_key in _FEATURE_READINESS_MAP:
+                info = readiness.get(svc_key, {})
+                reason = info.get("reason", "Unknown")
+                ready = info.get("ready", False)
+                if info.get("status") == "warning":
+                    badge_status = SBStatus.WARNING
+                elif info.get("status") == "partial":
+                    badge_status = SBStatus.PARTIAL
+                elif ready:
+                    badge_status = SBStatus.READY
+                elif info.get("status") in ("blocked", "unknown"):
+                    badge_status = SBStatus.BLOCKED
+                else:
+                    badge_status = SBStatus.UNKNOWN
+                if badge_key in self._readiness_badges:
+                    self._readiness_badges[badge_key].set(badge_status, badge_status.label)
+                if badge_key in self._readiness_reason_labels:
+                    self._readiness_reason_labels[badge_key].configure(text=reason)
+            if hasattr(_refresh_readiness_ui, "_after_id"):
+                try:
+                    self.after_cancel(getattr(_refresh_readiness_ui, "_after_id"))
+                except Exception:
+                    pass
+            _refresh_readiness_ui._after_id = self.after(5000, _refresh_readiness_ui)
 
         self.after(500, _refresh_readiness_ui)
 
@@ -5708,6 +5771,18 @@ class App(ctk.CTk):
         ctk.set_default_color_theme("blue")
 
         self.status_var = ctk.StringVar(value="Ready")
+        # Listen for navigate:XXX commands from child tabs/widgets
+        self._nav_trace_id: str | None = None
+        def _on_nav_trace(*args):
+            try:
+                val = self.status_var.get()
+                if val.startswith("navigate:"):
+                    tab_key = val.split(":", 1)[1]
+                    if hasattr(self, "_tab_frames") and tab_key in self._tab_frames:
+                        self._switch_tab(tab_key)
+            except Exception:
+                pass
+        self._nav_trace_id = self.status_var.trace_add("write", _on_nav_trace)
         # Readiness dashboard state
         self._readiness: dict[str, dict] = {
             "download": {"ready": False, "reason": "Checking..."},
@@ -5859,6 +5934,13 @@ class App(ctk.CTk):
         main.pack(fill="both", expand=True, padx=10, pady=(5, 0))
 
         self._nav_theme = {
+            "home": {
+                "title": "Home",
+                "description": "Your operational dashboard and health summary.",
+                "icon": "HM",
+                "active_bg": "#6d28d9",
+                "active_border": "#a78bfa",
+            },
             "download": {
                 "title": "Download",
                 "description": "Pull Toast reports and save them cleanly.",
@@ -5886,6 +5968,20 @@ class App(ctk.CTk):
                 "icon": "ST",
                 "active_bg": "#475569",
                 "active_border": "#94a3b8",
+            },
+            "recovery": {
+                "title": "Recovery",
+                "description": "Health checks, repair tools, and support export.",
+                "icon": "RC",
+                "active_bg": "#b45309",
+                "active_border": "#f59e0b",
+            },
+            "audit": {
+                "title": "Audit",
+                "description": "Activity history and event log.",
+                "icon": "AU",
+                "active_bg": "#0f766e",
+                "active_border": "#34d399",
             },
         }
         self._nav_inactive_bg = "#1f2937"
@@ -5935,7 +6031,7 @@ class App(ctk.CTk):
 
         self._nav_buttons = {}
         self._tab_frames = {}
-        nav_order = ["download", "qb", "remove", "settings"]
+        nav_order = ["home", "download", "qb", "remove", "settings", "recovery", "audit"]
 
         for key in nav_order:
             theme = self._nav_theme[key]
@@ -6025,10 +6121,15 @@ class App(ctk.CTk):
         content = ctk.CTkFrame(main, fg_color="transparent")
         content.pack(side="left", fill="both", expand=True)
 
-        for key in ["download", "qb", "remove", "settings"]:
+        for key in ["home", "download", "qb", "remove", "settings", "recovery", "audit"]:
             frame = ctk.CTkFrame(content, fg_color="transparent")
             frame.pack(fill="both", expand=True)
             self._tab_frames[key] = frame
+
+        # Home dashboard tab
+        from ui.home_dashboard import HomeDashboard
+        self.home_tab = HomeDashboard(self._tab_frames["home"], status_var=self.status_var)
+        self.home_tab.pack(fill="both", expand=True)
 
         self.download_tab = DownloadTab(self._tab_frames["download"], self.status_var)
         self.download_tab.pack(fill="both", expand=True)
@@ -6046,9 +6147,19 @@ class App(ctk.CTk):
         )
         self.settings_tab.pack(fill="both", expand=True)
 
-        # Default to QB Sync tab
-        self._active_tab = "qb"
-        for key in ["download", "remove", "settings"]:
+        # Recovery Center tab
+        from ui.recovery_center import RecoveryCenter
+        self.recovery_tab = RecoveryCenter(self._tab_frames["recovery"], status_var=self.status_var)
+        self.recovery_tab.pack(fill="both", expand=True)
+
+        # Audit / Activity Center tab
+        from ui.activity_audit_center import ActivityAuditCenter
+        self.audit_tab = ActivityAuditCenter(self._tab_frames["audit"], status_var=self.status_var)
+        self.audit_tab.pack(fill="both", expand=True)
+
+        # Default to Home tab
+        self._active_tab = "home"
+        for key in ["home", "download", "qb", "remove", "settings", "recovery", "audit"]:
             self._tab_frames[key].pack_forget()
         self._apply_nav_styles()
         self.bind("<Configure>", self._queue_responsive_layout)
