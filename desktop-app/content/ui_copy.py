@@ -52,6 +52,14 @@ class CopyKey(str, Enum):
     NEXT_STEP_DEFAULT      = "next_step_default"
     CONTACT_IT             = "contact_it"
 
+    # Wizard / workflow
+    DOWNLOAD_BROWSER_NOT_READY = "download_browser_not_ready"
+    DRIVE_NOT_CONNECTED        = "drive_not_connected"
+    QB_NOT_RUNNING             = "qb_not_running"
+    CONFIG_NEEDS_REPAIR        = "config_needs_repair"
+    WIZARD_DOWNLOAD_INTRO      = "wizard_download_intro"
+    WIZARD_QB_INTRO            = "wizard_qb_intro"
+
 
 _MESSAGES: dict[CopyKey, dict[str, str]] = {
     CopyKey.RUNTIME_NOT_WRITABLE: {
@@ -198,6 +206,54 @@ _MESSAGES: dict[CopyKey, dict[str, str]] = {
         "title": "Need help?",
         "body": "Export a support bundle from Recovery Center and share it with your IT contact.",
         "next_step": "Recovery Center → Export Support Bundle.",
+    },
+    CopyKey.DOWNLOAD_BROWSER_NOT_READY: {
+        "title": "The report browser is not ready",
+        "body": (
+            "The automated browser (Chromium) used to download reports is not installed "
+            "or configured on this machine."
+        ),
+        "next_step": "Contact your IT support, or run: playwright install chromium",
+    },
+    CopyKey.DRIVE_NOT_CONNECTED: {
+        "title": "Google Drive is not connected yet",
+        "body": (
+            "The app needs access to your Google Drive account to read and store report files. "
+            "No credentials were found."
+        ),
+        "next_step": "Open Settings > Google Drive and connect your Google account.",
+    },
+    CopyKey.QB_NOT_RUNNING: {
+        "title": "QuickBooks features are unavailable",
+        "body": (
+            "QuickBooks Desktop is not running or not installed on this machine. "
+            "The sync feature requires QuickBooks to be open."
+        ),
+        "next_step": "Open QuickBooks Desktop, then click Refresh in the app.",
+    },
+    CopyKey.CONFIG_NEEDS_REPAIR: {
+        "title": "Your app settings need repair",
+        "body": (
+            "One or more required settings are missing or contain invalid values. "
+            "The app cannot proceed until these are fixed."
+        ),
+        "next_step": "Open Recovery Center and use Repair Config to restore default settings.",
+    },
+    CopyKey.WIZARD_DOWNLOAD_INTRO: {
+        "title": "Download Reports",
+        "body": (
+            "This wizard guides you through downloading Toast POS reports for one or more stores. "
+            "You will select stores, choose a date range, and the app will handle the rest."
+        ),
+        "next_step": "Click Next to select stores.",
+    },
+    CopyKey.WIZARD_QB_INTRO: {
+        "title": "Sync to QuickBooks",
+        "body": (
+            "This wizard guides you through syncing your Toast report data into QuickBooks Desktop. "
+            "You will see exactly what will be synced before anything is committed."
+        ),
+        "next_step": "Click Next to select stores.",
     },
 }
 

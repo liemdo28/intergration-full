@@ -338,15 +338,85 @@ def check_all_features() -> dict[FeatureKey, FeatureReadiness]:
     return results
 
 
-def get_most_urgent() -> FeatureReadiness | None:
+def get_smart_recommendation() -> FeatureReadiness | None:
     """
-    Return the most urgent non-READY feature, or None.
-    Useful for "Recommended Next Step" on the Home Dashboard.
+    Returns the most actionable next step for the operator.
+    Priority order:
+      1. Infrastructure blocked (browser missing, QB missing, Drive not connected)
+      2. Missing reports in Drive for recent dates → suggest download
+      3. Reports available but not yet synced → suggest QB sync
+      4. All clear
+
+    Falls back gracefully — never raises.
     """
+    # First check infrastructure
     all_features = check_all_features()
+    blocked = [f for f in all_features.values() if f.status == ReadinessStatus.BLOCKED and f.is_blocking]
+    if blocked:
+        blocked.sort(key=lambda f: f.priority)
+        return blocked[0]
+
+    # Check for missing recent reports in Drive
+    try:
+        missing = _check_recent_drive_coverage()
+        if missing:
+            return FeatureReadiness(
+                feature_key=FeatureKey.REPORT_DOWNLOAD,
+                status=ReadinessStatus.WARNING,
+                reason=f"{missing} report file(s) are missing from Google Drive for recent dates.",
+                next_step="Open Download Wizard to download missing reports.",
+                is_blocking=False,
+            )
+    except Exception:
+        pass
+
+    # Check for reports that exist in Drive but haven't been synced to QB
+    try:
+        ready_for_sync = _check_reports_ready_for_sync()
+        if ready_for_sync:
+            return FeatureReadiness(
+                feature_key=FeatureKey.QB_SYNC,
+                status=ReadinessStatus.WARNING,
+                reason=f"{ready_for_sync} report(s) in Drive are ready but not yet synced to QuickBooks.",
+                next_step="Open QB Sync Wizard to sync pending reports.",
+                is_blocking=False,
+            )
+    except Exception:
+        pass
+
+    # Check non-blocking issues
     non_ready = [f for f in all_features.values() if f.status != ReadinessStatus.READY]
-    if not non_ready:
-        return None
-    # Sort by priority (blocked=0, warning=1, ...)
-    non_ready.sort(key=lambda f: f.priority)
-    return non_ready[0]
+    if non_ready:
+        non_ready.sort(key=lambda f: f.priority)
+        return non_ready[0]
+
+    return None
+
+
+def _check_recent_drive_coverage() -> int:
+    """Returns count of missing report files in Drive for past 7 days. 0 if drive not ready or all present."""
+    try:
+        from datetime import date, timedelta
+        from report_inventory import get_drive_inventory_summary
+
+        today = date.today()
+        dates = [(today - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(1, 8)]
+        summary = get_drive_inventory_summary()
+        missing = summary.get("missing_count", 0)
+        return missing
+    except Exception:
+        return 0
+
+
+def _check_reports_ready_for_sync() -> int:
+    """Returns count of Drive reports not yet synced to QB. 0 if can't determine."""
+    try:
+        from sync_ledger import count_pending_sync
+        return count_pending_sync()
+    except Exception:
+        return 0
+
+
+def get_most_urgent() -> FeatureReadiness | None:
+    """Alias for get_smart_recommendation() for backward compatibility."""
+    return get_smart_recommendation()

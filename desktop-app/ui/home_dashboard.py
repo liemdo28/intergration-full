@@ -264,6 +264,8 @@ class HomeDashboard(ctk.CTkFrame if CTK else object):
         self._readiness_cache = check_all_features()
         self._update_readiness_grid()
         self._update_recommended_step()
+        if hasattr(self, "_recent_activity"):
+            self._recent_activity.refresh()
 
     # ------------------------------------------------------------------
     # UI construction
@@ -293,7 +295,10 @@ class HomeDashboard(ctk.CTkFrame if CTK else object):
         # ── 4. Recommended Next Step ────────────────────────────────────
         self._recommended_section(parent)
 
-        # ── 5. Safe Mode Banner ──────────────────────────────────────────
+        # ── 5. Recent Activity ──────────────────────────────────────────
+        self._recent_activity_section(parent)
+
+        # ── 6. Safe Mode Banner ──────────────────────────────────────────
         if is_safe_mode():
             self._safe_mode_banner(parent)
 
@@ -435,7 +440,7 @@ class HomeDashboard(ctk.CTkFrame if CTK else object):
                 description="Download missing Toast reports for selected stores",
                 accent="#22c55e",
                 icon="▼",
-                command=lambda: _nav("navigate:download"),
+                command=lambda: _nav("navigate:wizard_download"),
             ),
             ActionCard(
                 body,
@@ -443,7 +448,7 @@ class HomeDashboard(ctk.CTkFrame if CTK else object):
                 description="Sync sales receipts to QuickBooks Desktop for selected stores",
                 accent="#0f766e",
                 icon="⬆",
-                command=lambda: _nav("navigate:qb"),
+                command=lambda: _nav("navigate:wizard_qb"),
             ),
             ActionCard(
                 body,
@@ -464,6 +469,13 @@ class HomeDashboard(ctk.CTkFrame if CTK else object):
         self._recommended_step = RecommendedNextStep(body)
         self._recommended_step.pack(fill="x", padx=(0, 0), pady=(0, 4))
         self._update_recommended_step()
+
+    def _recent_activity_section(self, parent) -> None:
+        """Build the Recent Activity section."""
+        from ui.widgets.recent_activity_list import RecentActivityList
+        card, body = _make_section_card(parent, "Recent Activity", "Last 5 actions in this workspace")
+        self._recent_activity = RecentActivityList(body, count=5)
+        self._recent_activity.pack(fill="x", pady=(0, 4))
 
     def _update_recommended_step(self) -> None:
         """Refresh the RecommendedNextStep widget."""
