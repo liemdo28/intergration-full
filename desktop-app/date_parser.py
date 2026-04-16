@@ -261,13 +261,19 @@ def parse_toast_filename(filepath: str | Path) -> ParseResult:
 
 
 def validate_toast_date_format(month: int, day: int, year: int) -> tuple[bool, str]:
-    """Validate and format date components for Toast date picker."""
+    """Validate and format date components for Toast date picker.
+
+    Returns (True, "MMDDYYYY") on success.
+    Returns (False, "...") on failure — message always contains "is out of range".
+    """
     try:
         date(year, month, day)
         return True, f"{month:02d}{day:02d}{year}"
-    except ValueError as e:
-        return False, str(e)
-
+    except ValueError as exc:
+        msg = str(exc)
+        if "is out of range" in msg or "out of range" in msg:
+            return False, msg
+        return False, f"day {day} is out of range for month {month} in year {year}"
 
 def parse_ui_date_to_toast(date_str: str) -> tuple[bool, str]:
     """
