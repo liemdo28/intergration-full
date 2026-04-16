@@ -103,6 +103,7 @@ class FirstRunWizard(ctk.CTk):
         self.step = 0
         self.total_steps = 5
         self.selected_stores: list[str] = []
+        self._store_vars: dict[str, object] = {}  # initialized in _step_stores
         self.qb_file_path: str = ""
         self.qb_wanted: bool = False
         self.drive_wanted: bool = False
@@ -211,9 +212,15 @@ class FirstRunWizard(ctk.CTk):
             text_color="#94a3b8", font=ctk.CTkFont(size=12),
         ).pack(anchor="w", pady=(0, 16))
 
+        # Load previously saved selection so navigating Back preserves it
+        saved = set(self.selected_stores)
+        cfg = _load_local_config()
+        if "enabled_stores" in cfg and isinstance(cfg["enabled_stores"], list):
+            saved = set(cfg["enabled_stores"])
+
         store_vars = {}
         for store in KNOWN_STORES:
-            var = ctk.BooleanVar(value=store in self.selected_stores)
+            var = ctk.BooleanVar(value=store in saved)
             store_vars[store] = var
             cb = ctk.CTkCheckBox(
                 self.content_frame, text=store, variable=var,
