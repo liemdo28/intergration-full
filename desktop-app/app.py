@@ -57,6 +57,9 @@ from recovery_center import (
 from toast_reports import DEFAULT_REPORT_TYPE_KEYS, REPORT_TYPES, build_local_report_dir, get_download_report_types
 
 
+
+from safe_mode import is_safe_mode, get_safe_mode_config
+from runtime_manifest import build_manifest, RuntimeManifest
 # ---------------------------------------------------------------------------
 # Task 8: Config-driven required report rules per store
 # REQUIRED_REPORT_RULES: store name -> frozenset of required report_key strings
@@ -386,6 +389,7 @@ class DownloadTab(ctk.CTkFrame):
         self._accent_blue = "#2563eb"
         self._accent_teal = "#0f766e"
         self._accent_amber = "#b45309"
+        self.after(100, self._update_readiness)
         self._build_ui()
 
     def _make_section_card(self, parent, title, subtitle=None):
@@ -4581,11 +4585,83 @@ class RemoveTab(ctk.CTkFrame):
 
 
 # ══════════════════════════════════════════════════════════════════════
+
+    def _update_readiness(self) -> None:
+        """Update feature-level readiness states and write to runtime_manifest."""
+        r = self._readiness
+
+        # Download Reports readiness
+        try:
+            from playwright.sync_api import sync_playwright
+            with sync_playwright() as pw:
+                bp = Path(pw.chromium.executable_path)
+                if bp.exists():
+                    r["download"]["ready"] = True
+                    r["download"]["reason"] = "Chromium bundled and ready"
+                else:
+                    r["download"]["ready"] = False
+                    r["download"]["reason"] = "Chromium not found — Toast download unavailable"
+        except Exception as exc:
+            r["download"]["ready"] = False
+            r["download"]["reason"] = f"Playwright error: {exc}"
+
+        # QB Sync readiness
+        qb_ok = False
+        try:
+            from qb_automate import resolve_qb_executable
+            qb_exe = resolve_qb_executable()
+            if qb_exe and Path(qb_exe).exists():
+                qb_ok = True
+        except Exception:
+            pass
+        env_path = runtime_path(".env.qb")
+        if not qb_ok:
+            r["qb_sync"]["ready"] = False
+            r["qb_sync"]["reason"] = "QuickBooks Desktop not found — QB Sync disabled"
+        elif not any(env_path.read_text(encoding="utf-8", errors="ignore").splitlines()):
+            r["qb_sync"]["ready"] = False
+            r["qb_sync"]["reason"] = "QB not configured — enter passwords in .env.qb"
+        else:
+            r["qb_sync"]["ready"] = True
+            r["qb_sync"]["reason"] = "QB Desktop found and configured"
+
+        # Remove Transactions readiness
+        if qb_ok:
+            r["remove_tx"]["ready"] = True
+            r["remove_tx"]["reason"] = "QB Desktop available"
+        else:
+            r["remove_tx"]["ready"] = False
+            r["remove_tx"]["reason"] = "QB Desktop not found"
+
+        # Drive readiness
+        cred_path = runtime_path("credentials.json")
+        token_path = runtime_path("token.json")
+        if cred_path.exists() and token_path.exists():
+            r["drive"]["ready"] = True
+            r["drive"]["reason"] = "Google Drive connected"
+        elif cred_path.exists():
+            r["drive"]["ready"] = False
+            r["drive"]["reason"] = "Connected to Google but no auth token yet"
+        else:
+            r["drive"]["ready"] = False
+            r["drive"]["reason"] = "credentials.json not found — see Settings"
+
+        # Build and save manifest
+        try:
+            self._manifest = build_manifest()
+            self._manifest.save()
+        except Exception as exc:
+            logging.warning(f"Could not save runtime manifest: {exc}")
+
+    def get_readiness(self) -> dict[str, dict]:
+        """Return the current readiness state for all features."""
+        return self._readiness
 #  Tab 4: Settings
 # ══════════════════════════════════════════════════════════════════════
 class SettingsTab(ctk.CTkFrame):
     def __init__(self, master, run_diagnostics=None, status_var=None, **kwargs):
         super().__init__(master, **kwargs)
+        self._app = master  # reference to parent App instance
         self.run_diagnostics = run_diagnostics
         self.status_var = status_var
         self.recovery_playbooks = get_recovery_playbooks()
@@ -4605,6 +4681,46 @@ class SettingsTab(ctk.CTkFrame):
             "Admin controls",
             accent="#475569",
         )
+
+        
+        # ── Feature Readiness ──
+        _read_card, read_frame = make_section_card(
+            content,
+            "Feature Readiness",
+            "Shows whether each feature can run on this machine.",
+        )
+        self.readiness_vars: dict[str, dict] = {}
+        for feat_key, feat_label in [
+            ("download",   "Download Reports (Playwright/Toast)"),
+            ("qb_sync",    "QB Sync (QuickBooks Desktop)"),
+            ("remove_tx",  "Remove Transactions (QB cleanup)"),
+            ("drive",      "Drive Upload (Google Drive API)"),
+        ]:
+            row = ctk.CTkFrame(read_frame, fg_color="transparent")
+            row.pack(fill="x", pady=2)
+            ctk.CTkLabel(row, text=feat_label, font=ctk.CTkFont(size=12), anchor="w", width=300).pack(side="left")
+            self.readiness_vars[feat_key] = {"label": feat_label}
+        self._readiness_display = ctk.CTkLabel(
+            read_frame,
+            text="Checking features...",
+            text_color=UI_MUTED_TEXT, font=ctk.CTkFont(size=11),
+            anchor="w", justify="left",
+        )
+        self._readiness_display.pack(anchor="w", pady=(4, 0))
+
+        def _refresh_readiness_ui():
+            if not hasattr(self, "_app") or not self._app:
+                return
+            readiness = self._app.get_readiness()
+            lines = []
+            for feat, info in readiness.items():
+                icon = "🟢" if info["ready"] else "🔴"
+                lines.append(f"{icon}  {feat}: {info['reason']}")
+            if hasattr(self, "_readiness_display"):
+                self._readiness_display.configure(text="\n".join(lines))
+            self.after(3000, _refresh_readiness_ui)
+
+        self.after(500, _refresh_readiness_ui)
 
         # ── Google Drive ──
         _gdrive_card, gdrive_frame = make_section_card(
@@ -5563,6 +5679,18 @@ class App(ctk.CTk):
             self.withdraw()
 
         self.title("Toast POS Manager")
+        # Safe mode banner
+        if is_safe_mode():
+            cfg = get_safe_mode_config()
+            banner = ctk.CTkFrame(self, fg_color="#92400e", height=32)
+            banner.pack(fill="x", padx=0, pady=0)
+            banner.pack_propagate(False)
+            ctk.CTkLabel(
+                banner,
+                text=f"SAFE MODE — {cfg.reason}  |  Background workers disabled",
+                text_color="#fef3c7", font=ctk.CTkFont(size=12, weight="bold"),
+            ).pack(pady=6)
+
 
         # Clamp window size to screen dimensions for small screens
         try:
@@ -5580,6 +5708,15 @@ class App(ctk.CTk):
         ctk.set_default_color_theme("blue")
 
         self.status_var = ctk.StringVar(value="Ready")
+        # Readiness dashboard state
+        self._readiness: dict[str, dict] = {
+            "download": {"ready": False, "reason": "Checking..."},
+            "qb_sync":  {"ready": False, "reason": "Checking..."},
+            "remove_tx":{"ready": False, "reason": "Checking..."},
+            "drive":    {"ready": False, "reason": "Checking..."},
+        }
+        self._manifest: RuntimeManifest | None = None
+
         self.diagnostics_report = None
         self._compact_header_mode = False
         self._compact_nav_mode = False

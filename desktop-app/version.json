@@ -1,0 +1,23 @@
+{
+  "app_version": "2.3.0",
+  "build": "dev",
+  "commit_hash": "",
+  "build_time": "",
+  "release_channel": "stable",
+  "packaging": "portable",
+  "chromium_bundled": true,
+  "minimum_supported_windows": "Windows 10 (1903+)",
+  "qb_required_note": "QuickBooks Desktop (Pro/Premier/Enterprise) must be installed on this machine for QB Sync features. QB version 2019+ recommended.",
+  "toast_required_note": "A valid Toast account with API access is required. At least one Toast login session must be established before downloads work.",
+  "google_required_note": "Google Drive connection requires OAuth consent. Download credentials.json from the Google Cloud Console and place it in the app folder.",
+  "features": [
+    "Download Reports (Playwright browser automation)",
+    "QB Sync (QuickBooks Desktop COM)",
+    "Remove Transactions (QB cleanup)",
+    "Drive Upload (Google Drive API)",
+    "Marketplace Uploads (CSV)",
+    "Recovery Center",
+    "Diagnostics",
+    "Safe Mode"
+  ]
+}
