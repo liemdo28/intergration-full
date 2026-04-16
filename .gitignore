@@ -21,3 +21,9 @@ desktop-app/release/
 .claude/settings.local.json
 desktop-app/agentai-runtime-state.json
 desktop-app/report-inventory.db
+desktop-app/_debug.txt
+desktop-app/_debug2.txt
+desktop-app/_snippet.txt
+desktop-app/_write_methods.py
+desktop-app/apply_tasks.py
+desktop-app/fix_ui.py
