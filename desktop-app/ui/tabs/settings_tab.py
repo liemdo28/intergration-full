@@ -17,7 +17,7 @@ import tkinter as tk
 from tkinter import messagebox
 
 from app_shared import (
-    LOCAL_CONFIG_FILE, TOAST_LOCATIONS, MAPPING_FILE,
+    LOCAL_CONFIG_FILE, TOAST_LOCATIONS, MAPPING_FILE, REPORTS_DIR,
     load_local_config, save_local_config, load_mapping,
     make_section_card, make_subcard, make_action_button,
     make_hero_banner, style_scrollable_frame,
