@@ -68,7 +68,6 @@ class RecommendedNextStep(ctk.CTkFrame if CTK else object):
         super().__init__(master, fg_color=CARD_BG, corner_radius=8, **kwargs)
 
         self._feature_readiness = feature_readiness
-        self._build_ui()
 
         if feature_readiness is not None:
             self._show_urgent(feature_readiness)
