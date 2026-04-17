@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 _log = logging.getLogger(__name__)
 
@@ -23,9 +23,16 @@ try:
 except ImportError:
     CTK = False
 
+try:
+    from tkcalendar import Calendar
+    _HAS_CALENDAR = True
+except ImportError:
+    _HAS_CALENDAR = False
+
 from ui.wizards.wizard_base import WizardBase
 from ui.wizards.wizard_result_view import WizardResultView
 from services import workflow_state_service
+from toast_reports import get_download_report_types, DEFAULT_REPORT_TYPE_KEYS
 
 # ---------------------------------------------------------------------------
 # Store list
@@ -185,31 +192,26 @@ class DownloadReportsWizard(WizardBase):
     # ------------------------------------------------------------------
 
     def _step_select_dates(self) -> None:
-        self.set_next_enabled(bool(self._state.date_start and self._state.date_end))
+        # Seed sensible defaults
+        if not self._state.selected_report_types:
+            self._state.selected_report_types = list(DEFAULT_REPORT_TYPE_KEYS)
+
+        self._refresh_step2_next_enabled()
 
         frame = ctk.CTkFrame(self._content_frame, fg_color=_CARD_BG, corner_radius=12)
-        frame.pack(fill="x", padx=20, pady=20)
+        frame.pack(fill="both", expand=True, padx=20, pady=20)
 
         ctk.CTkLabel(
             frame,
-            text="Select a date range for the reports.",
+            text="Select a date range and the report types to download.",
             font=ctk.CTkFont(size=13),
             text_color=_MUTED,
             anchor="w",
         ).pack(anchor="w", padx=16, pady=(14, 10))
 
-        # Quick-select buttons
+        # ── Quick-select buttons ──
         quick_row = ctk.CTkFrame(frame, fg_color="transparent")
         quick_row.pack(fill="x", padx=16, pady=(0, 12))
-
-        def _set_range(start: str, end: str):
-            self._start_entry.delete(0, "end")
-            self._start_entry.insert(0, start)
-            self._end_entry.delete(0, "end")
-            self._end_entry.insert(0, end)
-            self._state.date_start = start
-            self._state.date_end = end
-            self.set_next_enabled(True)
 
         quick_btns = [
             ("Today", _today(), _today()),
@@ -229,61 +231,238 @@ class DownloadReportsWizard(WizardBase):
                 text_color="#f1f5f9",
                 corner_radius=6,
                 font=ctk.CTkFont(size=11),
-                command=lambda s=s, e=e: _set_range(s, e),
+                command=lambda s=s, e=e: self._apply_date_range(s, e),
             ).pack(side="left", padx=4)
 
-        # Manual entries
-        entries_frame = ctk.CTkFrame(frame, fg_color="transparent")
-        entries_frame.pack(fill="x", padx=16, pady=(0, 16))
+        # ── Calendars + manual entries ──
+        dates_row = ctk.CTkFrame(frame, fg_color="transparent")
+        dates_row.pack(fill="x", padx=16, pady=(0, 12))
 
-        def _lbl(parent, text):
-            ctk.CTkLabel(
-                parent,
-                text=text,
-                font=ctk.CTkFont(size=12),
-                text_color=_MUTED,
-                anchor="w",
-            ).pack(anchor="w")
+        start_col = ctk.CTkFrame(dates_row, fg_color="transparent")
+        start_col.pack(side="left", padx=(0, 16))
+        ctk.CTkLabel(
+            start_col, text="Start Date",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color="#f1f5f9", anchor="w",
+        ).pack(anchor="w", pady=(0, 4))
 
-        left = ctk.CTkFrame(entries_frame, fg_color="transparent")
-        left.pack(side="left", padx=(0, 20))
-        _lbl(left, "Start Date (YYYY-MM-DD)")
+        end_col = ctk.CTkFrame(dates_row, fg_color="transparent")
+        end_col.pack(side="left")
+        ctk.CTkLabel(
+            end_col, text="End Date",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color="#f1f5f9", anchor="w",
+        ).pack(anchor="w", pady=(0, 4))
+
+        # Start calendar + entry
+        start_default = self._parse_date(self._state.date_start) or date.today()
+        if _HAS_CALENDAR:
+            self._start_cal = Calendar(
+                start_col, selectmode="day",
+                year=start_default.year, month=start_default.month, day=start_default.day,
+                date_pattern="yyyy-mm-dd",
+                background="#1e293b", foreground="#f1f5f9",
+                headersbackground="#0f172a", headersforeground="#94a3b8",
+                selectbackground="#3b82f6", selectforeground="#ffffff",
+                weekendbackground="#1e293b", weekendforeground="#cbd5e1",
+                othermonthbackground="#0b1220", othermonthforeground="#475569",
+                bordercolor="#334155", normalbackground="#1e293b",
+                normalforeground="#f1f5f9",
+            )
+            self._start_cal.pack()
+            self._start_cal.bind("<<CalendarSelected>>", lambda e: self._on_start_cal_change())
         self._start_entry = ctk.CTkEntry(
-            left,
-            width=160,
-            fg_color=_INPUT_BG,
-            border_color="#334155",
-            text_color="#f1f5f9",
-            placeholder_text="e.g. 2025-01-01",
+            start_col, width=160, fg_color=_INPUT_BG,
+            border_color="#334155", text_color="#f1f5f9",
+            placeholder_text="YYYY-MM-DD",
         )
-        self._start_entry.pack()
+        self._start_entry.pack(pady=(6, 0))
         if self._state.date_start:
             self._start_entry.insert(0, self._state.date_start)
 
-        right = ctk.CTkFrame(entries_frame, fg_color="transparent")
-        right.pack(side="left")
-        _lbl(right, "End Date (YYYY-MM-DD)")
+        # End calendar + entry
+        end_default = self._parse_date(self._state.date_end) or date.today()
+        if _HAS_CALENDAR:
+            self._end_cal = Calendar(
+                end_col, selectmode="day",
+                year=end_default.year, month=end_default.month, day=end_default.day,
+                date_pattern="yyyy-mm-dd",
+                background="#1e293b", foreground="#f1f5f9",
+                headersbackground="#0f172a", headersforeground="#94a3b8",
+                selectbackground="#3b82f6", selectforeground="#ffffff",
+                weekendbackground="#1e293b", weekendforeground="#cbd5e1",
+                othermonthbackground="#0b1220", othermonthforeground="#475569",
+                bordercolor="#334155", normalbackground="#1e293b",
+                normalforeground="#f1f5f9",
+            )
+            self._end_cal.pack()
+            self._end_cal.bind("<<CalendarSelected>>", lambda e: self._on_end_cal_change())
         self._end_entry = ctk.CTkEntry(
-            right,
-            width=160,
-            fg_color=_INPUT_BG,
-            border_color="#334155",
-            text_color="#f1f5f9",
-            placeholder_text="e.g. 2025-01-31",
+            end_col, width=160, fg_color=_INPUT_BG,
+            border_color="#334155", text_color="#f1f5f9",
+            placeholder_text="YYYY-MM-DD",
         )
-        self._end_entry.pack()
+        self._end_entry.pack(pady=(6, 0))
         if self._state.date_end:
             self._end_entry.insert(0, self._state.date_end)
 
-        def _on_entry_change(*args):
-            s = self._start_entry.get().strip()
-            e = self._end_entry.get().strip()
-            self._state.date_start = s
-            self._state.date_end = e
-            self.set_next_enabled(bool(s and e))
+        self._start_entry.bind("<KeyRelease>", lambda e: self._on_start_entry_change())
+        self._end_entry.bind("<KeyRelease>", lambda e: self._on_end_entry_change())
 
-        self._start_entry.bind("<KeyRelease>", _on_entry_change)
-        self._end_entry.bind("<KeyRelease>", _on_entry_change)
+        # ── Report type selection ──
+        ctk.CTkFrame(frame, height=1, fg_color="#1e293b").pack(fill="x", padx=16, pady=(8, 12))
+
+        ctk.CTkLabel(
+            frame, text="Report Types",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color="#f1f5f9", anchor="w",
+        ).pack(anchor="w", padx=16)
+        ctk.CTkLabel(
+            frame, text="Pick which Toast exports to download for each selected store and date.",
+            font=ctk.CTkFont(size=11),
+            text_color=_MUTED, anchor="w",
+        ).pack(anchor="w", padx=16, pady=(0, 8))
+
+        rt_toolbar = ctk.CTkFrame(frame, fg_color="transparent")
+        rt_toolbar.pack(fill="x", padx=16, pady=(0, 6))
+
+        self._report_type_vars: dict[str, ctk.BooleanVar] = {}
+
+        def _on_rt_change():
+            self._state.selected_report_types = [k for k, v in self._report_type_vars.items() if v.get()]
+            self._refresh_step2_next_enabled()
+
+        def _select_all():
+            for v in self._report_type_vars.values():
+                v.set(True)
+            _on_rt_change()
+
+        def _sales_only():
+            for k, v in self._report_type_vars.items():
+                v.set(k == "sales_summary")
+            _on_rt_change()
+
+        ctk.CTkButton(
+            rt_toolbar, text="Select All", width=90, height=24,
+            fg_color=_INPUT_BG, hover_color="#334155", text_color="#f1f5f9",
+            corner_radius=6, font=ctk.CTkFont(size=11),
+            command=_select_all,
+        ).pack(side="left", padx=(0, 6))
+        ctk.CTkButton(
+            rt_toolbar, text="Sales Summary Only", width=150, height=24,
+            fg_color=_INPUT_BG, hover_color="#334155", text_color="#f1f5f9",
+            corner_radius=6, font=ctk.CTkFont(size=11),
+            command=_sales_only,
+        ).pack(side="left")
+
+        rt_grid = ctk.CTkFrame(frame, fg_color="transparent")
+        rt_grid.pack(fill="x", padx=16, pady=(0, 16))
+
+        selected_rt = set(self._state.selected_report_types)
+        for idx, rt in enumerate(get_download_report_types()):
+            var = ctk.BooleanVar(value=rt.key in selected_rt)
+            self._report_type_vars[rt.key] = var
+            ctk.CTkCheckBox(
+                rt_grid, text=rt.label, variable=var,
+                font=ctk.CTkFont(size=12), text_color="#e2e8f0",
+                command=_on_rt_change,
+            ).grid(row=idx // 2, column=idx % 2, sticky="w", padx=6, pady=3)
+
+    # ------------------------------------------------------------------
+    # Step 2 helpers: date + report type sync
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _parse_date(s: str):
+        try:
+            return datetime.strptime(s, "%Y-%m-%d").date() if s else None
+        except Exception:
+            return None
+
+    def _refresh_step2_next_enabled(self) -> None:
+        has_dates = bool(self._state.date_start and self._state.date_end)
+        has_rt = bool(self._state.selected_report_types)
+        self.set_next_enabled(has_dates and has_rt)
+
+    def _apply_date_range(self, start: str, end: str) -> None:
+        self._state.date_start = start
+        self._state.date_end = end
+        if hasattr(self, "_start_entry"):
+            self._start_entry.delete(0, "end")
+            self._start_entry.insert(0, start)
+        if hasattr(self, "_end_entry"):
+            self._end_entry.delete(0, "end")
+            self._end_entry.insert(0, end)
+        if _HAS_CALENDAR and hasattr(self, "_start_cal"):
+            try:
+                self._start_cal.selection_set(self._parse_date(start))
+            except Exception:
+                pass
+        if _HAS_CALENDAR and hasattr(self, "_end_cal"):
+            try:
+                self._end_cal.selection_set(self._parse_date(end))
+            except Exception:
+                pass
+        self._refresh_step2_next_enabled()
+
+    def _on_start_cal_change(self) -> None:
+        try:
+            val = self._start_cal.get_date()
+        except Exception:
+            return
+        self._state.date_start = val
+        self._start_entry.delete(0, "end")
+        self._start_entry.insert(0, val)
+        # Keep end >= start
+        if self._state.date_end and self._state.date_end < val:
+            self._state.date_end = val
+            self._end_entry.delete(0, "end")
+            self._end_entry.insert(0, val)
+            try:
+                self._end_cal.selection_set(self._parse_date(val))
+            except Exception:
+                pass
+        self._refresh_step2_next_enabled()
+
+    def _on_end_cal_change(self) -> None:
+        try:
+            val = self._end_cal.get_date()
+        except Exception:
+            return
+        self._state.date_end = val
+        self._end_entry.delete(0, "end")
+        self._end_entry.insert(0, val)
+        if self._state.date_start and val < self._state.date_start:
+            self._state.date_start = val
+            self._start_entry.delete(0, "end")
+            self._start_entry.insert(0, val)
+            try:
+                self._start_cal.selection_set(self._parse_date(val))
+            except Exception:
+                pass
+        self._refresh_step2_next_enabled()
+
+    def _on_start_entry_change(self) -> None:
+        val = self._start_entry.get().strip()
+        self._state.date_start = val
+        parsed = self._parse_date(val)
+        if parsed and _HAS_CALENDAR and hasattr(self, "_start_cal"):
+            try:
+                self._start_cal.selection_set(parsed)
+            except Exception:
+                pass
+        self._refresh_step2_next_enabled()
+
+    def _on_end_entry_change(self) -> None:
+        val = self._end_entry.get().strip()
+        self._state.date_end = val
+        parsed = self._parse_date(val)
+        if parsed and _HAS_CALENDAR and hasattr(self, "_end_cal"):
+            try:
+                self._end_cal.selection_set(parsed)
+            except Exception:
+                pass
+        self._refresh_step2_next_enabled()
 
     # ------------------------------------------------------------------
     # Step 3: Check Readiness
