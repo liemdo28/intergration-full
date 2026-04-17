@@ -57,7 +57,6 @@ class DownloadTab(ctk.CTkFrame):
         self._accent_blue = "#2563eb"
         self._accent_teal = "#0f766e"
         self._accent_amber = "#b45309"
-        self.after(100, self._update_readiness)
         self._build_ui()
 
     def _make_section_card(self, parent, title, subtitle=None):
