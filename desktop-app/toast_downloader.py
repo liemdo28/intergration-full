@@ -28,18 +28,40 @@ TOAST_LOCATIONS = ["Stockton", "The Rim", "Stone Oak", "Bandera", "WA1", "WA2", 
 def _ensure_playwright_env() -> None:
     """
     In PyInstaller frozen builds, Playwright does not know where Chromium lives.
-    Set PLAYWRIGHT_BROWSERS_PATH to the bundled browser directory so launches work
-    on clean machines (no system-wide Playwright install).
+    Set PLAYWRIGHT_BROWSERS_PATH before any sync_playwright() call so launches
+    work on clean machines (no system-wide Playwright install required).
 
-    Convention: the build script places Chromium at:
-        <exe_dir>/playwright-browsers/
+    Two distribution strategies are supported — checked in priority order:
+
+    1. Portable/alongside-exe:  <exe_dir>/playwright-browsers/
+       Build script extracts Chromium next to the .exe.
+       Playwright_BROWSERS_PATH → <exe_dir>/playwright-browsers/
+
+    2. Bundled-inside-spec:     <_MEIPASS>/playwright/
+       Build spec includes playwright browser via collect_data_files("playwright").
+       Playwright's own path detection points to _MEIPASS; we set the env var
+       to the _MEIPASS root so Playwright can locate its internal layout.
+
+    If neither directory exists the function returns without setting anything —
+    the bootstrap check will surface a clear "Report Browser not found" warning.
     """
     if not getattr(sys, "frozen", False):
         return  # dev mode — Playwright manages its own paths
-    from app_paths import RUNTIME_DIR
-    browsers_dir = RUNTIME_DIR / "playwright-browsers"
-    if browsers_dir.exists() and "PLAYWRIGHT_BROWSERS_PATH" not in os.environ:
-        os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(browsers_dir)
+    if "PLAYWRIGHT_BROWSERS_PATH" in os.environ:
+        return  # already set (e.g. by build wrapper or prior call)
+
+    from app_paths import BUNDLE_DIR, RUNTIME_DIR
+
+    candidates = [
+        # Priority 1: portable distribution — browsers next to the .exe
+        (RUNTIME_DIR / "playwright-browsers", str(RUNTIME_DIR / "playwright-browsers")),
+        # Priority 2: spec-bundled — browsers inside _MEIPASS/playwright/
+        (BUNDLE_DIR / "playwright", str(BUNDLE_DIR)),
+    ]
+    for probe_path, env_value in candidates:
+        if probe_path.exists():
+            os.environ["PLAYWRIGHT_BROWSERS_PATH"] = env_value
+            return
 LOGIN_WAIT_TIMEOUT_SECONDS = 5 * 60
 LOGIN_WAIT_POLL_SECONDS = 5
 

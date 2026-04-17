@@ -283,12 +283,17 @@ def _backup_and_log(report: BootstrapReport, path: Path, reason: str) -> None:
 
 def _check_playwright_browser(report: BootstrapReport) -> None:
     """Check the Report Browser (Playwright Chromium) is bundled and reachable."""
-    # In frozen builds, set PLAYWRIGHT_BROWSERS_PATH before letting Playwright probe
-    # its own executable_path so the path resolution is exe-relative, not dev-machine.
-    if getattr(sys, "frozen", False):
-        browsers_dir = RUNTIME_DIR / "playwright-browsers"
-        if browsers_dir.exists() and "PLAYWRIGHT_BROWSERS_PATH" not in os.environ:
-            os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(browsers_dir)
+    # In frozen builds, probe both distribution locations before Playwright tries to
+    # resolve its own executable_path — same dual-probe as _ensure_playwright_env().
+    if getattr(sys, "frozen", False) and "PLAYWRIGHT_BROWSERS_PATH" not in os.environ:
+        _candidates = [
+            (RUNTIME_DIR / "playwright-browsers", str(RUNTIME_DIR / "playwright-browsers")),
+            (BUNDLE_DIR / "playwright",            str(BUNDLE_DIR)),
+        ]
+        for _probe, _val in _candidates:
+            if _probe.exists():
+                os.environ["PLAYWRIGHT_BROWSERS_PATH"] = _val
+                break
     try:
         from playwright.sync_api import sync_playwright
         with sync_playwright() as pw:
