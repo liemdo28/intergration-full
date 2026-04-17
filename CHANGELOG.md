@@ -2,6 +2,27 @@
 
 ---
 
+## v2.3.0 — 2026-04-17 (Stable Release)
+
+### Release status: STABLE — cleared for full deployment
+All RC gates passed. Clean machine, operator acceptance, and QB machine validated.
+
+### What changed from rc1
+
+**RC hardening (pre-emptive fixes applied before QA)**
+- Browser path: dual-probe strategy for both portable (`playwright-browsers/`) and spec-bundled (`_MEIPASS/playwright/`) Chromium distributions
+- Config integrity: `_CONFIG_DEFAULTS` schema + `_heal_config()` enforced on every boot — no KeyError risk from partial configs
+- Wizard state: `<Map>` event resets wizard state on re-entry — no cross-run data leak
+- Sync gate: `date_gap` and `incomplete_report` escalated from WARN to BLOCK — incomplete data can no longer reach QuickBooks
+- Result truth: `outcome_type="completed"` now requires `ok AND fail==0 AND no warnings` — no misleading result screens
+
+### Release deliverables
+- `docs/RELEASE_ANNOUNCEMENT_v2.3.0.md` — client-facing announcement
+- `docs/QUICK_START_GUIDE.md` — operator quick start
+- `docs/SUPPORT_HANDOFF.md` — internal support script
+
+---
+
 ## v2.3.0-rc1 — 2026-04-17 (Release Candidate)
 
 ### Release status: GO with controlled rollout
