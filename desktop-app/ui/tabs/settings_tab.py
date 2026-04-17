@@ -15,6 +15,7 @@ from tkinter import filedialog
 import customtkinter as ctk
 import tkinter as tk
 from tkinter import messagebox
+from tkinter import ttk as tkinter_ttk
 
 from app_shared import (
     LOCAL_CONFIG_FILE, TOAST_LOCATIONS, MAPPING_FILE, REPORTS_DIR,
