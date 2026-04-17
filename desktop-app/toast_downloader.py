@@ -23,6 +23,23 @@ DEFAULT_DOWNLOAD_DIR = str(runtime_path("toast-reports"))
 DOWNLOAD_AUDIT_DIR = runtime_path("audit-logs", "download-reports")
 
 TOAST_LOCATIONS = ["Stockton", "The Rim", "Stone Oak", "Bandera", "WA1", "WA2", "WA3"]
+
+
+def _ensure_playwright_env() -> None:
+    """
+    In PyInstaller frozen builds, Playwright does not know where Chromium lives.
+    Set PLAYWRIGHT_BROWSERS_PATH to the bundled browser directory so launches work
+    on clean machines (no system-wide Playwright install).
+
+    Convention: the build script places Chromium at:
+        <exe_dir>/playwright-browsers/
+    """
+    if not getattr(sys, "frozen", False):
+        return  # dev mode — Playwright manages its own paths
+    from app_paths import RUNTIME_DIR
+    browsers_dir = RUNTIME_DIR / "playwright-browsers"
+    if browsers_dir.exists() and "PLAYWRIGHT_BROWSERS_PATH" not in os.environ:
+        os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(browsers_dir)
 LOGIN_WAIT_TIMEOUT_SECONDS = 5 * 60
 LOGIN_WAIT_POLL_SECONDS = 5
 
@@ -221,6 +238,7 @@ class ToastDownloader:
 
     def _start_browser(self):
         """Launch browser and restore session."""
+        _ensure_playwright_env()  # ensure Chromium path is set before Playwright init
         try:
             self.playwright = sync_playwright().start()
             self.browser = self.playwright.chromium.launch(

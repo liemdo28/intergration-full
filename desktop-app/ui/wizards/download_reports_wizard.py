@@ -65,6 +65,7 @@ class DownloadReportsWizard(WizardBase):
         self._stop_event = threading.Event()
         self._download_thread: threading.Thread | None = None
         self._result_view: WizardResultView | None = None
+        self._activated_once = False  # skip reset on very first show
 
         super().__init__(
             master,
@@ -73,6 +74,25 @@ class DownloadReportsWizard(WizardBase):
             status_var=status_var,
             **kwargs,
         )
+
+    # ------------------------------------------------------------------
+    # State reset — Finding 3: wizard state must not leak between runs
+    # ------------------------------------------------------------------
+
+    def on_wizard_activated(self) -> None:
+        """Reset to a clean state each time the operator re-enters this wizard."""
+        if not self._activated_once:
+            self._activated_once = True
+            return  # first show — state was just created, nothing to reset
+        self._reset_for_new_run()
+
+    def _reset_for_new_run(self) -> None:
+        """Clear all run state so the next wizard pass starts completely fresh."""
+        self._stop_event.clear()
+        self._state = workflow_state_service.create_workflow("dl_wizard")
+        self._step_index = 0
+        self._refresh()
+        self.on_step_changed(0)
 
     # ------------------------------------------------------------------
     # Step dispatch
@@ -484,12 +504,14 @@ class DownloadReportsWizard(WizardBase):
         warnings = res.get("warnings", [])
         error = res.get("error", "")
 
-        # Determine outcome type
-        if ok and f_count == 0:
+        # Determine outcome type — Finding 5: must reflect reality, not just ok flag.
+        # "completed" requires: ok=True AND no failures AND no warnings.
+        # Any warning (even with ok=True) → "completed_with_warnings".
+        if ok and f_count == 0 and not warnings:
             outcome_type = "completed"
-        elif ok and f_count > 0:
+        elif ok and (f_count > 0 or warnings):
             outcome_type = "completed_with_warnings"
-        elif s_count == 0 and f_count > 0:
+        elif not ok and s_count == 0:
             outcome_type = "failed_safely"
         else:
             outcome_type = "completed_with_warnings"
@@ -522,17 +544,21 @@ class DownloadReportsWizard(WizardBase):
             if self._status_var is not None:
                 self._status_var.set("navigate:home")
 
+        stats = [
+            ("Downloaded", str(s_count)),
+            ("Failed", str(f_count)),
+            ("Stores", str(len(self._state.selected_stores))),
+        ]
+        if warnings:
+            stats.append(("Warnings", str(len(warnings))))
+
         self._result_view = WizardResultView(
             self._content_frame,
             outcome_type=outcome_type,
             title=title,
             summary_lines=summary,
             warnings=warnings,
-            stats=[
-                ("Downloaded", str(s_count)),
-                ("Failed", str(f_count)),
-                ("Stores", str(len(self._state.selected_stores))),
-            ],
+            stats=stats,
             next_action_label="→ Sync to QuickBooks",
             next_action_command=_go_qb,
             secondary_action_label="Return Home",

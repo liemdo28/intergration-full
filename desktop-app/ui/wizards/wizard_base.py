@@ -113,6 +113,16 @@ class WizardBase(ctk.CTkFrame if CTK else object):
         """Override in subclass to render step content."""
         pass
 
+    def on_wizard_activated(self) -> None:
+        """
+        Called each time this wizard frame becomes visible (via the <Map> event).
+        Override in concrete wizards to reset state for a fresh run.
+
+        The first call (initial show) is skipped automatically — state reset only
+        happens on re-entry after the user navigated away and came back.
+        """
+        pass
+
     # ------------------------------------------------------------------
     # Build UI
     # ------------------------------------------------------------------
@@ -191,6 +201,8 @@ class WizardBase(ctk.CTkFrame if CTK else object):
         self._update_footer_buttons()
         # Render initial step
         self.after(50, lambda: self.on_step_changed(0))
+        # Wire visibility event so subclasses can reset state on re-entry
+        self.bind("<Map>", self._on_map_event)
 
     # ------------------------------------------------------------------
     # Progress indicator
@@ -270,6 +282,10 @@ class WizardBase(ctk.CTkFrame if CTK else object):
             text_color="#ffffff" if self._next_enabled else "#475569",
             state="normal" if self._next_enabled else "disabled",
         )
+
+    def _on_map_event(self, event=None) -> None:
+        """Tkinter <Map> fires when a widget becomes visible. Delegate to hook."""
+        self.on_wizard_activated()
 
     def _refresh(self) -> None:
         """Re-render the progress bar and update footer buttons."""

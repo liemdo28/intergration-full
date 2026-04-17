@@ -149,6 +149,62 @@ def _ensure_folders(report: BootstrapReport) -> None:
                  f"Cannot create {folder_name}: {exc}", folder)
 
 
+# ---------------------------------------------------------------------------
+# Config schema — every key that the app reads must exist with a safe default.
+# Missing keys are auto-healed at startup so partial configs never cause crashes.
+# ---------------------------------------------------------------------------
+_CONFIG_DEFAULTS: dict = {
+    "qbw_paths": {},
+    "marketplace_paths": {},
+    "last_qbw_dir": "",
+    "last_marketplace_dir": "",
+    "delete_policy": {"allow_live_delete": False, "approver": ""},
+    "google_drive": {
+        "root_folder_url": "",
+        "root_folder_id": "",
+        "brand_folder_name": "",
+        "use_date_subfolders": False,
+    },
+    "agentai_sync": {
+        "enabled": False,
+        "api_url": "",
+        "token": "",
+        "project_id": "",
+        "source_type": "",
+        "app_version": "",
+        "machine_id": "",
+        "machine_name": "",
+    },
+    "background_worker": {
+        "command_poll_seconds": 30,
+        "snapshot_interval_seconds": 120,
+        "headless_downloads": True,
+    },
+    "operator_mode": "standard",
+}
+
+
+def _heal_config(data: dict, path: Path, report: BootstrapReport) -> dict:
+    """
+    Ensure all required config keys are present.  Any missing key is added
+    with its safe default value and the file is re-saved.  This prevents
+    KeyError / AttributeError crashes caused by partially initialised configs.
+    """
+    missing_keys = [k for k in _CONFIG_DEFAULTS if k not in data]
+    if not missing_keys:
+        return data
+    for key in missing_keys:
+        data[key] = _CONFIG_DEFAULTS[key]
+    try:
+        path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        _add(report, "local-config.json Heal", "INFO", "ok",
+             f"Added {len(missing_keys)} missing key(s) with safe defaults: {', '.join(missing_keys)}", path)
+    except Exception as exc:
+        _add(report, "local-config.json Heal", "WARNING", "error",
+             f"Could not save healed config ({exc}) — app may behave unexpectedly", path)
+    return data
+
+
 def _ensure_config_files(report: BootstrapReport) -> None:
     """Ensure .env.qb and local-config.json exist, creating from example if missing or malformed."""
     # --- .env.qb ---
@@ -179,6 +235,8 @@ def _ensure_config_files(report: BootstrapReport) -> None:
             data = json.loads(cfg_target.read_text(encoding="utf-8"))
             _add(report, "local-config.json", "INFO", "ok",
                  f"Found with {len(data)} top-level key(s)", cfg_target)
+            # Auto-heal: ensure every required key exists (no KeyError on first use)
+            _heal_config(data, cfg_target, report)
         except json.JSONDecodeError as exc:
             _backup_and_log(report, cfg_target, f"malformed JSON: {exc}")
             _create_from_example(report, cfg_target, cfg_example, "local-config.json")
@@ -187,6 +245,12 @@ def _ensure_config_files(report: BootstrapReport) -> None:
     else:
         _create_from_example(report, cfg_target, cfg_example, "local-config.json")
         report.is_first_run = True
+        # Heal the freshly-created file too — example may lag the schema
+        try:
+            data = json.loads(cfg_target.read_text(encoding="utf-8"))
+            _heal_config(data, cfg_target, report)
+        except Exception:
+            pass
 
 
 def _create_from_example(report: BootstrapReport, target: Path, example: Path, label: str) -> None:
@@ -218,19 +282,29 @@ def _backup_and_log(report: BootstrapReport, path: Path, reason: str) -> None:
 
 
 def _check_playwright_browser(report: BootstrapReport) -> None:
-    """Check Playwright Chromium is bundled and reachable. WARNING if missing."""
+    """Check the Report Browser (Playwright Chromium) is bundled and reachable."""
+    # In frozen builds, set PLAYWRIGHT_BROWSERS_PATH before letting Playwright probe
+    # its own executable_path so the path resolution is exe-relative, not dev-machine.
+    if getattr(sys, "frozen", False):
+        browsers_dir = RUNTIME_DIR / "playwright-browsers"
+        if browsers_dir.exists() and "PLAYWRIGHT_BROWSERS_PATH" not in os.environ:
+            os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(browsers_dir)
     try:
         from playwright.sync_api import sync_playwright
         with sync_playwright() as pw:
             bp = Path(pw.chromium.executable_path)
             if bp.exists():
-                _add(report, "Playwright Chromium", "INFO", "ok", str(bp), bp)
+                _add(report, "Report Browser", "INFO", "ok", str(bp), bp)
             else:
-                _add(report, "Playwright Chromium", "WARNING", "missing",
-                     f"Browser path {bp} does not exist; Toast download via browser may fail", bp)
+                _add(report, "Report Browser", "WARNING", "missing",
+                     "Report Browser (Chromium) was not found at its expected location. "
+                     "The Download Reports feature will not work until this is resolved. "
+                     "All other features (QB Sync, Settings, etc.) continue to work normally.", bp)
     except Exception as exc:
-        _add(report, "Playwright Chromium", "WARNING", "missing",
-             f"Playwright not available: {exc}", None)
+        _add(report, "Report Browser", "WARNING", "missing",
+             f"Report Browser could not be initialized ({exc}). "
+             "The Download Reports feature will not work. "
+             "All other features continue to work normally.", None)
 
 
 def _check_python_presence(report: BootstrapReport) -> None:

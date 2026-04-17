@@ -95,7 +95,7 @@ def run_consolidated_gate(
         _check_duplicates(result, stores, date_start, date_end)
 
     # 6. Local file validity
-    _check_local_file_validity(result, stores, date_start, date_end)
+    _check_local_file_validity(result, stores, date_start, date_end, report_types)
 
     return result
 
@@ -191,26 +191,44 @@ def _check_duplicates(result: GateResult, stores, date_start, date_end):
         pass
 
 
-def _check_local_file_validity(result: GateResult, stores, date_start, date_end):
+# Pre-sync warning categories that are accounting-integrity issues and must
+# be treated as hard blockers rather than advisories.
+# A date_gap or incomplete_report means data is missing for accounting — sync
+# must not proceed or it will write incomplete journal entries to QuickBooks.
+_PRESYNC_ESCALATE_TO_BLOCK = {"date_gap", "missing_file", "incomplete_report"}
+
+
+def _check_local_file_validity(result: GateResult, stores, date_start, date_end,
+                                report_types=None):
+    """
+    Validate local report files before sync.
+
+    - Pre-sync blockers (missing_file, corrupt file) → BLOCK
+    - Pre-sync warnings: date_gap / incomplete_report are escalated to BLOCK
+      because missing days = accounting gap = QuickBooks entries would be wrong.
+    - Other warnings (e.g. large range) → WARN (proceed with caution)
+    """
     try:
         from pre_sync_validator import validate_sync_readiness
         report = validate_sync_readiness(
             stores=stores,
             date_range_start=date_start,
             date_range_end=date_end,
-            report_types=["sales_summary"],
+            report_types=report_types or ["sales_summary"],
         )
-        # Add blockers from pre_sync as BLOCK issues
-        for b in report.blockers[:5]:  # cap at 5
+        # Pre-sync blockers → BLOCK
+        for b in report.blockers[:5]:  # cap to avoid UI overflow
             result.issues.append(GateIssue("BLOCK", f"presync_{b.category}",
                 _presync_title(b.category),
                 b.detail,
                 b.suggested_fix or ""))
-        # Add warnings
-        for w in report.warnings[:3]:
-            result.issues.append(GateIssue("WARN", f"presync_{w.category}",
+        # Pre-sync warnings — escalate accounting-integrity issues to BLOCK
+        for w in report.warnings[:5]:
+            severity = "BLOCK" if w.category in _PRESYNC_ESCALATE_TO_BLOCK else "WARN"
+            result.issues.append(GateIssue(severity, f"presync_{w.category}",
                 _presync_title(w.category),
-                w.detail))
+                w.detail,
+                w.suggested_fix or "" if hasattr(w, "suggested_fix") else ""))
     except Exception:
         pass
 
