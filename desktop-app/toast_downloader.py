@@ -25,25 +25,51 @@ DOWNLOAD_AUDIT_DIR = runtime_path("audit-logs", "download-reports")
 TOAST_LOCATIONS = ["Stockton", "The Rim", "Stone Oak", "Bandera", "WA1", "WA2", "WA3"]
 
 
+def _find_bundled_chromium():
+    """
+    Return the path to the bundled chrome.exe in a frozen build, or None.
+
+    The build pipeline places Chromium in one of two layouts:
+
+    Layout A — build script (Copy-PlaywrightBrowser) alongside the .exe:
+        <exe_dir>/playwright_browser/chromium-XXXX/chrome-win/chrome.exe
+
+    Layout B — spec binaries entry inside _MEIPASS (flat, no revision folder):
+        <_MEIPASS>/playwright_browser/chrome.exe
+
+    We probe both and return the first chrome.exe found.
+    Playwright's chromium.launch(executable_path=...) accepts the direct path.
+    """
+    if not getattr(sys, "frozen", False):
+        return None
+    from pathlib import Path as _Path
+    from app_paths import BUNDLE_DIR, RUNTIME_DIR
+
+    search_roots = [
+        RUNTIME_DIR / "playwright_browser",   # build-script output (Layout A)
+        BUNDLE_DIR  / "playwright_browser",   # spec-bundled (Layout B)
+        RUNTIME_DIR / "playwright-browsers",  # legacy / alternate naming
+    ]
+    for root in search_roots:
+        if not root.exists():
+            continue
+        for exe in root.rglob("chrome.exe"):
+            return str(exe)
+    return None
+
+
 def _ensure_playwright_env() -> None:
     """
-    In PyInstaller frozen builds, Playwright does not know where Chromium lives.
-    Set PLAYWRIGHT_BROWSERS_PATH before any sync_playwright() call so launches
-    work on clean machines (no system-wide Playwright install required).
+    In PyInstaller frozen builds, set PLAYWRIGHT_BROWSERS_PATH so Playwright's
+    own browser-discovery can locate Chromium without a system-wide install.
 
-    Two distribution strategies are supported — checked in priority order:
+    This covers Layout A (build-script output alongside the .exe) where browsers
+    are stored in a versioned subfolder that Playwright can discover:
+        <exe_dir>/playwright_browser/chromium-XXXX/chrome-win/chrome.exe
 
-    1. Portable/alongside-exe:  <exe_dir>/playwright-browsers/
-       Build script extracts Chromium next to the .exe.
-       Playwright_BROWSERS_PATH → <exe_dir>/playwright-browsers/
-
-    2. Bundled-inside-spec:     <_MEIPASS>/playwright/
-       Build spec includes playwright browser via collect_data_files("playwright").
-       Playwright's own path detection points to _MEIPASS; we set the env var
-       to the _MEIPASS root so Playwright can locate its internal layout.
-
-    If neither directory exists the function returns without setting anything —
-    the bootstrap check will surface a clear "Report Browser not found" warning.
+    For Layout B (flat spec-bundled), _find_bundled_chromium() + executable_path
+    is used in _start_browser() instead, because there is no revision subfolder
+    for Playwright's discovery algorithm to traverse.
     """
     if not getattr(sys, "frozen", False):
         return  # dev mode — Playwright manages its own paths
@@ -53,10 +79,14 @@ def _ensure_playwright_env() -> None:
     from app_paths import BUNDLE_DIR, RUNTIME_DIR
 
     candidates = [
-        # Priority 1: portable distribution — browsers next to the .exe
+        # Build-script layout: playwright_browser/ next to the .exe (underscore, no 's')
+        (RUNTIME_DIR / "playwright_browser",  str(RUNTIME_DIR / "playwright_browser")),
+        # Alternate portable naming (hyphen+s) kept for forward compat
         (RUNTIME_DIR / "playwright-browsers", str(RUNTIME_DIR / "playwright-browsers")),
-        # Priority 2: spec-bundled — browsers inside _MEIPASS/playwright/
-        (BUNDLE_DIR / "playwright", str(BUNDLE_DIR)),
+        # Spec-bundled layout: playwright_browser/ inside _MEIPASS
+        (BUNDLE_DIR  / "playwright_browser",  str(BUNDLE_DIR)),
+        # Legacy: plain playwright/ inside _MEIPASS
+        (BUNDLE_DIR  / "playwright",          str(BUNDLE_DIR)),
     ]
     for probe_path, env_value in candidates:
         if probe_path.exists():
@@ -263,10 +293,18 @@ class ToastDownloader:
         _ensure_playwright_env()  # ensure Chromium path is set before Playwright init
         try:
             self.playwright = sync_playwright().start()
-            self.browser = self.playwright.chromium.launch(
-                headless=self.headless,
-                args=[] if self.headless else ["--start-maximized"],
-            )
+
+            # In frozen builds, pass the bundled executable directly so Playwright
+            # does not have to traverse versioned discovery folders (Layout B).
+            launch_kwargs: dict = {
+                "headless": self.headless,
+                "args": [] if self.headless else ["--start-maximized"],
+            }
+            bundled_exe = _find_bundled_chromium()
+            if bundled_exe:
+                launch_kwargs["executable_path"] = bundled_exe
+
+            self.browser = self.playwright.chromium.launch(**launch_kwargs)
 
             ctx_opts = {
                 "accept_downloads": True,
