@@ -43,12 +43,13 @@ class ActionCard(ctk.CTkFrame if CTK else object):
         **kwargs,
     ):
         accent = accent or self.DEFAULT_ACCENT
-        bg_hover = self._lighten(accent, 0.15) if CTK else "#cccccc"
+        self._bg_normal = "#1e293b"
+        self._bg_hover  = self._lighten(accent, 0.15) if CTK else "#cccccc"
 
+        # CTkFrame does not support hover_color — implement hover via bindings
         super().__init__(
             master,
-            fg_color="#1e293b",
-            hover_color=bg_hover,
+            fg_color=self._bg_normal,
             corner_radius=8,
             cursor="hand2" if enabled else "arrow",
             **kwargs,
@@ -94,8 +95,12 @@ class ActionCard(ctk.CTkFrame if CTK else object):
 
         if enabled:
             self.bind("<Button-1>", self._on_click)
+            self.bind("<Enter>", self._on_hover_enter)
+            self.bind("<Leave>", self._on_hover_leave)
             for child in self.winfo_children():
                 child.bind("<Button-1>", self._on_click)
+                child.bind("<Enter>", self._on_hover_enter)
+                child.bind("<Leave>", self._on_hover_leave)
         else:
             self._title_lbl.configure(text_color="#475569")
             if description:
@@ -104,6 +109,12 @@ class ActionCard(ctk.CTkFrame if CTK else object):
     def _on_click(self, event=None) -> None:
         if self._command:
             self._command()
+
+    def _on_hover_enter(self, event=None) -> None:
+        self.configure(fg_color=self._bg_hover)
+
+    def _on_hover_leave(self, event=None) -> None:
+        self.configure(fg_color=self._bg_normal)
 
     def configure_command(self, command) -> None:
         self._command = command
