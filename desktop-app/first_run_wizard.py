@@ -174,32 +174,41 @@ class FirstRunWizard(ctk.CTk):
 
     def _step_welcome(self) -> None:
         ctk.CTkLabel(
-            self.content_frame, text="Welcome to ToastPOSManager",
+            self.content_frame, text="Welcome to Toast POS Manager",
             font=ctk.CTkFont(size=22, weight="bold"),
             text_color="#f1f5f9",
         ).pack(anchor="w", pady=(20, 8))
         ctk.CTkLabel(
             self.content_frame,
-            text="This wizard will help you configure the app for your operation.\n"
-                 "You can change all settings later in Settings & Recovery.",
+            text="This wizard helps you connect the app to your store accounts.\n"
+                 "It takes about 2 minutes.",
             text_color="#94a3b8", font=ctk.CTkFont(size=13),
             wraplength=520,
-        ).pack(anchor="w", pady=(0, 24))
+        ).pack(anchor="w", pady=(0, 16))
 
-        # Feature overview cards
-        features = [
-            ("Download Reports", "Automate Toast report downloads via browser", "#22c55e"),
-            ("QB Sync", "Sync sales data to QuickBooks Desktop", "#3b82f6"),
-            ("Drive Upload", "Upload reports to Google Drive", "#eab308"),
-            ("Remove Transactions", "Clean up QB company files", "#ef4444"),
+        ctk.CTkLabel(
+            self.content_frame,
+            text="You will need:",
+            text_color="#f1f5f9", font=ctk.CTkFont(size=13, weight="bold"),
+        ).pack(anchor="w", pady=(0, 4))
+
+        needs = [
+            "Your QuickBooks company file (.qbw)",
+            "Access to your team's Google Drive",
         ]
-        for feat, desc, color in features:
-            card = ctk.CTkFrame(self.content_frame, fg_color="#1e293b", corner_radius=8)
-            card.pack(fill="x", pady=4)
-            dot = ctk.CTkLabel(card, text="●", text_color=color, font=ctk.CTkFont(size=14))
-            dot.pack(side="left", padx=(12, 8), pady=10)
-            ctk.CTkLabel(card, text=feat, font=ctk.CTkFont(size=13, weight="bold"), text_color="#f1f5f9").pack(side="left", pady=10)
-            ctk.CTkLabel(card, text=desc, text_color="#64748b", font=ctk.CTkFont(size=11)).pack(side="right", padx=12, pady=10)
+        for item in needs:
+            ctk.CTkLabel(
+                self.content_frame,
+                text=f"• {item}",
+                text_color="#94a3b8", font=ctk.CTkFont(size=12),
+                anchor="w",
+            ).pack(anchor="w", padx=8, pady=2)
+
+        ctk.CTkLabel(
+            self.content_frame,
+            text="Click Next to begin.",
+            text_color="#64748b", font=ctk.CTkFont(size=12),
+        ).pack(anchor="w", pady=(16, 0))
 
     def _step_stores(self) -> None:
         ctk.CTkLabel(
@@ -297,25 +306,39 @@ class FirstRunWizard(ctk.CTk):
         qb = self.qb_wanted_var.get() if hasattr(self, "qb_wanted_var") else self.qb_wanted
         drive = self.drive_wanted_var.get() if hasattr(self, "drive_wanted_var") else self.drive_wanted
 
+        store_label = f"Stores configured: {len(selected)} store{'s' if len(selected) != 1 else ''}" if selected else "Stores configured: (none selected)"
+        qb_label = "connected" if qb else "not configured yet"
+        drive_label = "connected" if drive else "not configured yet"
+
+        # Configuration saved indicator
+        saved_row = ctk.CTkFrame(self.content_frame, fg_color="#0f2a1a", corner_radius=6)
+        saved_row.pack(fill="x", pady=4)
+        ctk.CTkLabel(saved_row, text="✅", font=ctk.CTkFont(size=14), text_color="#22c55e").pack(side="left", padx=(12, 8), pady=8)
+        ctk.CTkLabel(saved_row, text="Configuration saved", text_color="#22c55e", font=ctk.CTkFont(size=12, weight="bold"), anchor="w").pack(side="left", pady=8)
+
         rows = [
-            ("Stores selected", ", ".join(selected) if selected else "(none)"),
-            ("QB Sync", "Yes — configure .qbw path in Settings" if qb else "No"),
-            ("Google Drive", "Yes — connect in Settings" if drive else "No"),
-            ("Machine role", self.machine_role),
+            ("Stores", store_label),
+            ("QuickBooks", qb_label),
+            ("Google Drive", drive_label),
         ]
         for label, value in rows:
             row = ctk.CTkFrame(self.content_frame, fg_color="#1e293b", corner_radius=6)
             row.pack(fill="x", pady=4)
-            ctk.CTkLabel(row, text=label, text_color="#64748b", font=ctk.CTkFont(size=11), width=160, anchor="w").pack(side="left", padx=(12, 8), pady=8)
+            ctk.CTkLabel(row, text=label, text_color="#64748b", font=ctk.CTkFont(size=11), width=120, anchor="w").pack(side="left", padx=(12, 8), pady=8)
             ctk.CTkLabel(row, text=value, text_color="#f1f5f9", font=ctk.CTkFont(size=12), anchor="w").pack(side="left", pady=8, padx=(0, 12))
 
         note = ctk.CTkLabel(
             self.content_frame,
-            text="All settings can be changed later in Settings & Recovery. "
-                 "Your local-config.json and .env.qb will be updated.",
+            text="All settings can be changed later in Settings & Recovery.",
             text_color="#475569", font=ctk.CTkFont(size=11), wraplength=500,
         )
-        note.pack(anchor="w", pady=(16, 0))
+        note.pack(anchor="w", pady=(16, 8))
+
+        ctk.CTkButton(
+            self.content_frame, text="Open App", width=140, fg_color="#22c55e",
+            hover_color="#16a34a", font=ctk.CTkFont(size=13, weight="bold"),
+            command=self._apply_and_close,
+        ).pack(anchor="w", pady=(0, 4))
 
     def _render_nav(self) -> None:
         for widget in self.nav_frame.winfo_children():
@@ -390,7 +413,7 @@ class FirstRunWizard(ctk.CTk):
             logging.error(f"Setup wizard apply failed: {exc}", exc_info=True)
             messagebox.showwarning(
                 "Setup Error",
-                f"Could not save configuration:\n\n{exc}\n\nThe app will continue without saving.",
+                "Something went wrong during setup. You can continue and fix this in Settings.",
             )
             self.destroy()
 

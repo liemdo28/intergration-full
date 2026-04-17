@@ -426,6 +426,63 @@ class QBSyncWizard(WizardBase):
                 anchor="w",
             ).pack(anchor="w", padx=14, pady=(6, 10))
 
+    def _show_completeness_block(self, parent, completeness):
+        """Show a hard block UI when source files are missing."""
+        block_card = ctk.CTkFrame(parent, fg_color="#3b0f0f", corner_radius=12, border_width=1, border_color="#ef4444")
+        block_card.pack(fill="x", padx=20, pady=(16, 8))
+
+        # Header
+        header = ctk.CTkFrame(block_card, fg_color="transparent")
+        header.pack(fill="x", padx=16, pady=(14, 6))
+        ctk.CTkLabel(header, text="✕", font=ctk.CTkFont(size=20, weight="bold"), text_color="#ef4444").pack(side="left", padx=(0, 10))
+        ctk.CTkLabel(header, text="Source reports are missing — sync is blocked",
+                     font=ctk.CTkFont(size=14, weight="bold"), text_color="#fca5a5", anchor="w").pack(side="left")
+
+        # Explanation
+        ctk.CTkLabel(block_card,
+                     text="QuickBooks sync requires ALL reports to be present in Drive before writing.\n"
+                          "Partial sync would create accounting gaps.",
+                     font=ctk.CTkFont(size=12), text_color="#fca5a5",
+                     anchor="w", justify="left", wraplength=550).pack(anchor="w", padx=16, pady=(0, 8))
+
+        # Missing files list
+        if completeness.missing_files:
+            missing_frame = ctk.CTkScrollableFrame(block_card, height=120, fg_color="#2a0a0a", corner_radius=6)
+            missing_frame.pack(fill="x", padx=16, pady=(0, 8))
+
+            ctk.CTkLabel(missing_frame,
+                         text=f"Missing ({completeness.missing_count} of {completeness.total_count}):",
+                         font=ctk.CTkFont(size=11, weight="bold"), text_color="#f87171",
+                         anchor="w").pack(anchor="w", padx=8, pady=(4, 2))
+
+            for sf in completeness.missing_files[:20]:
+                ctk.CTkLabel(missing_frame,
+                             text=f"  • {sf.label}  ({sf.report_type.replace('_', ' ').title()})",
+                             font=ctk.CTkFont(size=11), text_color="#fca5a5",
+                             anchor="w").pack(anchor="w", padx=8, pady=1)
+
+            if completeness.missing_count > 20:
+                ctk.CTkLabel(missing_frame,
+                             text=f"  … and {completeness.missing_count - 20} more",
+                             font=ctk.CTkFont(size=11), text_color="#94a3b8",
+                             anchor="w").pack(anchor="w", padx=8, pady=1)
+
+        # Next step
+        ctk.CTkLabel(block_card,
+                     text="Next step: Use the Download Wizard to download missing reports, then return here.",
+                     font=ctk.CTkFont(size=12, weight="bold"), text_color="#fdba74",
+                     anchor="w", wraplength=550).pack(anchor="w", padx=16, pady=(0, 14))
+
+        # Go to Download button
+        ctk.CTkButton(block_card, text="→ Open Download Wizard",
+                      font=ctk.CTkFont(size=12, weight="bold"),
+                      fg_color="#7c3aed", hover_color="#6d28d9", height=34,
+                      command=lambda: self._nav("navigate:wizard_download")).pack(anchor="w", padx=16, pady=(0, 14))
+
+    def _nav(self, destination: str):
+        if self._status_var:
+            self._status_var.set(destination)
+
     def _step_preview_sync(self) -> None:
         self.set_next_enabled(False)
         self._stop_event.clear()
@@ -440,6 +497,21 @@ class QBSyncWizard(WizardBase):
             text_color="#f8fafc",
             anchor="w",
         ).pack(anchor="w", padx=16, pady=(14, 6))
+
+        # Source completeness gate — block sync if reports are missing in Drive
+        try:
+            from services.source_completeness_service import check_source_completeness
+            completeness = check_source_completeness(
+                self._state.selected_stores,
+                self._state.date_start,
+                self._state.date_end,
+            )
+            if not completeness.is_complete:
+                self._show_completeness_block(frame, completeness)
+                self.set_next_enabled(False)
+                return
+        except Exception:
+            pass
 
         # Run safety checks first
         try:

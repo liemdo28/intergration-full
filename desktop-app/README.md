@@ -1,148 +1,84 @@
 # Toast POS Manager
 
-Ung dung desktop hop nhat cho quy trinh Toast -> QuickBooks:
+Automated reporting and accounting sync for Toast POS.
 
-- `Download Reports`: dang nhap Toast bang Playwright, tai report theo ngay/store.
-- `QB Sync`: doc file Excel Toast da tai va tao `Sales Receipt` trong QuickBooks Desktop.
-- `Remove Transactions`: query va xoa transaction trong QuickBooks Desktop bang QBXML COM.
-- `Settings`: Google Drive token, Toast session, quick links va trang thai cau hinh.
+Download your store reports, verify coverage, and sync directly to QuickBooks Desktop — all from one guided app.
 
-## Yeu cau
+---
 
-- Windows
-- Python 3.12+
-- QuickBooks Desktop da cai san
-- Chromium cho Playwright (`python -m playwright install chromium`)
-- Nen dung Python 64-bit de pywin32/QB COM on dinh
+## What this app does
 
-## Cau truc chinh
+- **Download Reports** — Signs in to Toast and downloads your daily sales reports for one or more stores and date ranges. Files are saved locally and uploaded to Google Drive automatically.
 
-- `app.py`: giao dien desktop hop nhat
-- `toast_downloader.py`: Toast web scraper
-- `toast_reports.py`: report registry, aliases, folder naming, and download-capability metadata
-- `qb_sync.py`: tao Sales Receipt tu Excel Toast
-- `qb_client.py`: query/xoa transaction trong QB Desktop
-- `qb_automate.py`: mo QB file va tu dong login
-- `gdrive_service.py`: upload report len Google Drive
-- `qb-mapping.json`: mapping store va item
-- `Map/`: mapping CSV theo store
+- **QB Sync** — Reads downloaded reports and creates Sales Receipts in QuickBooks Desktop. Validates data before any write. Preview what will be synced before confirming.
 
-## Cai dat
+- **Recovery Center** — Health checks, one-click config repair, support bundle export. If something breaks, start here.
 
-```powershell
-cd "E:\Project\Toasttab Quickbook\New folder\integration-toasttab-qb\desktop-app"
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-python -m playwright install chromium
-```
+---
 
-## Cau hinh
+## Installation
 
-1. Tao `.env.qb` tu `.env.qb.example`.
-2. Dien password QuickBooks vao `QB_PASSWORD1..3`.
-3. Neu dung Google Drive, dat `credentials.json` o cung thu muc app.
-4. `local-config.json` se duoc tao tu dong khi ban chon file `.qbw` trong giao dien.
+1. Run `ToastPOSManager-Setup.exe` (available in the latest release).
+2. Follow the installer — no other software required.
+3. Launch the app from the Start Menu or desktop shortcut.
 
-Mau `local-config.json` xem trong `local-config.example.json`.
+On first launch, the app will guide you through connecting Google Drive and QuickBooks.
 
-## Chay app
+---
 
-```powershell
-python app.py
-```
+## First-time setup
 
-Hoac chay:
+The app walks you through setup on first launch:
 
-```bat
-launch.bat
-```
+1. **Select your stores** — Choose which Toast locations you manage.
+2. **Connect Google Drive** — Authorize access to your team's shared Drive folder.
+3. **Connect QuickBooks** — Point the app at your QuickBooks company file.
 
-Neu muon may nay chay nen, khong show giao dien, va de AgentAI dieu phoi command tu xa:
+All setup is done inside the app. No config files to edit manually.
 
-```powershell
-python app.py --headless-worker
-```
+---
 
-Mode nay se:
+## Daily use
 
-- khoi dong app o hidden window mode
-- poll command tu AgentAI theo `background_worker.command_poll_seconds`
-- publish runtime snapshot dinh ky theo `background_worker.snapshot_interval_seconds`
-- dung headless browser cho Toast download neu `headless_downloads=true`
+### Download reports
+1. Click **Download Wizard** in the sidebar.
+2. Select stores and date range.
+3. The app validates readiness, then downloads.
 
-## Startup diagnostics
+### Sync to QuickBooks
+1. Click **QB Sync Wizard** in the sidebar.
+2. Select stores and date range.
+3. The app checks that all source reports exist before it writes anything.
+4. Preview what will be synced, then confirm.
 
-App tu chay environment diagnostics luc khoi dong va hien ket qua trong tab Settings.
-Tab `Settings` gio co them `Recovery Center` de user tu xuat health report, reset session/token an toan, tao file config mau, va doc playbook xu ly su co thong dung ma khong can dev.
+---
 
-Co the chay doctor bang CLI:
+## If something goes wrong
 
-```powershell
-python app.py --doctor-cli
-```
+Open **Recovery Center** (in the sidebar). It shows:
+- App health status
+- Configuration health
+- Browser status
+- Last crash summary
 
-## Build EXE
+One-click actions available:
+- Repair Config
+- Clear Session
+- Export Support Bundle
 
-```powershell
-python -m pip install -r requirements-build.txt
-python -m playwright install chromium
-pyinstaller ToastPOSManager.spec --noconfirm
-```
+If you need to contact support, use **Export Support Bundle** — it packages all relevant logs in one file.
 
-Hoac dung script:
+---
 
-```powershell
-.\build_release.ps1
-```
+## Release history
 
-Output:
+See [Releases](https://github.com/liemdo28/intergration-full/releases) for version history and changelogs.
 
-- `dist\ToastPOSManager\ToastPOSManager.exe`
-- `release\ToastPOSManager-<timestamp>-<commit>.zip`
+---
 
-Neu may build co Inno Setup (`ISCC.exe`), script se build them installer `.exe` trong thu muc `release\`.
+## For developers
 
-## QB Sync safety
+See `docs/` for architecture notes, service layer documentation, and build instructions.
 
-- `Strict accounting mode` duoc bat mac dinh de chan sync khi report co unmapped category/tax/payment hoac receipt khong can bang
-- Co the tat strict mode khi can debug, nhung khong nen dung cho run production binh thuong
-- Tab `QB Sync` co panel `Validation Issues` rieng de operator xem va export issue CSV/JSON thay vi chi doc log textbox
-- Download Reports gio validate file `.xlsx` sau khi tai, retry neu download/validation fail, va ghi audit manifest vao `audit-logs\download-reports`
-- QB open/sync gio co `company-file guard` dua tren `qbw_match` de giam nguy co mo nham company file
-- Neu Toast session het han hoac password/login flow thay doi, app se hien warning ro rang va huong user sang `Settings -> Recovery Center`
-- QB Sync gio co `sync ledger` bang SQLite (`sync-ledger.db`) de block duplicate same-report, ghi preview/live run, va detect stale running sync
-- Tab `QB Sync` gio co `Last Sync Status` de operator xem run gan nhat, export sync audit, mark stale run as failed, va arm `Force Re-run` voi ly do luu vao ledger
-- Tab `QB Sync` gio co `Mapping Maintenance` de operator sua map category/tax/payment ngay trong app, luu vao CSV map, roi re-run preview ma khong can dev sua file thu cong
-- Mapping Maintenance gio co nut `Save + Re-run Preview` de save map xong thi app tu chon dung store/date va chay preview lai ngay
-- Mapping Maintenance gio kiem tra `QB Item` tren dung `.qbw` cua store, goi y item gan dung neu nhap lech, va chi tao item moi trong QuickBooks sau khi operator xac nhan
-- Item create moi gio co them audit file rieng va naming/template policy co ban de giam clone sai family hoac tao ten item rac
-- Mapping Maintenance gio tach ro hon `Check Existing Item`, `Create Missing Item`, `Refresh QB Catalog`, va co panel `Recent Item Creation History` de operator tu theo doi
-- Stockton/Raw gio co them 3 receipt bo sung theo customer rieng cho `Uber`, `DoorDash`, `Grubhub`; Toasttab van la receipt chinh va duoc download bang giao dien Toast website, con 3 CSV marketplace duoc operator chon thu cong trong tab `QB Sync`
-- `Mapping Maintenance` gio nhan ca marketplace issues (`missing column`, `invalid mapping type`, `unbalanced receipt`) de operator sua ngay `QB/Column/Type` trong app thay vi phai mo CSV map thu cong
-- `Last Sync Status` gio co them `source audit details`: report path, hash, map file, source mode, va biet file marketplace nao do user chon
-
-## Release planning
-
-- P0/P1/P2 checklist: [docs/RELEASE_READINESS_CHECKLIST.md](E:/Project/Toasttab Quickbook/New folder/integration-toasttab-qb/docs/RELEASE_READINESS_CHECKLIST.md)
-- Secret cleanup plan: [docs/SECRET_REMEDIATION.md](E:/Project/Toasttab Quickbook/New folder/integration-toasttab-qb/docs/SECRET_REMEDIATION.md)
-- Current state review: [docs/CURRENT_STATE_REVIEW.md](E:/Project/Toasttab Quickbook/New folder/integration-toasttab-qb/docs/CURRENT_STATE_REVIEW.md)
-- Toast ingest review: [docs/TOAST_INGEST_REVIEW.md](E:\Project\Master\integration-full\docs\TOAST_INGEST_REVIEW.md)
-- Operator guide: [docs/OPERATOR_GUIDE.md](E:/Project/Toasttab Quickbook/New folder/integration-toasttab-qb/docs/OPERATOR_GUIDE.md)
-- Final app requirements: [docs/FINAL_APP_REQUIREMENTS.md](E:/Project/Toasttab Quickbook/New folder/integration-toasttab-qb/docs/FINAL_APP_REQUIREMENTS.md)
-- Five-year self-recovery runbook: [docs/FIVE_YEAR_SELF_RECOVERY_RUNBOOK.md](E:/Project/Toasttab Quickbook/New folder/integration-toasttab-qb/docs/FIVE_YEAR_SELF_RECOVERY_RUNBOOK.md)
-- Engineering policy: [POLICY.md](E:/Project/Toasttab Quickbook/New folder/integration-toasttab-qb/POLICY.md)
-
-## Delete safety
-
-- Remove Transactions co `Dry run only` mac dinh
-- App tu export snapshot truoc khi xoa
-- Ket qua xoa/giả lập duoc ghi vao `audit-logs\delete-transactions`
-- Live delete bi khoa theo policy mac dinh; chi mo khoa bang `local-config.json` hoac `ALLOW_LIVE_DELETE=1` trong `.env.qb` trong maintenance window da duoc phe duyet
-
-## Ghi chu van hanh
-
-- Report tai ve duoc luu trong `toast-reports/` va khong dua vao git.
-- `token.json`, `.toast-session.json`, `credentials.json`, `.env.qb`, `local-config.json` la file may cuc bo.
-- Neu Playwright chua co browser, `launch.bat` se tu cai Chromium.
+To build from source: `powershell -File build_release.ps1`
+To run tests: `python -m pytest tests/`
