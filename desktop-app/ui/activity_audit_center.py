@@ -608,26 +608,6 @@ class ActivityAuditCenter(ctk.CTkFrame):
 
 
 # ---------------------------------------------------------------------------
-# Utility helpers
-# ---------------------------------------------------------------------------
-
-def _category_display_name(cat: EventCategory) -> str:
-    """Return a human-readable label for each EventCategory value."""
-    mapping = {
-        EventCategory.DOWNLOAD: "Download",
-        EventCategory.QB_SYNC: "QB Sync",
-        EventCategory.REMOVE_TX: "Remove Tx",
-        EventCategory.DRIVE_UPLOAD: "Drive Upload",
-        EventCategory.SETTINGS_CHANGE: "Settings",
-        EventCategory.RECOVERY: "Recovery",
-        EventCategory.APP_LIFECYCLE: "App",
-        EventCategory.CRASH: "Crash",
-        EventCategory.SAFE_MODE: "Safe Mode",
-    }
-    return mapping.get(cat, cat.value)
-
-
-# ---------------------------------------------------------------------------
 # Action handlers  (inside class — indented to class body level)
 # ---------------------------------------------------------------------------
 
@@ -693,3 +673,23 @@ def _category_display_name(cat: EventCategory) -> str:
             except Exception:
                 pass
         super().destroy()
+
+
+# ---------------------------------------------------------------------------
+# Utility helpers
+# ---------------------------------------------------------------------------
+
+def _category_display_name(cat: EventCategory) -> str:
+    """Return a human-readable label for each EventCategory value."""
+    mapping = {
+        EventCategory.DOWNLOAD: "Download",
+        EventCategory.QB_SYNC: "QB Sync",
+        EventCategory.REMOVE_TX: "Remove Tx",
+        EventCategory.DRIVE_UPLOAD: "Drive Upload",
+        EventCategory.SETTINGS_CHANGE: "Settings",
+        EventCategory.RECOVERY: "Recovery",
+        EventCategory.APP_LIFECYCLE: "App",
+        EventCategory.CRASH: "Crash",
+        EventCategory.SAFE_MODE: "Safe Mode",
+    }
+    return mapping.get(cat, cat.value)
