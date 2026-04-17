@@ -1,0 +1,1 @@
+{"event_id": "278635ab4ae8428aa0ab2d24a69e0a89", "timestamp": "2026-04-17T06:00:35Z", "category": "app_lifecycle", "severity": "info", "title": "App started", "detail": "Runtime mode: gui", "store": null, "user_initiated": true, "success": true, "duration_seconds": null, "extra": {}}

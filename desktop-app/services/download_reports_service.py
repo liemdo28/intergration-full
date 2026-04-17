@@ -61,6 +61,8 @@ def run_download(
     try:
         from toast_downloader import ToastDownloader
 
+        should_stop = (stop_event.is_set if stop_event is not None else (lambda: False))
+
         for store in stores:
             if stop_event and stop_event.is_set():
                 _log(f"Stopped before {store}")
@@ -69,15 +71,17 @@ def run_download(
             _log(f"Starting download for {store}...")
             try:
                 downloader = ToastDownloader(
-                    location=store,
-                    report_keys=report_types,
-                    dates=date_strs,
                     on_log=_log,
-                    stop_event=stop_event,
+                    should_stop=should_stop,
                 )
-                run_res = downloader.download_reports_daterange()
+                run_res = downloader.download_reports_daterange(
+                    locations=[store],
+                    dates=date_strs,
+                    report_types=report_types,
+                )
                 success = run_res.get("success", 0)
-                fail = run_res.get("fail", 0)
+                total = run_res.get("total", success)
+                fail = max(total - success, 0)
                 _log(f"{store}: {success} downloaded, {fail} failed")
                 for d in date_list:
                     for rt in report_types:
