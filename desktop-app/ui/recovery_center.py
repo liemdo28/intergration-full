@@ -143,19 +143,12 @@ class RecoveryCenter(ctk.CTkFrame if CTK else object):
 
     # ── App Health ─────────────────────────────────────────────────────────
     def _section_app_health(self, parent):
-        _outer, frame = _make_section_card(parent, "App Health", "Runtime environment and version information.")
+        _outer, frame = _make_section_card(parent, "App Health", "Current application status")
         self._health_labels: dict[str, ctk.CTkLabel] = {}
         self._health_badges: dict[str, ctk.CTkLabel] = {}
 
-        rows = [
-            ("python_version",  "Python"),
-            ("platform",        "Platform"),
-            ("runtime_dir",     "Runtime folder"),
-            ("app_version",     "App version"),
-            ("safe_mode_active","Safe Mode"),
-            ("crash_markers",   "Crash markers"),
-        ]
-        for key, label in rows:
+        # --- Simple status rows (always visible) ---
+        for key, label in [("app_version", "App Version"), ("safe_mode_active", "Safe Mode")]:
             row = ctk.CTkFrame(frame, fg_color="transparent")
             row.pack(fill="x", pady=3)
             ctk.CTkLabel(row, text=label, font=ctk.CTkFont(size=11), anchor="w",
@@ -164,6 +157,41 @@ class RecoveryCenter(ctk.CTkFrame if CTK else object):
                                    anchor="w", text_color="#f8fafc")
             val_lbl.pack(side="left", fill="x", expand=True)
             self._health_labels[key] = val_lbl
+
+        # --- Technical details toggle ---
+        self._tech_expanded = False
+        toggle_btn = ctk.CTkButton(frame, text="▶ Technical Details", width=160, height=26,
+                                    corner_radius=6, fg_color="#1e293b", hover_color="#334155",
+                                    text_color="#94a3b8", font=ctk.CTkFont(size=11),
+                                    command=lambda: self._toggle_tech_details(tech_frame, toggle_btn))
+        toggle_btn.pack(anchor="w", pady=(8, 0))
+
+        tech_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        # Don't pack yet — hidden by default
+
+        for key, label in [
+            ("python_version", "Python"),
+            ("platform", "Platform"),
+            ("runtime_dir", "Runtime folder"),
+            ("crash_markers", "Crash markers"),
+        ]:
+            row = ctk.CTkFrame(tech_frame, fg_color="transparent")
+            row.pack(fill="x", pady=3)
+            ctk.CTkLabel(row, text=label, font=ctk.CTkFont(size=11), anchor="w",
+                         text_color="#94a3b8", width=140).pack(side="left")
+            val_lbl = ctk.CTkLabel(row, text="...", font=ctk.CTkFont(size=11),
+                                   anchor="w", text_color="#f8fafc")
+            val_lbl.pack(side="left", fill="x", expand=True)
+            self._health_labels[key] = val_lbl
+
+    def _toggle_tech_details(self, frame, btn):
+        self._tech_expanded = not self._tech_expanded
+        if self._tech_expanded:
+            frame.pack(fill="x")
+            btn.configure(text="▼ Technical Details")
+        else:
+            frame.pack_forget()
+            btn.configure(text="▶ Technical Details")
 
     def _section_config_health(self, parent):
         _outer, frame = _make_section_card(parent, "Configuration Files", "Status of key user settings files.")

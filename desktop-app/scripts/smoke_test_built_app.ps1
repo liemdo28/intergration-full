@@ -191,6 +191,57 @@ if ($bootstrapLogs) {
     $results.Warnings++
 }
 
+# ── Check: first_run_wizard module is bundled ─────────────────────────────
+Write-Host ""
+Write-Host "────────────────────────────────────────────────────────" -ForegroundColor Magenta
+Write-Host "  [NEW] Key Module Presence" -ForegroundColor Magenta
+Write-Host "────────────────────────────────────────────────────────" -ForegroundColor Magenta
+
+$key_modules = @(
+    "bootstrap_runtime",
+    "launcher",
+    "first_run_wizard",
+    "recovery_center",
+    "safe_mode",
+    "crash_reporter"
+)
+foreach ($mod in $key_modules) {
+    $found = Get-ChildItem $bundleDir -Filter "${mod}*.pyc" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($found) {
+        ok "Module bundled: $mod"
+        $results.Passed++
+    } else {
+        warn "Module not found in bundle: $mod (may be named differently)"
+        $results.Warnings++
+    }
+}
+
+# ── Check: wizard modules bundled ─────────────────────────────────────────
+$wizard_modules = @("wizard_base", "download_reports_wizard", "qb_sync_wizard")
+foreach ($wiz in $wizard_modules) {
+    $found = Get-ChildItem $bundleDir -Filter "${wiz}*.pyc" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($found) {
+        ok "Wizard bundled: $wiz"
+        $results.Passed++
+    } else {
+        warn "Wizard not found in bundle: $wiz"
+        $results.Warnings++
+    }
+}
+
+# ── Check: services bundled ────────────────────────────────────────────────
+$services = @("feature_readiness_service", "source_completeness_service", "consolidated_sync_gate")
+foreach ($svc in $services) {
+    $found = Get-ChildItem $bundleDir -Filter "${svc}*.pyc" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($found) {
+        ok "Service bundled: $svc"
+        $results.Passed++
+    } else {
+        warn "Service not found: $svc"
+        $results.Warnings++
+    }
+}
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Summary
 # ─────────────────────────────────────────────────────────────────────────────

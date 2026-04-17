@@ -484,6 +484,16 @@ class DownloadReportsWizard(WizardBase):
         warnings = res.get("warnings", [])
         error = res.get("error", "")
 
+        # Determine outcome type
+        if ok and f_count == 0:
+            outcome_type = "completed"
+        elif ok and f_count > 0:
+            outcome_type = "completed_with_warnings"
+        elif s_count == 0 and f_count > 0:
+            outcome_type = "failed_safely"
+        else:
+            outcome_type = "completed_with_warnings"
+
         if ok:
             title = "Download Complete"
             summary = [
@@ -504,9 +514,17 @@ class DownloadReportsWizard(WizardBase):
             if self._status_var is not None:
                 self._status_var.set("navigate:home")
 
+        def _go_qb():
+            if self._status_var is not None:
+                self._status_var.set("navigate:wizard_qb")
+
+        def _go_home():
+            if self._status_var is not None:
+                self._status_var.set("navigate:home")
+
         self._result_view = WizardResultView(
             self._content_frame,
-            success=ok,
+            outcome_type=outcome_type,
             title=title,
             summary_lines=summary,
             warnings=warnings,
@@ -515,6 +533,10 @@ class DownloadReportsWizard(WizardBase):
                 ("Failed", str(f_count)),
                 ("Stores", str(len(self._state.selected_stores))),
             ],
+            next_action_label="→ Sync to QuickBooks",
+            next_action_command=_go_qb,
+            secondary_action_label="Return Home",
+            secondary_action_command=_go_home,
             done_command=_done,
         )
         self._result_view.pack(fill="x", padx=20, pady=20)

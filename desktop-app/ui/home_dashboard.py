@@ -56,7 +56,7 @@ from models.feature_readiness import (
     FeatureReadiness,
     ReadinessStatus,
 )
-from services.feature_readiness_service import check_all_features, get_most_urgent
+from services.feature_readiness_service import check_all_features, get_most_urgent, get_smart_recommendation
 
 from safe_mode import is_safe_mode, get_safe_mode_config
 
@@ -369,7 +369,7 @@ class HomeDashboard(ctk.CTkFrame if CTK else object):
             ).pack(anchor="e", pady=(4, 0))
 
     def _readiness_section(self, parent) -> None:
-        """Build Today's Readiness: a 2×2 grid of StatusBadges."""
+        """Build Today's Readiness: a 2×2 grid of rich readiness cards."""
         card, body = _make_section_card(parent, "Today's Readiness")
 
         # Refresh readiness on first build
@@ -386,7 +386,7 @@ class HomeDashboard(ctk.CTkFrame if CTK else object):
             row = idx // 2
             col = idx % 2
             fr = self._readiness_cache.get(key)
-            self._place_badge(grid, key, fr, row, col)
+            self._place_readiness_card(grid, key, fr, row, col)
 
     def _place_badge(
         self,
@@ -396,7 +396,7 @@ class HomeDashboard(ctk.CTkFrame if CTK else object):
         row: int,
         col: int,
     ) -> None:
-        """Place a single readiness badge in the grid."""
+        """Place a single readiness badge in the grid (kept for backward compatibility)."""
         status = fr.status if fr else ReadinessStatus.UNKNOWN
         badge_status = _status_to_badge(status)
         label_text = fr.reason if fr else "Status unknown."
@@ -412,6 +412,68 @@ class HomeDashboard(ctk.CTkFrame if CTK else object):
         setattr(self, attr_name, badge)
 
         badge.grid(row=row, column=col, padx=6, pady=5, sticky="ew")
+
+    def _place_readiness_card(
+        self,
+        parent,
+        key: FeatureKey,
+        fr: Optional[FeatureReadiness],
+        row: int,
+        col: int,
+    ):
+        """Place a rich readiness card showing status + reason + next step."""
+        STATUS_COLORS = {
+            ReadinessStatus.READY:   ("#052e16", "#22c55e"),   # bg, accent
+            ReadinessStatus.WARNING: ("#2d1b00", "#f59e0b"),
+            ReadinessStatus.PARTIAL: ("#2d1b00", "#f59e0b"),
+            ReadinessStatus.BLOCKED: ("#1f0a0a", "#ef4444"),
+            ReadinessStatus.UNKNOWN: ("#111827", "#64748b"),
+        }
+
+        status = fr.status if fr else ReadinessStatus.UNKNOWN
+        bg, accent = STATUS_COLORS.get(status, ("#111827", "#64748b"))
+
+        STATUS_ICONS = {
+            ReadinessStatus.READY: "✓",
+            ReadinessStatus.WARNING: "⚠",
+            ReadinessStatus.PARTIAL: "⚠",
+            ReadinessStatus.BLOCKED: "✕",
+            ReadinessStatus.UNKNOWN: "○",
+        }
+        icon = STATUS_ICONS.get(status, "○")
+
+        card = ctk.CTkFrame(parent, fg_color=bg, corner_radius=12, border_width=1, border_color=accent)
+        card.grid(row=row, column=col, padx=6, pady=6, sticky="nsew")
+
+        inner = ctk.CTkFrame(card, fg_color="transparent")
+        inner.pack(fill="both", expand=True, padx=12, pady=10)
+
+        # Header row: icon + feature name + status
+        hdr = ctk.CTkFrame(inner, fg_color="transparent")
+        hdr.pack(fill="x")
+        ctk.CTkLabel(hdr, text=icon, font=ctk.CTkFont(size=14, weight="bold"), text_color=accent, width=20).pack(side="left")
+        label_text = self._FEATURE_LABELS.get(key, key.value.replace("_", " ").title())
+        ctk.CTkLabel(hdr, text=label_text, font=ctk.CTkFont(size=13, weight="bold"), text_color="#f8fafc", anchor="w").pack(side="left", padx=(4, 0), fill="x", expand=True)
+
+        # Status pill
+        status_label = status.value.title() if hasattr(status, "value") else str(status)
+        pill = ctk.CTkFrame(hdr, fg_color=accent, corner_radius=8)
+        pill.pack(side="right")
+        ctk.CTkLabel(pill, text=status_label, font=ctk.CTkFont(size=10, weight="bold"), text_color="#000000" if status == ReadinessStatus.READY else "#ffffff").pack(padx=6, pady=2)
+
+        # Reason line
+        reason = (fr.reason if fr else "Status unknown")[:90]
+        ctk.CTkLabel(inner, text=reason, font=ctk.CTkFont(size=11), text_color="#94a3b8", anchor="w", wraplength=220, justify="left").pack(anchor="w", pady=(4, 0))
+
+        # Next step line
+        if fr and fr.next_step:
+            ns = fr.next_step[:80]
+            ctk.CTkLabel(inner, text=f"→ {ns}", font=ctk.CTkFont(size=11), text_color=accent, anchor="w", wraplength=220, justify="left").pack(anchor="w", pady=(2, 0))
+
+        # Store ref for update
+        setattr(self, f"_readiness_card_{key.value}", card)
+        setattr(self, f"_readiness_card_bg_{key.value}", bg)
+        return card
 
     def _update_readiness_grid(self) -> None:
         """Refresh each badge in the readiness grid."""
@@ -464,10 +526,28 @@ class HomeDashboard(ctk.CTkFrame if CTK else object):
 
     def _recommended_section(self, parent) -> None:
         """Build the Recommended Next Step section."""
-        card, body = _make_section_card(parent, "Recommended Next Step")
+        card, body = _make_section_card(parent, "Recommended Next Step", "What to do right now")
 
-        self._recommended_step = RecommendedNextStep(body)
-        self._recommended_step.pack(fill="x", padx=(0, 0), pady=(0, 4))
+        # The RecommendedNextStep widget
+        self._recommended_widget = RecommendedNextStep(body, feature_readiness=None)
+        self._recommended_widget.pack(fill="x", pady=(0, 8))
+
+        # Large CTA button row
+        self._cta_frame = ctk.CTkFrame(body, fg_color="transparent")
+        self._cta_frame.pack(fill="x")
+        self._cta_button = ctk.CTkButton(
+            self._cta_frame,
+            text="Get Started →",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            height=40,
+            corner_radius=10,
+            fg_color="#2563eb",
+            hover_color="#1d4ed8",
+            command=self._on_cta_click,
+        )
+        self._cta_button.pack(side="left", padx=(0, 8))
+        self._cta_target = "navigate:wizard_download"  # default
+
         self._update_recommended_step()
 
     def _recent_activity_section(self, parent) -> None:
@@ -477,11 +557,46 @@ class HomeDashboard(ctk.CTkFrame if CTK else object):
         self._recent_activity = RecentActivityList(body, count=5)
         self._recent_activity.pack(fill="x", pady=(0, 4))
 
+    def _on_cta_click(self) -> None:
+        """Handle CTA button click — navigate based on current recommendation."""
+        target = getattr(self, "_cta_target", "navigate:home")
+        if self._status_var:
+            self._status_var.set(target)
+
     def _update_recommended_step(self) -> None:
-        """Refresh the RecommendedNextStep widget."""
-        fr = get_most_urgent()
+        """Refresh the RecommendedNextStep widget and CTA button."""
+        fr = get_smart_recommendation()
+        if hasattr(self, "_recommended_widget"):
+            self._recommended_widget.update(fr)
+        # Keep backward-compat ref
         if hasattr(self, "_recommended_step"):
             self._recommended_step.update(fr)
+
+        # Update CTA based on fr
+        if fr:
+            key = fr.feature_key
+            # Map feature to navigation target
+            NAV_MAP = {
+                FeatureKey.REPORT_DOWNLOAD: "navigate:wizard_download",
+                FeatureKey.QB_SYNC:         "navigate:wizard_qb",
+                FeatureKey.GOOGLE_DRIVE:    "navigate:settings",
+                FeatureKey.REMOVE_TX:       "navigate:remove",
+                FeatureKey.RECOVERY_CENTER: "navigate:recovery",
+            }
+            self._cta_target = NAV_MAP.get(key, "navigate:home")
+            # Set button text/color based on action needed
+            if fr.status.value in ("BLOCKED", "WARNING"):
+                btn_text = "→ Fix This Now"
+                btn_color = "#dc2626" if fr.status.value == "BLOCKED" else "#d97706"
+            else:
+                btn_text = "→ Get Started"
+                btn_color = "#2563eb"
+            if hasattr(self, "_cta_button"):
+                self._cta_button.configure(text=btn_text, fg_color=btn_color, hover_color=btn_color)
+        else:
+            self._cta_target = "navigate:wizard_download"
+            if hasattr(self, "_cta_button"):
+                self._cta_button.configure(text="→ All Clear — Start Downloading", fg_color="#059669", hover_color="#047857")
 
     def _safe_mode_banner(self, parent) -> None:
         """Draw the amber safe-mode banner across the bottom."""

@@ -24,6 +24,7 @@ from app_shared import (
     UI_CARD_FG, UI_CARD_BORDER, UI_MUTED_TEXT, UI_HEADING_TEXT,
     UI_ACCENT_BLUE, UI_ACCENT_TEAL,
     REQUIRED_REPORT_RULES, get_required_reports, load_required_report_rules,
+    get_operator_mode,
 )
 from app_paths import APP_DIR, RUNTIME_DIR, app_path, runtime_path
 from diagnostics import format_report_lines, run_environment_checks
@@ -66,7 +67,9 @@ class SettingsTab(ctk.CTkFrame):
             accent="#475569",
         )
 
-        
+        # ── Operator Mode ──
+        self._build_operator_mode_section(content)
+
         # ── Feature Readiness ──
         _read_card, read_frame = make_section_card(
             content,
@@ -508,6 +511,36 @@ class SettingsTab(ctk.CTkFrame):
         make_action_button(links_row, "Open Reports Folder", lambda: os.startfile(str(REPORTS_DIR)), tone="primary", width=150).pack(side="left", padx=(0, 8))
         make_action_button(links_row, "Open Map Folder", lambda: os.startfile(str(app_path("Map"))), tone="neutral", width=130).pack(side="left", padx=(0, 8))
         make_action_button(links_row, "Open Project Folder", lambda: os.startfile(str(RUNTIME_DIR)), tone="neutral", width=150).pack(side="left")
+
+    def _build_operator_mode_section(self, parent):
+        card, body = make_section_card(parent, "Access Level", "Control which features are visible in the sidebar")
+
+        mode_frame = ctk.CTkFrame(body, fg_color="transparent")
+        mode_frame.pack(fill="x", pady=4)
+
+        ctk.CTkLabel(mode_frame, text="Access Level:", font=ctk.CTkFont(size=12),
+                     text_color="#94a3b8").pack(side="left")
+
+        self._mode_var = ctk.StringVar(value=get_operator_mode())
+
+        ctk.CTkRadioButton(mode_frame, text="Standard Operator", variable=self._mode_var,
+                           value="standard", command=self._save_operator_mode).pack(side="left", padx=(12, 8))
+        ctk.CTkRadioButton(mode_frame, text="Admin / Support", variable=self._mode_var,
+                           value="admin", command=self._save_operator_mode).pack(side="left")
+
+        ctk.CTkLabel(body, text="Standard: shows guided wizards only.  Admin: shows all raw tabs + audit tools.",
+                     font=ctk.CTkFont(size=11), text_color="#64748b", anchor="w").pack(anchor="w")
+
+    def _save_operator_mode(self):
+        try:
+            cfg = load_local_config()
+            cfg["operator_mode"] = self._mode_var.get()
+            save_local_config(cfg)
+            if self.status_var:
+                self.status_var.set("Access level saved. Restart app to apply sidebar changes.")
+        except Exception as e:
+            if self.status_var:
+                self.status_var.set(f"Could not save access level: {e}")
 
     def update_diagnostics(self, report):
         summary_color = "#059669"

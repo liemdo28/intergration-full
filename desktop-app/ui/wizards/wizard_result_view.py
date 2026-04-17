@@ -24,6 +24,25 @@ _BG_CARD       = "#111827"
 _BG_WARN       = "#451a03"
 _MUTED         = "#94a3b8"
 
+_OUTCOME_STYLES = {
+    "completed": {
+        "icon": "✓", "icon_color": "#22c55e", "header_bg": "#052e16",
+        "title_prefix": "Completed", "border": "#22c55e",
+    },
+    "completed_with_warnings": {
+        "icon": "⚠", "icon_color": "#f59e0b", "header_bg": "#2d1b00",
+        "title_prefix": "Completed with Warnings", "border": "#f59e0b",
+    },
+    "blocked": {
+        "icon": "✕", "icon_color": "#ef4444", "header_bg": "#1f0a0a",
+        "title_prefix": "Blocked", "border": "#ef4444",
+    },
+    "failed_safely": {
+        "icon": "!", "icon_color": "#f97316", "header_bg": "#2c1000",
+        "title_prefix": "Failed Safely", "border": "#f97316",
+    },
+}
+
 
 class WizardResultView(ctk.CTkFrame if CTK else object):
     """
@@ -34,17 +53,25 @@ class WizardResultView(ctk.CTkFrame if CTK else object):
     master : widget
         Parent container.
     success : bool
-        Whether the action succeeded.
+        Whether the action succeeded (used when outcome_type is not specified).
+    outcome_type : str
+        One of: "completed", "completed_with_warnings", "blocked", "failed_safely".
     title : str
         Short headline.
     summary_lines : list[str]
         Bullet-point summary items.
     warnings : list[str] | None
         Optional warnings shown in collapsible section.
+    stats : list | None
+        List of (label, value) tuples for stat pills.
     next_action_label : str
         Label for the primary "Next Action" button.
     next_action_command : Callable | None
         Callback for the next action button.
+    secondary_action_label : str
+        Label for an optional secondary action button.
+    secondary_action_command : Callable | None
+        Callback for the secondary button (navigates home if None).
     done_command : Callable | None
         Callback for the "Done" button.
     """
@@ -54,12 +81,15 @@ class WizardResultView(ctk.CTkFrame if CTK else object):
         master,
         *,
         success: bool = True,
+        outcome_type: str = "",
         title: str = "",
         summary_lines: list = None,
         warnings: list = None,
         stats: list = None,
         next_action_label: str = "",
         next_action_command: Optional[Callable] = None,
+        secondary_action_label: str = "",
+        secondary_action_command: Optional[Callable] = None,
         done_command: Optional[Callable] = None,
         **kwargs,
     ):
@@ -68,7 +98,16 @@ class WizardResultView(ctk.CTkFrame if CTK else object):
         super().__init__(master, fg_color="transparent", **kwargs)
         self._done_command = done_command
         self._warnings_expanded = False
-        self._build(success, title, summary_lines or [], warnings or [], next_action_label, next_action_command, stats or [])
+        # Derive outcome_type from success flag if not explicitly given
+        if not outcome_type:
+            outcome_type = "completed" if success else "failed_safely"
+        self._build(
+            outcome_type, title,
+            summary_lines or [], warnings or [],
+            next_action_label, next_action_command,
+            secondary_action_label, secondary_action_command,
+            stats or [],
+        )
 
     # ------------------------------------------------------------------
     # Public
@@ -83,12 +122,22 @@ class WizardResultView(ctk.CTkFrame if CTK else object):
         next_action_label: str,
         next_action_command: Optional[Callable],
         stats: list = None,
+        outcome_type: str = "",
+        secondary_action_label: str = "",
+        secondary_action_command: Optional[Callable] = None,
     ) -> None:
         """Rebuild the view with new data."""
         for child in self.winfo_children():
             child.destroy()
         self._warnings_expanded = False
-        self._build(success, title, summary_lines, warnings, next_action_label, next_action_command, stats or [])
+        if not outcome_type:
+            outcome_type = "completed" if success else "failed_safely"
+        self._build(
+            outcome_type, title, summary_lines, warnings,
+            next_action_label, next_action_command,
+            secondary_action_label, secondary_action_command,
+            stats or [],
+        )
 
     # ------------------------------------------------------------------
     # Internal
@@ -96,54 +145,65 @@ class WizardResultView(ctk.CTkFrame if CTK else object):
 
     def _build(
         self,
-        success: bool,
+        outcome_type: str,
         title: str,
         summary_lines: list,
         warnings: list,
         next_action_label: str,
         next_action_command: Optional[Callable],
+        secondary_action_label: str,
+        secondary_action_command: Optional[Callable],
         stats: list = None,
     ) -> None:
+        style = _OUTCOME_STYLES.get(outcome_type, _OUTCOME_STYLES["completed"])
+        icon_text  = style["icon"]
+        icon_color = style["icon_color"]
+        header_bg  = style["header_bg"]
+        border_col = style["border"]
+
+        # Outer card with outcome-specific border
         card = ctk.CTkFrame(
             self,
             fg_color=_BG_CARD,
             corner_radius=16,
             border_width=1,
-            border_color="#1e293b",
+            border_color=border_col,
         )
         card.pack(fill="x", padx=20, pady=20)
 
-        inner = ctk.CTkFrame(card, fg_color="transparent")
-        inner.pack(fill="x", padx=24, pady=24)
+        # Colored header banner
+        header_banner = ctk.CTkFrame(card, fg_color=header_bg, corner_radius=0)
+        header_banner.pack(fill="x")
 
         # Large icon (72px)
-        icon_text = "✓" if success else "✕"
-        icon_color = _SUCCESS_COLOR if success else _FAIL_COLOR
-
         icon_lbl = ctk.CTkLabel(
-            inner,
+            header_banner,
             text=icon_text,
             font=ctk.CTkFont(size=72, weight="bold"),
             text_color=icon_color,
         )
-        icon_lbl.pack(pady=(0, 12))
+        icon_lbl.pack(pady=(16, 4))
 
         # Title (22px bold)
         ctk.CTkLabel(
-            inner,
+            header_banner,
             text=title,
             font=ctk.CTkFont(size=22, weight="bold"),
             text_color="#f8fafc",
             wraplength=500,
             justify="center",
-        ).pack()
+        ).pack(pady=(0, 16))
 
-        ctk.CTkFrame(inner, height=1, fg_color="#1e293b").pack(fill="x", pady=16)
+        inner = ctk.CTkFrame(card, fg_color="transparent")
+        inner.pack(fill="x", padx=24, pady=(16, 24))
+
+        ctk.CTkFrame(inner, height=1, fg_color="#1e293b").pack(fill="x", pady=(0, 16))
 
         # Stats row — pill cards with key numbers
         if stats:
             stats_row = ctk.CTkFrame(inner, fg_color="transparent")
             stats_row.pack(fill="x", pady=(0, 16))
+            success = outcome_type == "completed"
             for label, value in stats:
                 pill = ctk.CTkFrame(
                     stats_row,
@@ -157,9 +217,9 @@ class WizardResultView(ctk.CTkFrame if CTK else object):
                 pill_inner.pack(padx=14, pady=8)
                 ctk.CTkLabel(
                     pill_inner,
-                    text=value,
+                    text=str(value),
                     font=ctk.CTkFont(size=20, weight="bold"),
-                    text_color=_SUCCESS_COLOR if success else "#f8fafc",
+                    text_color=icon_color,
                 ).pack()
                 ctk.CTkLabel(
                     pill_inner,
@@ -213,10 +273,14 @@ class WizardResultView(ctk.CTkFrame if CTK else object):
             self._warn_list_frame = ctk.CTkFrame(warn_frame, fg_color="transparent")
             # Not packed initially (collapsed)
 
-        # Next Action button — large blue, full width
+        # Action buttons row
+        btn_row = ctk.CTkFrame(inner, fg_color="transparent")
+        btn_row.pack(fill="x", pady=(8, 4))
+
+        # Primary action button — large, full-width or side-by-side
         if next_action_label and next_action_command:
             ctk.CTkButton(
-                inner,
+                btn_row,
                 text=next_action_label,
                 fg_color="#2563eb",
                 hover_color="#1d4ed8",
@@ -224,9 +288,23 @@ class WizardResultView(ctk.CTkFrame if CTK else object):
                 corner_radius=8,
                 height=44,
                 command=next_action_command,
-            ).pack(fill="x", pady=(8, 4))
+            ).pack(side="left", fill="x", expand=True, padx=(0, 4))
 
-        # Done button — neutral, below next action
+        # Secondary action button
+        if secondary_action_label:
+            sec_cmd = secondary_action_command if secondary_action_command else lambda: None
+            ctk.CTkButton(
+                btn_row,
+                text=secondary_action_label,
+                fg_color="#1e293b",
+                hover_color="#334155",
+                text_color="#f1f5f9",
+                corner_radius=8,
+                height=44,
+                command=sec_cmd,
+            ).pack(side="left", fill="x", expand=True, padx=(4, 0))
+
+        # Done button — neutral, below action row
         ctk.CTkButton(
             inner,
             text="Done",

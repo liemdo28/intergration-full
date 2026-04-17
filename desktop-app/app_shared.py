@@ -169,6 +169,19 @@ def save_local_config(config):
         json.dump(config, f, indent=2, ensure_ascii=False)
 
 
+def get_operator_mode() -> str:
+    """Returns 'standard' or 'admin'. Defaults to 'standard' if not configured."""
+    try:
+        cfg = load_local_config()
+        return cfg.get("operator_mode", "standard")
+    except Exception:
+        return "standard"
+
+
+def is_admin_mode() -> bool:
+    return get_operator_mode() == "admin"
+
+
 def get_marketplace_paths(config: dict | None, store_name: str) -> dict[str, str]:
     config = config or {}
     return dict(((config.get("marketplace_paths") or {}).get(store_name) or {}))

@@ -394,16 +394,35 @@ def get_smart_recommendation() -> FeatureReadiness | None:
 
 
 def _check_recent_drive_coverage() -> int:
-    """Returns count of missing report files in Drive for past 7 days. 0 if drive not ready or all present."""
+    """Returns count of missing report files in Drive for past 7 days. Returns 0 on any error."""
     try:
         from datetime import date, timedelta
-        from report_inventory import get_drive_inventory_summary
 
-        today = date.today()
-        dates = [(today - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(1, 8)]
-        summary = get_drive_inventory_summary()
-        missing = summary.get("missing_count", 0)
-        return missing
+        # Try report_inventory first
+        try:
+            from report_inventory import get_drive_inventory_summary
+            summary = get_drive_inventory_summary()
+            return summary.get("missing_count", 0)
+        except (ImportError, AttributeError):
+            pass
+
+        # Fallback: check local toast-reports folder
+        try:
+            from app_paths import runtime_path
+            reports_dir = runtime_path("toast-reports")
+            if not reports_dir.exists():
+                return 0
+            today = date.today()
+            missing = 0
+            for i in range(1, 8):
+                d = today - timedelta(days=i)
+                d_str = d.strftime("%Y-%m-%d")
+                found = any(reports_dir.rglob(f"*{d_str}*"))
+                if not found:
+                    missing += 1
+            return missing
+        except Exception:
+            return 0
     except Exception:
         return 0
 
@@ -420,3 +439,16 @@ def _check_reports_ready_for_sync() -> int:
 def get_most_urgent() -> FeatureReadiness | None:
     """Alias for get_smart_recommendation() for backward compatibility."""
     return get_smart_recommendation()
+
+
+def readiness_to_ui_dict(fr) -> dict:
+    """Convert a FeatureReadiness to a UI-ready dict."""
+    if fr is None:
+        return {"status": "unknown", "reason": "", "next_step": "", "is_blocking": False}
+    return {
+        "status": fr.status.value if hasattr(fr.status, "value") else str(fr.status),
+        "reason": fr.reason,
+        "next_step": fr.next_step,
+        "is_blocking": fr.is_blocking,
+        "support_hint": fr.support_hint or "",
+    }

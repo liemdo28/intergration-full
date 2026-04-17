@@ -60,6 +60,29 @@ class CopyKey(str, Enum):
     WIZARD_DOWNLOAD_INTRO      = "wizard_download_intro"
     WIZARD_QB_INTRO            = "wizard_qb_intro"
 
+    # QB company file
+    QB_COMPANY_FILE_NOT_SET    = "qb_company_file_not_set"
+    QB_COMPANY_FILE_NOT_FOUND  = "qb_company_file_not_found"
+
+    # Sync blockers
+    SYNC_BLOCKED_MISSING_FILES = "sync_blocked_missing_files"
+    SYNC_BLOCKED_DUPLICATE     = "sync_blocked_duplicate"
+
+    # Download wizard
+    DOWNLOAD_NO_DATES_SELECTED  = "download_no_dates_selected"
+    DOWNLOAD_NO_STORES_SELECTED = "download_no_stores_selected"
+
+    # Onboarding / completion
+    FIRST_RUN_COMPLETE          = "first_run_complete"
+
+    # Recovery
+    RECOVERY_ACTION_SUCCESS     = "recovery_action_success"
+    RECOVERY_EXPORT_SUCCESS     = "recovery_export_success"
+
+    # Pre-sync validation
+    PRESYNC_INVALID_FILE        = "presync_invalid_file"
+    PRESYNC_DATE_GAP            = "presync_date_gap"
+
 
 _MESSAGES: dict[CopyKey, dict[str, str]] = {
     CopyKey.RUNTIME_NOT_WRITABLE: {
@@ -254,6 +277,61 @@ _MESSAGES: dict[CopyKey, dict[str, str]] = {
             "You will see exactly what will be synced before anything is committed."
         ),
         "next_step": "Click Next to select stores.",
+    },
+    CopyKey.QB_COMPANY_FILE_NOT_SET: {
+        "title": "QuickBooks company file is not configured",
+        "body": "This store's QuickBooks company file (.qbw) has not been set up in the app yet.",
+        "next_step": "Open Settings > QuickBooks and point the app at the correct .qbw file.",
+    },
+    CopyKey.QB_COMPANY_FILE_NOT_FOUND: {
+        "title": "QuickBooks company file could not be found",
+        "body": "The QuickBooks company file path is configured, but the file no longer exists at that location.",
+        "next_step": "Open Settings > QuickBooks and re-select the company file.",
+    },
+    CopyKey.SYNC_BLOCKED_MISSING_FILES: {
+        "title": "This sync cannot continue because required source files are missing",
+        "body": "One or more required Sale Summary files are missing from Google Drive for the selected dates.",
+        "next_step": "Download the missing reports first, then return to sync.",
+    },
+    CopyKey.SYNC_BLOCKED_DUPLICATE: {
+        "title": "This sync is blocked because a potential duplicate was detected",
+        "body": "One or more of the selected dates appears to have already been synced to QuickBooks.",
+        "next_step": "Review the sync history in the Activity Log before proceeding.",
+    },
+    CopyKey.DOWNLOAD_NO_DATES_SELECTED: {
+        "title": "No date range selected",
+        "body": "Select a start and end date before running the download.",
+        "next_step": "Choose a date range in step 2.",
+    },
+    CopyKey.DOWNLOAD_NO_STORES_SELECTED: {
+        "title": "No stores selected",
+        "body": "At least one store must be selected before downloading reports.",
+        "next_step": "Select one or more stores in step 1.",
+    },
+    CopyKey.FIRST_RUN_COMPLETE: {
+        "title": "Setup complete",
+        "body": "Your app is configured and ready to use. Start by downloading your most recent reports.",
+        "next_step": "Click Download Reports to get started.",
+    },
+    CopyKey.RECOVERY_ACTION_SUCCESS: {
+        "title": "Recovery action completed",
+        "body": "The selected recovery action ran successfully. Check the Recovery Center for current health status.",
+        "next_step": "Return to the app and verify the fixed feature is now working.",
+    },
+    CopyKey.RECOVERY_EXPORT_SUCCESS: {
+        "title": "Support bundle exported",
+        "body": "A support bundle containing app logs and health information has been saved. Share this file with support if requested.",
+        "next_step": "Attach the bundle file to your support request.",
+    },
+    CopyKey.PRESYNC_INVALID_FILE: {
+        "title": "A report file appears to be corrupted or incomplete",
+        "body": "One or more report files cannot be read correctly. Syncing from a corrupted file may create incorrect accounting entries.",
+        "next_step": "Re-download the affected report, then verify it before syncing.",
+    },
+    CopyKey.PRESYNC_DATE_GAP: {
+        "title": "A gap was detected in report date coverage",
+        "body": "There are missing dates in the selected report range. Syncing with gaps may leave accounting records incomplete.",
+        "next_step": "Download the missing dates before syncing.",
     },
 }
 

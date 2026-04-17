@@ -153,11 +153,11 @@ def run_environment_checks(local_config: dict | None = None) -> DiagnosticReport
         with sync_playwright() as playwright:
             browser_path = Path(playwright.chromium.executable_path)
             if browser_path.exists():
-                _add(checks, Severity.INFO, "Playwright Chromium", "ok", str(browser_path))
+                _add(checks, Severity.INFO, "Report Browser", "ok", str(browser_path))
             else:
-                _add(checks, Severity.BLOCKER, "Playwright Chromium", "error", "Chromium browser not installed")
+                _add(checks, Severity.BLOCKER, "Report Browser", "error", "Report browser is not installed")
     except Exception as exc:
-        _add(checks, Severity.BLOCKER, "Playwright Chromium", "error", f"Browser check failed: {exc}")
+        _add(checks, Severity.BLOCKER, "Report Browser", "error", f"Report browser check failed: {exc}")
 
     toast_ok, toast_msg = _check_endpoint("www.toasttab.com")
     _add(checks, Severity.INFO, "Toast Reachability", "ok" if toast_ok else "warning", toast_msg if toast_ok else f"Toast may be unavailable: {toast_msg}")
@@ -168,9 +168,9 @@ def run_environment_checks(local_config: dict | None = None) -> DiagnosticReport
     env_path = runtime_path(".env.qb")
     env_values = _load_env_file(env_path)
     if env_path.exists():
-        _add(checks, Severity.INFO, "QB Config", "ok", str(env_path))
+        _add(checks, Severity.INFO, "QB Credentials", "ok", str(env_path))
     else:
-        _add(checks, Severity.WARNING, "QB Config", "warning", f"Missing {env_path.name}; QB features may not work")
+        _add(checks, Severity.WARNING, "QB Credentials", "warning", "QB credentials not configured; QB features may not work")
 
     qb_password_slots = [env_values.get(f"QB_PASSWORD{i}", "").strip() for i in range(1, 4)]
     if env_path.exists():
@@ -196,14 +196,14 @@ def run_environment_checks(local_config: dict | None = None) -> DiagnosticReport
     credentials_path = runtime_path("credentials.json")
     _check_json_file(
         credentials_path,
-        "Google Credentials",
+        "Google Drive Credentials",
         checks,
         Severity.WARNING,
         required_keys=["installed"],
     )
 
     token_path = runtime_path("token.json")
-    _check_json_file(token_path, "token.json", checks, Severity.WARNING)
+    _check_json_file(token_path, "Google Drive Authentication", checks, Severity.WARNING)
 
     session_path = runtime_path(".toast-session.json")
     _check_json_file(session_path, ".toast-session.json", checks, Severity.WARNING, required_keys=["cookies", "origins"])
@@ -302,9 +302,9 @@ def run_environment_checks(local_config: dict | None = None) -> DiagnosticReport
         test_file = RUNTIME_DIR / ".diagnostics_write_test"
         test_file.write_text("test", encoding="utf-8")
         test_file.unlink()
-        _add(checks, Severity.INFO, "App Runtime Folder", "ok", str(RUNTIME_DIR))
+        _add(checks, Severity.INFO, "App Data Folder", "ok", str(RUNTIME_DIR))
     except Exception as exc:
-        _add(checks, Severity.BLOCKER, "App Runtime Folder", "error", f"Runtime directory not writable: {exc}")
+        _add(checks, Severity.BLOCKER, "App Data Folder", "error", f"App data directory not writable: {exc}")
 
     _add(checks, Severity.INFO, "Bundled Assets Folder", "ok", str(APP_DIR))
 
@@ -339,10 +339,10 @@ def format_feature_readiness(report: DiagnosticReport) -> list[str]:
     warnings = {i.name: i.message for i in report.items if i.severity == Severity.WARNING}
 
     features = {
-        "Download Reports": ["Playwright Chromium", "customtkinter", "Python"],
-        "QB Sync": ["QuickBooks Executable", "QB Config", "QB Mapping", "CSV Map Folder"],
+        "Download Reports": ["Report Browser", "customtkinter", "Python"],
+        "QB Sync": ["QuickBooks Executable", "QB Credentials", "QB Mapping", "CSV Map Folder"],
         "Remove Transactions": ["QuickBooks Executable"],
-        "Drive Upload": ["Google Credentials", "token.json"],
+        "Drive Upload": ["Google Drive Credentials", "Google Drive Authentication"],
         "Marketplace Uploads": ["Marketplace Uploads"],
     }
     for feat, required_checks in features.items():

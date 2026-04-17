@@ -68,46 +68,6 @@ from services.activity_log_service import (
     EventCategory,
     EventSeverity,
 )
-# ---------------------------------------------------------------------------
-# Task 8: Config-driven required report rules per store
-# REQUIRED_REPORT_RULES: store name -> frozenset of required report_key strings
-# Unknown stores fall back to frozenset(DEFAULT_REPORT_TYPE_KEYS).
-# ---------------------------------------------------------------------------
-REQUIRED_REPORT_RULES: dict[str, frozenset[str]] = {}
-
-
-def get_required_reports(store_name: str) -> frozenset[str]:
-    """Return required report keys for a store (custom rules or defaults)."""
-    return REQUIRED_REPORT_RULES.get(store_name, frozenset(DEFAULT_REPORT_TYPE_KEYS))
-
-
-def load_required_report_rules(cfg: dict) -> None:
-    """Load store-level required report rules from a config dict.
-
-    Expected format::
-
-        {
-          "coverage_rules": {
-            "Stockton":   ["sales_summary", "order_details"],
-            "WA3":        ["sales_summary"],
-          }
-        }
-
-    Clears and repopulates REQUIRED_REPORT_RULES.
-    """
-    global REQUIRED_REPORT_RULES
-    REQUIRED_REPORT_RULES = {}
-    rules = cfg.get("coverage_rules", {})
-    for store, keys in rules.items():
-        if isinstance(keys, (list, tuple, frozenset)):
-            REQUIRED_REPORT_RULES[str(store)] = frozenset(k for k in keys if k)
-        elif isinstance(keys, str):
-            REQUIRED_REPORT_RULES[str(store)] = frozenset(
-                k.strip() for k in keys.split(",") if k.strip()
-            )
-    import logging
-    _lg = logging.getLogger(__name__)
-    _lg.debug(f"Loaded coverage rules for {len(REQUIRED_REPORT_RULES)} store(s): {list(REQUIRED_REPORT_RULES.keys())}")
 from integration_status import (
     get_auto_download_plan,
     get_auto_qb_sync_plan,
@@ -138,268 +98,25 @@ _app_logger = logging.getLogger("toast_pos_manager")
 _app_logger.setLevel(logging.INFO)
 _app_logger.addHandler(_file_handler)
 
-MAPPING_FILE = app_path("qb-mapping.json")
-LOCAL_CONFIG_FILE = runtime_path("local-config.json")
-REPORTS_DIR = runtime_path("toast-reports")
-AUDIT_LOG_DIR = runtime_path("audit-logs")
-DELETE_AUDIT_DIR = AUDIT_LOG_DIR / "delete-transactions"
-QBSYNC_ISSUE_DIR = AUDIT_LOG_DIR / "qb-sync-validation"
-ITEM_CREATION_AUDIT_DIR = AUDIT_LOG_DIR / "item-creations"
-QB_ITEM_CACHE_TTL_SECONDS = 300
-
-# Toast locations (for download tab)
-TOAST_LOCATIONS = ["Stockton", "The Rim", "Stone Oak", "Bandera", "WA1", "WA2", "WA3"]
-
-
-# ── Config helpers ───────────────────────────────────────────────────
-def load_mapping():
-    if not MAPPING_FILE.exists():
-        return {}, {}
-    with open(MAPPING_FILE, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    return data.get("global", {}), data.get("stores", {})
-
-
-def load_local_config():
-    if LOCAL_CONFIG_FILE.exists():
-        try:
-            with open(LOCAL_CONFIG_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            pass
-    return {}
-
-
-def save_local_config(config):
-    with open(LOCAL_CONFIG_FILE, "w", encoding="utf-8") as f:
-        json.dump(config, f, indent=2, ensure_ascii=False)
-
-
-def get_marketplace_paths(config: dict | None, store_name: str) -> dict[str, str]:
-    config = config or {}
-    return dict(((config.get("marketplace_paths") or {}).get(store_name) or {}))
-
-
-def publish_agentai_snapshot_if_configured(*, config: dict | None = None, on_log=None) -> dict:
-    result = publish_integration_snapshot(base_dir=APP_DIR, config=config, on_log=on_log)
-    if callable(on_log) and not result.get("ok") and not result.get("skipped"):
-        on_log(result.get("message", "AgentAI sync failed."))
-    return result
-
-
-# ── Shared UI helpers ────────────────────────────────────────────────
-def make_log_box(parent, height=200):
-    """Create a consistent log textbox."""
-    ctk.CTkLabel(parent, text="Log", font=ctk.CTkFont(size=13, weight="bold")).pack(anchor="w", padx=15, pady=(10, 3))
-    log_box = ctk.CTkTextbox(parent, height=height, font=ctk.CTkFont(family="Consolas", size=12))
-    log_box.pack(fill="both", expand=True, padx=15, pady=(0, 15))
-    log_box.configure(state="disabled")
-    return log_box
-
-
-def append_log(log_box, msg):
-    """Thread-safe log append."""
-    ts = time.strftime("%H:%M:%S")
-    text = f"[{ts}] {msg}\n"
-    log_box.configure(state="normal")
-    log_box.insert("end", text)
-    log_box.see("end")
-    log_box.configure(state="disabled")
-    _app_logger.info(msg)
-
-
-def _calendar_colors():
-    """Return calendar color scheme matching the current appearance mode."""
-    mode = ctk.get_appearance_mode()
-    if mode == "Light":
-        return dict(
-            background="#f0f0f0", foreground="#1a1a1a",
-            headersbackground="#1f538d", headersforeground="white",
-            selectbackground="#1f538d", selectforeground="white",
-            normalbackground="#ffffff", normalforeground="#1a1a1a",
-            weekendbackground="#f5f5f5", weekendforeground="#1a1a1a",
-            othermonthbackground="#e8e8e8", othermonthforeground="#999999",
-            othermonthwebackground="#e8e8e8", othermonthweforeground="#999999",
-        )
-    return dict(
-        background="#2b2b2b", foreground="white",
-        headersbackground="#1f538d", headersforeground="white",
-        selectbackground="#1f538d", selectforeground="white",
-        normalbackground="#333333", normalforeground="white",
-        weekendbackground="#3a3a3a", weekendforeground="white",
-        othermonthbackground="#252525", othermonthforeground="#666666",
-        othermonthwebackground="#252525", othermonthweforeground="#666666",
-    )
-
-
-def make_calendar(parent, initial_date=None):
-    """Create a styled calendar widget that respects the current theme."""
-    if not initial_date:
-        initial_date = datetime.now() - timedelta(days=1)
-    colors = _calendar_colors()
-    frame = tk.Frame(parent, bg=colors["background"])
-    frame.pack(pady=(5, 0))
-    cal = Calendar(frame, selectmode="day",
-                   year=initial_date.year, month=initial_date.month, day=initial_date.day,
-                   date_pattern="yyyy-mm-dd",
-                   borderwidth=0, font=("Segoe UI", 10),
-                   **colors)
-    cal.pack()
-    return frame, cal
-
-
-UI_CARD_FG = "#111827"
-UI_CARD_BORDER = "#1f2a3b"
-UI_SUBCARD_FG = "#0f172a"
-UI_SUBCARD_BORDER = "#1e293b"
-UI_MUTED_TEXT = "#94a3b8"
-UI_HEADING_TEXT = "#e2e8f0"
-UI_ACCENT_BLUE = "#2563eb"
-UI_ACCENT_TEAL = "#0f766e"
-UI_ACCENT_AMBER = "#b45309"
-
-
-def style_scrollable_frame(scrollable_frame):
-    try:
-        scrollable_frame._scrollbar.configure(button_color="#334155", button_hover_color="#475569")
-    except Exception:
-        pass
-
-
-def make_section_card(parent, title, subtitle=None):
-    card = ctk.CTkFrame(
-        parent,
-        fg_color=UI_CARD_FG,
-        corner_radius=18,
-        border_width=1,
-        border_color=UI_CARD_BORDER,
-    )
-    card.pack(fill="x", padx=15, pady=7)
-    header = ctk.CTkFrame(card, fg_color="transparent")
-    header.pack(fill="x", padx=16, pady=(14, 6))
-    ctk.CTkLabel(
-        header,
-        text=title,
-        font=ctk.CTkFont(size=16, weight="bold"),
-        text_color="#f8fafc",
-    ).pack(anchor="w")
-    if subtitle:
-        ctk.CTkLabel(
-            header,
-            text=subtitle,
-            font=ctk.CTkFont(size=11),
-            text_color=UI_MUTED_TEXT,
-            justify="left",
-            wraplength=900,
-        ).pack(anchor="w", pady=(3, 0))
-    body = ctk.CTkFrame(card, fg_color="transparent")
-    body.pack(fill="x", padx=16, pady=(0, 16))
-    return card, body
-
-
-def make_subcard(parent):
-    return ctk.CTkFrame(
-        parent,
-        fg_color=UI_SUBCARD_FG,
-        corner_radius=14,
-        border_width=1,
-        border_color=UI_SUBCARD_BORDER,
-    )
-
-
-def make_action_button(parent, text, command, *, tone="neutral", width=120, height=34):
-    palette = {
-        "neutral": ("#334155", "#475569"),
-        "primary": (UI_ACCENT_BLUE, "#1d4ed8"),
-        "teal": (UI_ACCENT_TEAL, "#0f5f59"),
-        "amber": (UI_ACCENT_AMBER, "#92400e"),
-        "danger": ("#b91c1c", "#991b1b"),
-    }
-    fg_color, hover_color = palette[tone]
-    return ctk.CTkButton(
-        parent,
-        text=text,
-        command=command,
-        width=width,
-        height=height,
-        corner_radius=10,
-        fg_color=fg_color,
-        hover_color=hover_color,
-        font=ctk.CTkFont(size=12, weight="bold"),
-    )
-
-
-def make_hero_banner(parent, title, subtitle, right_label=None, *, accent="#1d4ed8"):
-    hero = ctk.CTkFrame(
-        parent,
-        fg_color="#0f172a",
-        corner_radius=20,
-        border_width=1,
-        border_color=accent,
-    )
-    hero.pack(fill="x", padx=15, pady=(15, 8))
-    hero_top = ctk.CTkFrame(hero, fg_color="transparent")
-    hero_top.pack(fill="x", padx=18, pady=(16, 12))
-    title_col = ctk.CTkFrame(hero_top, fg_color="transparent")
-    title_col.pack(side="left", fill="x", expand=True)
-    title_label = ctk.CTkLabel(
-        title_col,
-        text=title,
-        font=ctk.CTkFont(size=22, weight="bold"),
-        text_color="#f8fafc",
-    )
-    title_label.pack(anchor="w")
-    subtitle_label = ctk.CTkLabel(
-        title_col,
-        text=subtitle,
-        font=ctk.CTkFont(size=11),
-        text_color="#93c5fd",
-        wraplength=650,
-        justify="left",
-    )
-    subtitle_label.pack(anchor="w", pady=(4, 0))
-    chip = None
-    if right_label:
-        chip = ctk.CTkFrame(hero_top, fg_color="#172554", corner_radius=14, border_width=1, border_color=accent)
-        chip.pack(side="right", padx=(12, 0))
-        ctk.CTkLabel(
-            chip,
-            text=right_label,
-            font=ctk.CTkFont(size=11, weight="bold"),
-            text_color="#dbeafe",
-        ).pack(padx=12, pady=10)
-    return {
-        "frame": hero,
-        "title_label": title_label,
-        "subtitle_label": subtitle_label,
-        "badge": chip,
-    }
-
-
-# ══════════════════════════════════════════════════════════════════════
-#  Tab 1: Download Reports
-# ══════════════════════════════════════════════════════════════════════
-
-# ══════════════════════════════════════════════════════════════════════
-#  Tab modules — extracted for modularity
-# ══════════════════════════════════════════════════════════════════════
-from app_shared import *  # shared constants and helpers
+# ── Tab modules — extracted for modularity ──────────────────────────
+from app_shared import *  # shared constants and helpers (includes all constants, helpers)
+from app_shared import get_operator_mode
 from ui.tabs.download_tab import DownloadTab
 from ui.tabs.qb_sync_tab import QBSyncTab
 from ui.tabs.remove_tab import RemoveTab
 from ui.tabs.settings_tab import SettingsTab
 
 
-def _readiness_for(fr) -> dict:
-    """Convert a FeatureReadiness object to the legacy dict shape."""
-    if fr is None:
-        return {"ready": False, "reason": "Unknown state"}
-    return {
-        "ready": fr.status == ReadinessStatus.READY,
-        "reason": fr.reason,
-        "next_step": fr.next_step,
-        "status": fr.status.value,
-    }
+def _get_nav_order(operator_mode: str = "standard") -> list:
+    """Returns nav items based on operator mode."""
+    # Standard operator: guided wizard-first experience
+    standard = ["home", "wizard_download", "wizard_qb", "settings", "recovery"]
+    # Admin/support: full access including raw tabs and audit tools
+    admin = ["home", "wizard_download", "wizard_qb", "download", "qb", "remove", "settings", "recovery", "audit"]
+    return admin if operator_mode == "admin" else standard
+
+
+from services.feature_readiness_service import readiness_to_ui_dict as _readiness_for
 
 # ══════════════════════════════════════════════════════════════════════
 class App(ctk.CTk):
@@ -615,71 +332,8 @@ class App(ctk.CTk):
         main = ctk.CTkFrame(self, fg_color="transparent")
         main.pack(fill="both", expand=True, padx=10, pady=(5, 0))
 
-        self._nav_theme = {
-            "home": {
-                "title": "Home",
-                "description": "Your operational dashboard and health summary.",
-                "icon": "HM",
-                "active_bg": "#6d28d9",
-                "active_border": "#a78bfa",
-            },
-            "download": {
-                "title": "Download",
-                "description": "Pull Toast reports and save them cleanly.",
-                "icon": "DL",
-                "active_bg": "#2563eb",
-                "active_border": "#60a5fa",
-            },
-            "qb": {
-                "title": "QB Sync",
-                "description": "Review and post sales into QuickBooks.",
-                "icon": "QB",
-                "active_bg": "#0f766e",
-                "active_border": "#34d399",
-            },
-            "remove": {
-                "title": "Remove",
-                "description": "Find and clean up posted transactions.",
-                "icon": "RM",
-                "active_bg": "#b45309",
-                "active_border": "#f59e0b",
-            },
-            "settings": {
-                "title": "Settings",
-                "description": "Control Drive, Toast, and app health.",
-                "icon": "ST",
-                "active_bg": "#475569",
-                "active_border": "#94a3b8",
-            },
-            "recovery": {
-                "title": "Recovery",
-                "description": "Health checks, repair tools, and support export.",
-                "icon": "RC",
-                "active_bg": "#b45309",
-                "active_border": "#f59e0b",
-            },
-            "audit": {
-                "title": "Audit",
-                "description": "Activity history and event log.",
-                "icon": "AU",
-                "active_bg": "#0f766e",
-                "active_border": "#34d399",
-            },
-            "wizard_download": {
-                "title": "Download Wizard",
-                "description": "Guided report download",
-                "icon": "↓",
-                "active_bg": "#1e3a5f",
-                "active_border": "#3b82f6",
-            },
-            "wizard_qb": {
-                "title": "QB Sync Wizard",
-                "description": "Guided QuickBooks sync",
-                "icon": "⚙",
-                "active_bg": "#14532d",
-                "active_border": "#22c55e",
-            },
-        }
+        from services.ui_state_service import get_nav_theme
+        self._nav_theme = get_nav_theme()
         self._nav_inactive_bg = "#1f2937"
         self._nav_inactive_hover = "#273449"
         self._nav_inactive_border = "#334155"
@@ -727,7 +381,8 @@ class App(ctk.CTk):
 
         self._nav_buttons = {}
         self._tab_frames = {}
-        nav_order = ["home", "wizard_download", "wizard_qb", "download", "qb", "remove", "settings", "recovery", "audit"]
+        _mode = get_operator_mode()
+        nav_order = _get_nav_order(_mode)
 
         for key in nav_order:
             theme = self._nav_theme[key]
@@ -817,7 +472,9 @@ class App(ctk.CTk):
         content = ctk.CTkFrame(main, fg_color="transparent")
         content.pack(side="left", fill="both", expand=True)
 
-        for key in ["home", "wizard_download", "wizard_qb", "download", "qb", "remove", "settings", "recovery", "audit"]:
+        # Always create all frames even if not in nav
+        all_frames = ["home", "wizard_download", "wizard_qb", "download", "qb", "remove", "settings", "recovery", "audit"]
+        for key in all_frames:
             frame = ctk.CTkFrame(content, fg_color="transparent")
             frame.pack(fill="both", expand=True)
             self._tab_frames[key] = frame
@@ -868,7 +525,7 @@ class App(ctk.CTk):
 
         # Default to Home tab
         self._active_tab = "home"
-        for key in ["home", "wizard_download", "wizard_qb", "download", "qb", "remove", "settings", "recovery", "audit"]:
+        for key in all_frames:
             self._tab_frames[key].pack_forget()
         self._apply_nav_styles()
         self.bind("<Configure>", self._queue_responsive_layout)
@@ -1234,25 +891,14 @@ class App(ctk.CTk):
         self.after(0, lambda r=report, show=show_popup_on_error: self._on_diagnostics_ready(r, show))
 
     def _on_diagnostics_ready(self, report, show_popup_on_error):
+        from services.ui_state_service import get_diagnostics_status_display
         self.diagnostics_report = report
-        if report.error_count:
-            text = f"Environment: {report.error_count} error(s)"
-            text_color = "#fecaca"
-            badge_fg = "#3b1212"
-            badge_border = "#dc2626"
-            self.status_var.set("Environment issues detected. Open Settings > Startup Diagnostics.")
-        elif report.warning_count:
-            text = f"Environment: {report.warning_count} warning(s)"
-            text_color = "#fde68a"
-            badge_fg = "#3f2f12"
-            badge_border = "#d97706"
-            self.status_var.set("Environment warnings detected. Open Settings > Startup Diagnostics.")
-        else:
-            text = "Environment: ready"
-            text_color = "#bbf7d0"
-            badge_fg = "#0f2f24"
-            badge_border = "#059669"
-            self.status_var.set("Ready")
+        display = get_diagnostics_status_display(report)
+        text = display["text"]
+        text_color = display["text_color"]
+        badge_fg = display["badge_fg"]
+        badge_border = display["badge_border"]
+        self.status_var.set(display["status_bar_text"])
 
         if self._compact_header_mode:
             text = text.replace("Environment: ", "")

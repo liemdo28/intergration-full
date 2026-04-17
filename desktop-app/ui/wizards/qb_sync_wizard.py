@@ -479,6 +479,49 @@ class QBSyncWizard(WizardBase):
                       fg_color="#7c3aed", hover_color="#6d28d9", height=34,
                       command=lambda: self._nav("navigate:wizard_download")).pack(anchor="w", padx=16, pady=(0, 14))
 
+    def _show_gate_block(self, parent, gate):
+        block = ctk.CTkFrame(parent, fg_color="#1f0a0a", corner_radius=12, border_width=1, border_color="#ef4444")
+        block.pack(fill="x", padx=20, pady=(16, 8))
+
+        ctk.CTkLabel(block, text="✕  Sync Blocked — fix the issues below before continuing",
+                     font=ctk.CTkFont(size=14, weight="bold"), text_color="#fca5a5",
+                     anchor="w").pack(anchor="w", padx=16, pady=(14, 6))
+
+        for issue in gate.blockers:
+            row = ctk.CTkFrame(block, fg_color="#2a0a0a", corner_radius=8)
+            row.pack(fill="x", padx=16, pady=3)
+            ctk.CTkLabel(row, text=f"• {issue.title}", font=ctk.CTkFont(size=12, weight="bold"),
+                         text_color="#f87171", anchor="w").pack(anchor="w", padx=10, pady=(8, 2))
+            ctk.CTkLabel(row, text=issue.detail, font=ctk.CTkFont(size=11), text_color="#fca5a5",
+                         anchor="w", wraplength=520, justify="left").pack(anchor="w", padx=10)
+            if issue.fix_hint:
+                ctk.CTkLabel(row, text=f"→ {issue.fix_hint}", font=ctk.CTkFont(size=11, weight="bold"),
+                             text_color="#f59e0b", anchor="w", wraplength=520).pack(anchor="w", padx=10, pady=(2, 8))
+            if issue.nav_target:
+                ctk.CTkButton(row, text="Go There →", height=28, width=100, corner_radius=6,
+                              fg_color="#7c3aed", hover_color="#6d28d9",
+                              font=ctk.CTkFont(size=11),
+                              command=lambda t=issue.nav_target: self._nav(t)).pack(anchor="w", padx=10, pady=(0, 8))
+
+    def _show_gate_warnings(self, parent, gate):
+        warn = ctk.CTkFrame(parent, fg_color="#1f1500", corner_radius=12, border_width=1, border_color="#f59e0b")
+        warn.pack(fill="x", padx=20, pady=(16, 8))
+
+        ctk.CTkLabel(warn, text="⚠  Warnings — review before continuing",
+                     font=ctk.CTkFont(size=14, weight="bold"), text_color="#fcd34d",
+                     anchor="w").pack(anchor="w", padx=16, pady=(14, 6))
+
+        for issue in gate.warnings:
+            row = ctk.CTkFrame(warn, fg_color="#2a1a00", corner_radius=8)
+            row.pack(fill="x", padx=16, pady=3)
+            ctk.CTkLabel(row, text=f"• {issue.title}", font=ctk.CTkFont(size=12, weight="bold"),
+                         text_color="#fbbf24", anchor="w").pack(anchor="w", padx=10, pady=(8, 2))
+            ctk.CTkLabel(row, text=issue.detail, font=ctk.CTkFont(size=11), text_color="#fcd34d",
+                         anchor="w", wraplength=520, justify="left").pack(anchor="w", padx=10)
+            if issue.fix_hint:
+                ctk.CTkLabel(row, text=f"→ {issue.fix_hint}", font=ctk.CTkFont(size=11),
+                             text_color="#94a3b8", anchor="w", wraplength=520).pack(anchor="w", padx=10, pady=(2, 8))
+
     def _nav(self, destination: str):
         if self._status_var:
             self._status_var.set(destination)
@@ -498,34 +541,23 @@ class QBSyncWizard(WizardBase):
             anchor="w",
         ).pack(anchor="w", padx=16, pady=(14, 6))
 
-        # Source completeness gate — block sync if reports are missing in Drive
+        # Consolidated pre-sync gate — runs all safety checks in one pass
         try:
-            from services.source_completeness_service import check_source_completeness
-            completeness = check_source_completeness(
-                self._state.selected_stores,
-                self._state.date_start,
-                self._state.date_end,
+            from services.consolidated_sync_gate import run_consolidated_gate
+            gate = run_consolidated_gate(
+                stores=self._state.selected_stores,
+                date_start=self._state.date_start,
+                date_end=self._state.date_end,
             )
-            if not completeness.is_complete:
-                self._show_completeness_block(frame, completeness)
+
+            if not gate.can_proceed:
+                self._show_gate_block(frame, gate)
                 self.set_next_enabled(False)
                 return
-        except Exception:
-            pass
 
-        # Run safety checks first
-        try:
-            from services.sync_safety_service import run_presync_safety_checks
-            safety = run_presync_safety_checks(
-                self._state.selected_stores,
-                self._state.date_start,
-                self._state.date_end,
-            )
-            if safety.issues:
-                self._show_safety_issues(frame, safety)
-                if safety.has_errors:
-                    self.set_next_enabled(False)
-                    return  # Don't show preview if errors exist
+            if gate.warnings:
+                self._show_gate_warnings(frame, gate)
+                # Still allow proceeding with warnings
         except Exception:
             pass
 
@@ -722,6 +754,16 @@ class QBSyncWizard(WizardBase):
         warnings = res.get("warnings", [])
         error = res.get("error", "")
 
+        # Determine outcome type
+        if ok and f_count == 0:
+            outcome_type = "completed"
+        elif ok and f_count > 0:
+            outcome_type = "completed_with_warnings"
+        elif s_count == 0 and f_count > 0:
+            outcome_type = "failed_safely"
+        else:
+            outcome_type = "completed_with_warnings"
+
         if ok:
             title = "QB Sync Complete"
             summary = [
@@ -730,6 +772,8 @@ class QBSyncWizard(WizardBase):
                 f"Stores: {', '.join(self._state.selected_stores)}",
                 f"Date range: {self._state.date_start} to {self._state.date_end}",
             ]
+            if not error:
+                summary.append("Audit log saved.")
         else:
             title = "QB Sync Finished with Errors"
             summary = [
@@ -739,21 +783,37 @@ class QBSyncWizard(WizardBase):
             if error:
                 summary.append(f"Error: {error}")
 
+        # Build stats list
+        stats = [
+            ("Synced", str(s_count)),
+            ("Entries Created", str(entry_count)),
+        ]
+        if total_amt > 0:
+            stats.append(("Gross Sales", f"${total_amt:,.2f}"))
+
         def _done():
             if self._status_var is not None:
                 self._status_var.set("navigate:home")
 
+        def _go_home():
+            if self._status_var is not None:
+                self._status_var.set("navigate:home")
+
+        def _go_download():
+            if self._status_var is not None:
+                self._status_var.set("navigate:wizard_download")
+
         self._result_view = WizardResultView(
             self._content_frame,
-            success=ok,
+            outcome_type=outcome_type,
             title=title,
             summary_lines=summary,
             warnings=warnings,
-            stats=[
-                ("Synced", str(res.get("success_count", 0))),
-                ("Entries Created", str(res.get("entry_count", 0))),
-                ("Warnings", str(len(res.get("warnings", [])))),
-            ],
+            stats=stats,
+            next_action_label="Return Home",
+            next_action_command=_go_home,
+            secondary_action_label="Download More Reports",
+            secondary_action_command=_go_download,
             done_command=_done,
         )
         self._result_view.pack(fill="x", padx=20, pady=20)
