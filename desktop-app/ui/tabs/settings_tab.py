@@ -51,7 +51,12 @@ from ui.widgets.status_badge import StatusBadge, Status as SBStatus
 class SettingsTab(ctk.CTkFrame):
     def __init__(self, master, run_diagnostics=None, status_var=None, **kwargs):
         super().__init__(master, **kwargs)
-        self._app = master  # reference to parent App instance
+        # master is a tab container frame, not the App root. Walk up to find
+        # the App instance so we can call get_readiness() / etc.
+        try:
+            self._app = self.winfo_toplevel()
+        except Exception:
+            self._app = master
         self.run_diagnostics = run_diagnostics
         self.status_var = status_var
         self.recovery_playbooks = get_recovery_playbooks()

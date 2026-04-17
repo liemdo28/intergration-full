@@ -204,6 +204,10 @@ class App(ctk.CTk):
         self.after(7000, lambda: self._schedule_agentai_snapshot_publish(5000))
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
+    def get_readiness(self) -> dict:
+        """Return the current readiness snapshot consumed by SettingsTab and HomeDashboard."""
+        return dict(self._readiness) if hasattr(self, "_readiness") else {}
+
     def _sync_runtime_state(self, **extra):
         state = {
             "mode": self.runtime_mode,
