@@ -165,6 +165,7 @@ class SettingsTab(ctk.CTkFrame):
         gdrive_btns = ctk.CTkFrame(gdrive_frame, fg_color="transparent")
         gdrive_btns.pack(fill="x", pady=(5, 0))
         make_action_button(gdrive_btns, "Connect Google Drive", self._connect_gdrive, tone="primary", width=180).pack(side="left", padx=(0, 8))
+        make_action_button(gdrive_btns, "Import credentials.json", self._import_gdrive_credentials, tone="neutral", width=180).pack(side="left", padx=(0, 8))
         make_action_button(gdrive_btns, "Setup Folders", self._setup_folders, tone="neutral", width=130).pack(side="left", padx=(0, 8))
         make_action_button(gdrive_btns, "Clear Token", self._clear_token, tone="danger", width=110).pack(side="left", padx=(0, 8))
         make_action_button(gdrive_btns, "Open Toast Folder", self._open_gdrive_toast_folder, tone="neutral", width=150).pack(side="left")
@@ -586,14 +587,76 @@ class SettingsTab(ctk.CTkFrame):
             try:
                 from gdrive_service import GDriveService
                 gdrive = GDriveService()
-                if gdrive.authenticate():
-                    email = gdrive.get_user_email()
+                status = gdrive.authenticate_detailed()
+                if status["ok"]:
+                    email = gdrive.get_user_email() or "Connected"
                     self.after(0, lambda: self._set_gdrive_status(f"Connected: {email}", "#059669"))
+                    return
+
+                code = status.get("code", "")
+                cred_path = status.get("credentials_file", "")
+                if code == GDriveService.AUTH_MISSING_CREDS:
+                    short = "credentials.json not set up — click 'Import credentials.json'"
+                    self.after(0, lambda: self._set_gdrive_status(short, "#d97706"))
+                    self.after(0, lambda: messagebox.showwarning(
+                        "Google Drive Setup Needed",
+                        f"Google Drive is not configured yet.\n\n"
+                        f"Expected location:\n  {cred_path}\n\n"
+                        "How to fix:\n"
+                        "1. Go to Google Cloud Console → APIs & Services → Credentials\n"
+                        "2. Create an OAuth Client ID (Application type: Desktop app)\n"
+                        "3. Download the JSON file\n"
+                        "4. Back in Settings → click 'Import credentials.json' and pick that file\n"
+                        "5. Click 'Connect Google Drive' again\n"
+                    ))
+                elif code == GDriveService.AUTH_REFRESH_FAILED:
+                    self.after(0, lambda: self._set_gdrive_status(
+                        "Saved token expired — click 'Clear Token' then 'Connect' again", "#d97706"))
                 else:
-                    self.after(0, lambda: self._set_gdrive_status("Authentication failed", "#dc2626"))
+                    msg = status.get("message") or "Authentication failed"
+                    short = (msg.splitlines()[0] if msg else "Authentication failed")[:90]
+                    self.after(0, lambda: self._set_gdrive_status(f"Auth failed: {short}", "#dc2626"))
             except Exception as e:
                 self.after(0, lambda err=str(e): self._set_gdrive_status(f"Error: {err}", "#dc2626"))
         threading.Thread(target=_worker, daemon=True).start()
+
+    def _import_gdrive_credentials(self):
+        """Let the user pick their credentials.json and copy it into the runtime folder."""
+        import shutil
+        src = filedialog.askopenfilename(
+            title="Pick credentials.json (OAuth Client for Desktop App)",
+            filetypes=[("JSON credentials", "*.json"), ("All files", "*.*")],
+        )
+        if not src:
+            return
+        # Quick sanity check: must parse as JSON and look like a Google OAuth client file
+        try:
+            with open(src, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if not isinstance(data, dict) or not any(k in data for k in ("installed", "web")):
+                messagebox.showerror(
+                    "Invalid credentials.json",
+                    "This file doesn't look like a Google OAuth client (expected 'installed' or 'web' key).\n\n"
+                    "Make sure you downloaded the OAuth Client ID JSON for a Desktop app, not a service account key.",
+                )
+                return
+        except Exception as exc:
+            messagebox.showerror("Invalid credentials.json", f"Could not parse the file:\n{exc}")
+            return
+
+        dest = runtime_path("credentials.json")
+        try:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(src, dest)
+        except Exception as exc:
+            messagebox.showerror("Import failed", f"Could not copy file:\n{exc}")
+            return
+
+        messagebox.showinfo(
+            "credentials.json imported",
+            f"Saved to:\n  {dest}\n\nClick 'Connect Google Drive' to finish authenticating.",
+        )
+        self._set_gdrive_status("credentials.json imported — click 'Connect Google Drive'", "#059669")
 
     def _setup_folders(self):
         def _worker():

@@ -86,38 +86,106 @@ class GDriveService:
                 time.sleep(wait_seconds)
         raise last_error
 
-    def authenticate(self):
-        """Authenticate with Google Drive. Returns True on success."""
+    # Structured auth-status codes used by the UI layer to show the right hint.
+    AUTH_OK              = "ok"
+    AUTH_MISSING_CREDS   = "missing_credentials"
+    AUTH_REFRESH_FAILED  = "refresh_failed"
+    AUTH_FLOW_FAILED     = "flow_failed"
+    AUTH_BUILD_FAILED    = "build_failed"
+
+    def authenticate_detailed(self) -> dict:
+        """
+        Authenticate with Google Drive and return a structured status dict:
+            {"ok": bool, "code": str, "message": str, "credentials_file": str}
+
+        Codes:
+          ok                   — service is ready to use
+          missing_credentials  — credentials.json not found; user must import it
+          refresh_failed       — existing token expired and refresh failed
+          flow_failed          — OAuth flow itself errored (network / user denied)
+          build_failed         — creds valid but Drive API service build failed
+        """
+        self.last_auth_status = {"ok": False, "code": "unknown", "message": "",
+                                 "credentials_file": self.credentials_file}
         creds = None
 
+        # 1. Try existing token
         if os.path.exists(self.token_file):
             try:
                 creds = Credentials.from_authorized_user_file(self.token_file, SCOPES)
             except Exception:
                 creds = None
 
+        # 2. Refresh expired token
         if creds and creds.expired and creds.refresh_token:
             try:
                 creds.refresh(Request())
                 Path(self.token_file).write_text(creds.to_json(), encoding="utf-8")
-            except Exception:
+            except Exception as exc:
+                self.log(f"Google Drive token refresh failed: {exc}")
                 creds = None
+                self.last_auth_status = {
+                    "ok": False, "code": self.AUTH_REFRESH_FAILED,
+                    "message": f"Saved token could not be refreshed: {exc}",
+                    "credentials_file": self.credentials_file,
+                }
+                # fall through to OAuth flow if credentials.json exists
 
+        # 3. Fresh OAuth flow if still no valid creds
         if not creds or not creds.valid:
             if not os.path.exists(self.credentials_file):
-                self.log(f"credentials.json not found at {self.credentials_file}")
-                self.log("Download from Google Cloud Console > APIs & Services > Credentials")
-                return False
+                msg = (f"credentials.json not found at:\n  {self.credentials_file}\n\n"
+                       "Open Settings → Google Drive → Import credentials.json, "
+                       "or download it from Google Cloud Console → APIs & Services → Credentials "
+                       "(OAuth Client ID, Desktop App).")
+                self.log(msg)
+                self.last_auth_status = {
+                    "ok": False, "code": self.AUTH_MISSING_CREDS,
+                    "message": msg, "credentials_file": self.credentials_file,
+                }
+                return self.last_auth_status
 
-            flow = InstalledAppFlow.from_client_secrets_file(self.credentials_file, SCOPES)
-            creds = flow.run_local_server(port=0)
+            try:
+                flow = InstalledAppFlow.from_client_secrets_file(self.credentials_file, SCOPES)
+                creds = flow.run_local_server(port=0)
+                with open(self.token_file, "w") as f:
+                    f.write(creds.to_json())
+                self.log("Google Drive authenticated successfully")
+            except Exception as exc:
+                self.log(f"OAuth flow failed: {exc}")
+                self.last_auth_status = {
+                    "ok": False, "code": self.AUTH_FLOW_FAILED,
+                    "message": f"OAuth flow failed: {exc}",
+                    "credentials_file": self.credentials_file,
+                }
+                return self.last_auth_status
 
-            with open(self.token_file, "w") as f:
-                f.write(creds.to_json())
-            self.log("Google Drive authenticated successfully")
+        # 4. Build the service
+        try:
+            self.service = build("drive", "v3", credentials=creds)
+        except Exception as exc:
+            self.log(f"Drive service build failed: {exc}")
+            self.last_auth_status = {
+                "ok": False, "code": self.AUTH_BUILD_FAILED,
+                "message": f"Drive API init failed: {exc}",
+                "credentials_file": self.credentials_file,
+            }
+            return self.last_auth_status
 
-        self.service = build("drive", "v3", credentials=creds)
-        return True
+        self.last_auth_status = {
+            "ok": True, "code": self.AUTH_OK,
+            "message": "Authenticated",
+            "credentials_file": self.credentials_file,
+        }
+        return self.last_auth_status
+
+    def authenticate(self):
+        """Authenticate with Google Drive. Returns True on success.
+
+        Keeps the original bool API for back-compat. Callers who need the
+        reason for failure can check self.last_auth_status after calling.
+        """
+        return self.authenticate_detailed()["ok"]
 
     def is_authenticated(self):
         return self.service is not None
