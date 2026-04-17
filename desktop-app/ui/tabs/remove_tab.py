@@ -24,6 +24,7 @@ from app_shared import (
     make_hero_banner, style_scrollable_frame,
     UI_CARD_FG, UI_CARD_BORDER, UI_MUTED_TEXT, UI_HEADING_TEXT,
     UI_ACCENT_BLUE, UI_ACCENT_TEAL, UI_ACCENT_AMBER,
+    UI_SUBCARD_FG, UI_SUBCARD_BORDER,
 )
 from app_paths import APP_DIR, RUNTIME_DIR, app_path, runtime_path
 from audit_utils import write_delete_audit, export_transactions_snapshot
