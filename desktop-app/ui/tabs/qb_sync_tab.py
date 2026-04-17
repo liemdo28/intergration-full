@@ -30,10 +30,12 @@ from app_shared import (
     make_hero_banner, make_calendar, style_scrollable_frame,
     UI_CARD_FG, UI_CARD_BORDER, UI_SUBCARD_FG, UI_MUTED_TEXT,
     UI_HEADING_TEXT, UI_ACCENT_BLUE, UI_ACCENT_TEAL, UI_ACCENT_AMBER,
+    publish_agentai_snapshot_if_configured,
 )
 from app_paths import APP_DIR, RUNTIME_DIR, app_path, runtime_path
 from toast_reports import DEFAULT_REPORT_TYPE_KEYS, REPORT_TYPES, build_local_report_dir
 from audit_utils import load_recent_item_creation_audits, write_item_creation_audit, export_transactions_snapshot
+from report_validator import validate_toast_report_file
 from report_inventory import refresh_drive_report_inventory
 from date_parser import get_date_range_from_inputs
 from integration_status import (

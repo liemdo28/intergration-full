@@ -312,7 +312,7 @@ class QBSyncWizard(WizardBase):
                 )
                 self.after(0, lambda: _render_results(result))
             except Exception as exc:
-                self.after(0, lambda: _render_error(str(exc)))
+                self.after(0, lambda err=str(exc): _render_error(err))
 
         def _render_results(result):
             for child in results_frame.winfo_children():
@@ -641,7 +641,7 @@ class QBSyncWizard(WizardBase):
                 )
                 self.after(0, lambda: _render_preview(preview))
             except Exception as exc:
-                self.after(0, lambda: summary_lbl.configure(text=f"Preview error: {exc}", text_color="#ef4444"))
+                self.after(0, lambda err=str(exc): summary_lbl.configure(text=f"Preview error: {err}", text_color="#ef4444"))
 
         def _render_preview(preview):
             for child in table_frame.winfo_children():

@@ -8,6 +8,7 @@ import json
 import threading
 import logging
 import webbrowser
+from functools import partial
 from pathlib import Path
 from datetime import datetime, timedelta
 from tkinter import filedialog
@@ -26,8 +27,11 @@ from app_shared import (
     UI_ACCENT_BLUE, UI_ACCENT_TEAL,
     REQUIRED_REPORT_RULES, get_required_reports, load_required_report_rules,
     get_operator_mode,
+    publish_agentai_snapshot_if_configured,
 )
 from app_paths import APP_DIR, RUNTIME_DIR, app_path, runtime_path
+from delete_policy import load_delete_policy
+from report_inventory import refresh_drive_report_inventory
 from diagnostics import format_report_lines, run_environment_checks
 from recovery_center import (
     backup_and_remove, ensure_runtime_file_from_example, export_support_bundle,
@@ -583,7 +587,7 @@ class SettingsTab(ctk.CTkFrame):
                 else:
                     self.after(0, lambda: self._set_gdrive_status("Authentication failed", "#dc2626"))
             except Exception as e:
-                self.after(0, lambda: self._set_gdrive_status(f"Error: {e}", "#dc2626"))
+                self.after(0, lambda err=str(e): self._set_gdrive_status(f"Error: {err}", "#dc2626"))
         threading.Thread(target=_worker, daemon=True).start()
 
     def _setup_folders(self):
@@ -597,7 +601,7 @@ class SettingsTab(ctk.CTkFrame):
                 else:
                     self.after(0, lambda: messagebox.showerror("Error", "Google Drive auth failed"))
             except Exception as e:
-                self.after(0, lambda: messagebox.showerror("Error", str(e)))
+                self.after(0, lambda err=str(e): messagebox.showerror("Error", err))
         threading.Thread(target=_worker, daemon=True).start()
 
     def _clear_token(self):
@@ -624,7 +628,7 @@ class SettingsTab(ctk.CTkFrame):
                 else:
                     self.after(0, lambda: messagebox.showinfo("Info", "Toast folder not found on Drive. Run 'Setup Folders' first."))
             except Exception as e:
-                self.after(0, lambda: messagebox.showerror("Error", str(e)))
+                self.after(0, lambda err=str(e): messagebox.showerror("Error", err))
         threading.Thread(target=_worker, daemon=True).start()
 
     def _clear_session(self):

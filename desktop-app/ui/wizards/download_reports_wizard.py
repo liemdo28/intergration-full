@@ -317,7 +317,7 @@ class DownloadReportsWizard(WizardBase):
                 )
                 self.after(0, lambda: _render_results(result))
             except Exception as exc:
-                self.after(0, lambda: _render_error(str(exc)))
+                self.after(0, lambda err=str(exc): _render_error(err))
 
         def _render_results(result):
             for child in results_frame.winfo_children():

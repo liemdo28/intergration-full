@@ -7,14 +7,18 @@ import os
 import csv
 import json
 import time
+import logging
 import threading
+import glob as glob_mod
 from pathlib import Path
 from datetime import datetime, timedelta
 from tkinter import filedialog
 
 import customtkinter as ctk
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import messagebox, simpledialog
+
+_app_logger = logging.getLogger(__name__)
 
 from app_shared import (
     LOCAL_CONFIG_FILE, TOAST_LOCATIONS, DELETE_AUDIT_DIR, AUDIT_LOG_DIR,
@@ -28,6 +32,9 @@ from app_shared import (
 )
 from app_paths import APP_DIR, RUNTIME_DIR, app_path, runtime_path
 from audit_utils import write_delete_audit, export_transactions_snapshot
+from runtime_manifest import build_manifest
+from services.feature_readiness_service import check_all_features
+from models.feature_readiness import FeatureKey, ReadinessStatus
 from delete_policy import load_delete_policy
 from services.activity_log_service import log, EventCategory, EventSeverity
 
